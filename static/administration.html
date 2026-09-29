@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Commander | LVFR EMS</title>
+  <link rel="stylesheet" href="/static/style.css?v=commander-accounts-2">
+  <style>
+    body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:24px}
+    .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .admin-brand{display:flex;align-items:center;gap:12px}
+    .admin-header{margin-bottom:20px}.admin-header h1{margin:0}.admin-header p,.muted{color:#9aa4b2}
+    .admin-nav{display:flex;gap:8px;flex-wrap:wrap}.admin-nav a{padding:9px 13px;border:1px solid #303945;border-radius:8px;color:#e6edf3;text-decoration:none}
+    .admin-card{margin:16px 0;padding:20px;border:1px solid #303945;border-radius:14px;background:#111720}
+    .admin-toolbar{justify-content:flex-start;margin:12px 0}.admin-toolbar input,.admin-toolbar select{min-width:200px}
+    .admin-table-wrap{overflow:auto}.admin-table{width:100%;border-collapse:collapse;min-width:800px}.admin-table th,.admin-table td{text-align:left;vertical-align:top;padding:11px 9px;border-bottom:1px solid #303945}.admin-table th{color:#9aa4b2;font-weight:600}
+    .admin-actions{justify-content:flex-start;gap:6px}.admin-actions button{padding:6px 9px}.admin-status{min-height:22px;color:#9aa4b2}.admin-status.error{color:#ff8178}.admin-status.success{color:#56d364}
+    .admin-tabs{display:flex;gap:8px;flex-wrap:wrap}.admin-tabs button[aria-pressed="true"]{border-color:#62a0ea;color:#8bbcff}
+    @media(max-width:650px){.admin-shell{padding:14px}.admin-card{padding:14px}}
+  </style>
+</head>
+<body>
+  <main class="admin-shell">
+    <header class="admin-header">
+      <div class="admin-brand"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"><div><h1>Commander</h1><p>Manage account access, roles, and review account activity.</p></div></div>
+      <nav class="admin-nav"><a href="/portal">Applications</a><a href="/">LVFR EMS</a>
+        <div class="notification-control">
+          <button type="button" id="notificationButton" aria-expanded="false" aria-controls="notificationPanel">Notifications <span id="notificationBadge" class="notification-badge" hidden>0</span></button>
+          <section id="notificationPanel" class="notification-panel" hidden aria-label="Notifications">
+            <div class="notification-panel-head"><strong>Notifications</strong><button type="button" id="markNotificationsRead">Mark all read</button></div>
+            <div id="notificationList"><div class="empty">Loading…</div></div>
+          </section>
+        </div>
+        <span id="accountName" class="muted"></span><button type="button" id="manageAccountButton">Account settings</button>
+        <button type="button" id="logoutButton">Log out</button>
+      </nav>
+    </header>
+    <p id="adminMessage" class="admin-status" role="status" aria-live="polite"></p>
+    <section class="admin-card" aria-labelledby="accountsHeading">
+      <div class="admin-header"><div><h2 id="accountsHeading">Accounts</h2><p class="muted">Members can access Watch Command only.</p></div><button type="button" id="refreshAccounts">Refresh</button></div>
+      <div class="admin-tabs" aria-label="Account status filter">
+        <button type="button" data-status="all" aria-pressed="true">All</button>
+        <button type="button" data-status="pending" aria-pressed="false">Pending</button>
+        <button type="button" data-status="approved" aria-pressed="false">Active</button>
+        <button type="button" data-status="deactivated" aria-pressed="false">Deactivated</button>
+      </div>
+      <div class="admin-toolbar"><input id="accountSearch" type="search" placeholder="Search name or Callsign"><span id="accountCount" class="muted"></span></div>
+      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Account</th><th>Callsign</th><th>Status</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead><tbody id="accountRows"><tr><td colspan="6">Loading accounts…</td></tr></tbody></table></div>
+    </section>
+    <section class="admin-card" aria-labelledby="auditHeading">
+      <div class="admin-header"><h2 id="auditHeading">Recent account activity</h2></div>
+      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Date</th><th>Account</th><th>Action</th><th>By</th></tr></thead><tbody id="auditRows"><tr><td colspan="4">Loading history…</td></tr></tbody></table></div>
+    </section>
+  </main>
+  <script src="/static/public-config.js"></script>
+  <script src="/static/google-auth.js"></script>
+  <script src="/static/account-settings.js?v=account-settings-1"></script>
+  <script src="/static/administration.js?v=commander-accounts-5"></script>
+</body>
+</html>

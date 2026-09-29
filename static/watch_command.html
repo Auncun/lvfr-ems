@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Watch Command | LVFR</title>
+  <link rel="stylesheet" href="/static/style.css?v=watch-command-2">
+  <style>
+    body { min-height:100vh; background:#0b1017; color:#f3f6fa; }
+    .watch-shell { width:min(1100px,100%); margin:0 auto; padding:24px; }
+    .watch-header { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:22px; }
+    .watch-brand { display:flex; align-items:center; gap:12px; }
+    .watch-header p,.hint { color:#9aa4b2; }
+    .watch-header h1 { margin:0 0 5px; }
+    .watch-nav { display:flex; gap:8px; flex-wrap:wrap; }
+    .watch-nav a { display:inline-block; padding:9px 13px; border:1px solid #303945; border-radius:8px; color:#e6edf3; text-decoration:none; }
+    #emsNavLink[hidden] { display:none; }
+    .watch-card { margin:16px 0; padding:22px; border:1px solid #303945; border-radius:14px; background:#111720; }
+    .watch-card h2 { margin-top:0; }
+    .watch-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+    .watch-fields label { display:grid; align-content:start; gap:6px; color:#c9d1d9; }
+    .watch-fields .watch-field { display:grid; align-content:start; gap:6px; color:#c9d1d9; }
+    #dnrReasonLabel[hidden] { display:none !important; }
+    #callDetailsWrap[hidden], #divePerformedByWrap[hidden] { display:none !important; }
+    .unit-roster { display:grid; gap:6px; }
+    .unit-roster:empty { display:none; }
+    .unit-roster-item { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px; border-radius:6px; background:#0d1219; color:#d5dce5; font-size:13px; }
+    .unit-roster-item button { min-width:28px; min-height:28px; padding:2px 7px; color:#ff8178; font-weight:700; }
+    .watch-fields .wide { grid-column:1/-1; }
+    .time-fields { display:grid; grid-template-columns:1fr; gap:14px; }
+    .watch-fields textarea { min-height:82px; }
+    .quick-signin { margin-top:18px; padding:16px; border:1px solid #356da8; border-radius:10px; background:#101a27; }
+    .quick-signin h3 { margin:0 0 6px; }
+    .quick-signin .hint { margin:0 0 14px; font-size:13px; }
+    .quick-controls { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; align-items:end; }
+    .quick-controls label { display:grid; gap:6px; color:#c9d1d9; }
+    .choice-list { display:flex; flex-wrap:wrap; gap:8px 14px; margin:2px 0 6px; }
+    .choice-list label { display:flex !important; align-items:center; gap:6px !important; font-size:13px; }
+    .callsign-picker { display:grid; gap:7px; align-content:end; }
+    .on-duty-tools { display:grid; gap:6px; }
+    #quickSignIn { min-height:40px; }
+    #quickMessage { min-height:1.4em; margin:10px 0 0; color:#9aa4b2; }
+    #quickMessage.error { color:#ff8178; }
+    #quickMessage.success { color:#56d364; }
+    #specialisedUnitWrap[hidden] { display:none !important; }
+    .watch-log-draft { display:inline-block; margin-left:8px; color:#e3b341; font-size:12px; }
+    .watch-submit-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:18px; }
+    #watchMessage { min-height:1.4em; color:#9aa4b2; }
+    #watchMessage.error { color:#ff8178; }
+    #watchMessage.success { color:#56d364; }
+    .watch-log { border-top:1px solid #303945; padding:18px 0; }
+    .watch-log:first-child { border-top:0; padding-top:0; }
+    .watch-log-title-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .watch-log-title-row h3 { min-width:0; }
+    .watch-copy-button { flex:none; white-space:nowrap; }
+    .watch-log h3 { margin:0 0 5px; }
+    .watch-log-meta { color:#9aa4b2; font-size:13px; margin-bottom:14px; }
+    .watch-log-meta .watch-na { color:#788391; }
+    .watch-log-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .watch-log-grid section { min-width:0; padding:11px; border-radius:8px; background:#0d1219; }
+    .watch-log-grid h4 { margin:0 0 5px; font-size:13px; color:#8bbcff; }
+    .watch-log-grid p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; color:#d5dce5; }
+    .watch-log-grid p.watch-na { color:#788391; }
+    .watch-empty { color:#9aa4b2; }
+    @media(max-width:850px) { .quick-controls{grid-template-columns:repeat(2,minmax(0,1fr))} }
+    @media(max-width:650px) { .watch-shell{padding:14px}.watch-card{padding:16px}.watch-fields,.watch-log-grid{grid-template-columns:1fr}.watch-fields .wide{grid-column:auto}.quick-controls{grid-template-columns:1fr 1fr}.watch-log-title-row{align-items:flex-start;flex-direction:column} }
+  </style>
+</head>
+<body>
+  <main class="watch-shell">
+    <header class="watch-header">
+      <div class="watch-brand"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"><div><h1>Watch Command</h1><p>Create and review watch handover logs.</p></div></div>
+      <nav class="watch-nav" aria-label="Watch Command navigation">
+        <a href="/portal">Application selection</a>
+        <a id="emsNavLink" href="/" hidden>LVFR EMS Operations</a>
+        <span id="accountName" class="status-dot account-user-name"></span>
+        <button type="button" id="manageAccountButton">Account settings</button>
+        <button type="button" id="watchLogout">Log out</button>
+      </nav>
+    </header>
+
+    <form id="watchForm" class="watch-card">
+      <h2>New Watch Log</h2>
+      <input type="hidden" name="draft_id" id="watchDraftId">
+      <div class="watch-fields">
+        <label>Watch date<input name="watch_date" type="date" required></label>
+        <label>Watch Commander (account holder)<input name="watch_commander" maxlength="120" required readonly></label>
+        <label class="wide"><span id="rollCallLabel">Roll Call (0)</span><textarea name="roll_call" placeholder="Personnel and units present"></textarea></label>
+      </div>
+      <div class="time-fields watch-fields" style="margin-top:14px">
+        <label>Start time (CET)<input name="start_time" type="time" required></label>
+        <input name="end_time" type="hidden" value="">
+      </div>
+
+      <section class="quick-signin initial-rollcall" aria-labelledby="initialRollcallHeading">
+        <h3 id="initialRollcallHeading">Initial Roll Call</h3>
+        <p class="hint">The signed-in account is added automatically as Watch Commander. Its Callsign is prefilled below; leave it selected and choose a sector and unit to assign the Watch Commander normally, or replace it with another member who was already on duty. The selected sector and unit are added to coverage and Roll Call. Training members can be added without a unit. No 10-41 note is created.</p>
+        <div class="quick-controls">
+          <label>Callsign<input id="initialCallsign" maxlength="32" placeholder="P-11" autocomplete="off"><span id="initialMemberLookup" class="hint" aria-live="polite">Enter a callsign to look up the member name.</span></label>
+          <label>Sector<select id="initialSector"><option value="Red">Red Sector</option><option value="Green">Green Sector</option><option value="Blue">Blue Sector</option><option value="Specialised">Specialised unit</option></select></label>
+          <label><span id="initialUnitLabel">Unit number</span><input id="initialUnit" inputmode="numeric" maxlength="4" list="initialUnitOptions" placeholder="1" autocomplete="off"></label>
+          <button type="button" class="primary" id="addInitialRollCall">Add to Roll Call</button>
+        </div>
+        <label id="initialAttachedWrap" hidden style="margin-top:10px">Attached unit (optional)<input id="initialAttachedUnit" maxlength="24" list="attachedUnitOptions" placeholder="Engine-1" autocomplete="off"></label>
+        <div class="quick-controls" style="margin-top:10px">
+          <label><span><input type="checkbox" id="initialIsTraining" name="initial_is_training"> Training</span></label>
+        </div>
+        <label id="initialSpecialWrap" hidden style="margin-top:10px">Specialised unit type
+          <select id="initialSpecial"><option value="Guardian">Guardian</option><option value="Nomad">Nomad</option><option value="Dive">Dive</option><option value="Engine">Engine</option></select>
+        </label>
+        <datalist id="initialUnitOptions"></datalist>
+        <datalist id="attachedUnitOptions"><option value="Engine-1"></option><option value="Guardian-1"></option><option value="Nomad-1"></option><option value="Dive-1"></option></datalist>
+        <p id="initialRollcallMessage" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="quick-signin" aria-labelledby="quickSigninHeading">
+        <h3 id="quickSigninHeading">Quick Sign in / Unit Status</h3>
+        <p class="hint">First fill in the Watch Commander and watch time range above. Then enter a callsign, choose a sector and assignment, and sign in. Training sign-ins may be left without a unit. Members sharing a unit are grouped on one coverage line; specialised units may have an attached unit such as Engine-1. Sign-ins update coverage and Notes but do not change Roll Call; use Initial Roll Call for members already present when the watch began.</p>
+        <div class="quick-controls">
+          <div class="callsign-picker">
+            <label>Callsign<input id="activityCallsign" maxlength="32" placeholder="V-11" autocomplete="off" list="watchCallsignChoices"><span id="memberLookup" class="hint" aria-live="polite">Enter a callsign to look up the member name.</span></label>
+            <div class="on-duty-tools"><button type="button" id="chooseOnDutyCallsign">Choose an on-duty callsign</button><select id="onDutyCallsign" hidden aria-label="On-duty callsigns"></select><button type="button" id="setWatchCommander">Set as Watch Commander</button></div>
+          </div>
+          <datalist id="watchCallsignChoices"></datalist>
+          <datalist id="onDutyCallsignList"></datalist>
+          <label>Status
+            <select id="activityStatus">
+              <option value="10-41 forming">10-41 Forming</option>
+              <option value="10-42 Leaving">10-42 Leaving</option>
+            </select>
+          </label>
+          <label><span><input type="checkbox" id="activityTraining"> Training (no unit required)</span></label>
+          <label>Sector / unit
+            <select id="activitySector">
+              <option value="">No sector</option>
+              <option value="Red">Red Sector</option>
+              <option value="Green">Green Sector</option>
+              <option value="Blue">Blue Sector</option>
+              <option value="Specialised">Specialised unit</option>
+            </select>
+          </label>
+          <label id="targetUnitWrap" hidden>Assignment
+            <select id="activityTargetUnit"></select>
+          </label>
+          <button type="button" class="primary" id="quickSignIn">Sign in</button>
+        </div>
+        <label id="specialisedUnitWrap" hidden style="margin-top:12px">Specialised unit
+          <select id="specialisedUnitName">
+            <option value="Guardian">Guardian</option>
+            <option value="Nomad">Nomad</option>
+            <option value="Dive">Dive</option>
+            <option value="Engine">Engine</option>
+          </select>
+        </label>
+        <label id="activityAttachedWrap" hidden style="margin-top:10px">Attached unit (optional)<input id="activityAttachedUnit" maxlength="24" list="attachedUnitOptions" placeholder="Engine-1" autocomplete="off"></label>
+        <button type="button" id="toggleFormUnit" style="margin-top:12px">Forming a unit with</button>
+        <div id="formUnitPanel" class="watch-card" hidden style="margin-top:12px">
+          <h3>Form a unit with multiple members</h3>
+          <div class="quick-controls">
+            <label>Number of members<select id="formUnitCount"></select></label>
+            <label>Sector<select id="formUnitSector"><option value="Red">Red Sector</option><option value="Green">Green Sector</option><option value="Blue">Blue Sector</option><option value="Specialised">Specialised unit</option></select></label>
+            <label id="formUnitSpecialWrap" hidden>Specialised unit<select id="formUnitSpecial"><option value="Guardian">Guardian</option><option value="Nomad">Nomad</option><option value="Dive">Dive</option><option value="Engine">Engine</option></select></label>
+          </div>
+          <div id="formUnitMembers" class="watch-fields" style="margin-top:12px"></div>
+          <button type="button" class="primary" id="submitFormUnit" style="margin-top:12px">Form unit and sign in members</button>
+          <p id="formUnitMessage" role="status" aria-live="polite"></p>
+        </div>
+        <p id="quickMessage" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="watch-card" aria-labelledby="sectorHeading">
+        <h2 id="sectorHeading">Sector Coverage</h2>
+        <div class="watch-fields">
+          <label>Red Sector<textarea name="red_sector"></textarea><div id="redUnitRoster" class="unit-roster"></div></label>
+          <label>Green Sector<textarea name="green_sector"></textarea><div id="greenUnitRoster" class="unit-roster"></div></label>
+          <label>Blue Sector<textarea name="blue_sector"></textarea><div id="blueUnitRoster" class="unit-roster"></div></label>
+          <label>Specialised units<textarea name="specialised_units"></textarea><div id="specialisedUnitRoster" class="unit-roster"></div></label>
+          <div class="watch-field wide"><label for="watchNotes">Notes</label><textarea id="watchNotes" name="notes"></textarea>
+            <div id="dnrFields" class="quick-controls" style="margin-top:8px">
+              <label>DNR type<select id="dnrType"><option value="Personal">Personal</option><option value="Partial">Partial</option><option value="Localized">Localized</option></select></label>
+              <label id="dnrSubjectLabel">Name<input id="dnrSubject" placeholder="Person's name"></label>
+              <label id="dnrReasonLabel">Reason<input id="dnrReason" placeholder="Reason for DNR"></label>
+              <label>Issued by<select id="dnrIssuer"><option value="">Choose an on-duty callsign</option></select></label>
+              <label>Lasts for (optional)<input id="dnrDuration" type="number" min="1" step="1" placeholder="Duration"></label>
+              <label>Duration unit<select id="dnrDurationUnit"><option value="minutes">Minutes</option><option value="hours">Hours</option></select></label>
+              <p id="dnrPartialReason" hidden>Reason: AFK/Starving</p>
+              <button type="button" class="primary" id="addDnr">Add DNR to Notes</button>
+            </div>
+            <p id="dnrMessage" role="status" aria-live="polite"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="watch-card" aria-labelledby="operationalHeading">
+        <h2 id="operationalHeading">Operational Notes</h2>
+        <div class="watch-fields">
+          <div class="watch-field"><label for="significantCallText">Significant call</label><textarea id="significantCallText" name="significant_call"></textarea>
+            <div class="quick-controls" style="margin-top:8px">
+              <label>Type<select id="callType"><option value="MASCAS">MASCAS</option><option value="Fire dealt with by Engine-1">Fire dealt with by Engine-1</option><option value="Dive Rescue">Dive Rescue</option><option value="Other">Other</option></select></label>
+              <label id="callDetailsWrap"><span id="callDetailsLabel">MASCAS number</span><input id="callDetails" type="number" min="1" step="1" placeholder="5"></label>
+              <label>Location<input id="callLocation" placeholder="Casino"></label>
+              <label id="divePerformedByWrap" hidden>Dive rescue performed by<select id="divePerformedBy"><option value="">Choose an active unit</option></select></label>
+              <button type="button" class="primary" id="addSignificantCall">Add call</button>
+            </div>
+            <p id="callMessage" role="status" aria-live="polite"></p>
+          </div>
+          <label>Coverage gaps<div id="coverageGapChoices" class="choice-list"><label><input type="checkbox" value="Blue"> Blue</label><label><input type="checkbox" value="Green"> Green</label><label><input type="checkbox" value="Engine"> Engine</label><label><input type="checkbox" value="Hazmat"> Hazmat</label><label><input type="checkbox" value="Dive"> Dive</label></div><textarea name="coverage_gaps" placeholder="Select coverage gaps or add details"></textarea></label>
+          <div class="watch-field">
+            <label for="watchTransitionText">Watch Command transition</label>
+            <textarea id="watchTransitionText" name="watch_transition"></textarea>
+            <div class="quick-controls" style="grid-template-columns:minmax(0,1fr) auto">
+              <label>New Watch Commander Callsign<input id="transitionCallsign" maxlength="32" placeholder="Enter callsign" autocomplete="off" list="watchCallsignChoices"></label>
+              <button type="button" class="primary" id="transferWatchCommand">Add transition</button>
+            </div>
+          </div>
+          <label>Safety concerns<div id="safetyConcernChoices" class="choice-list"><label><input type="checkbox" value="Chemical Leak"> Chemical Leak</label><label><input type="checkbox" value="Houses on Fire"> Houses on Fire</label><label><input type="checkbox" value="Code Red"> Code Red</label></div><textarea name="safety_concerns" placeholder="Select concerns or add details"></textarea></label>
+        </div>
+      </section>
+      <div class="watch-submit-row">
+        <button class="primary" type="submit" id="saveWatch">End Watch &amp; Save</button>
+        <button type="button" id="copyCurrentWatch">Copy report for Discord</button>
+        <span id="watchMessage" role="status" aria-live="polite"></span>
+      </div>
+    </form>
+
+    <section class="watch-card" aria-labelledby="previousWatchesHeading">
+      <h2 id="previousWatchesHeading">Recent Watch Logs</h2>
+      <div id="watchHistory" aria-live="polite"><p class="watch-empty">Loading watch logs…</p></div>
+    </section>
+  </main>
+  <script src="/static/public-config.js"></script>
+  <script src="/static/google-auth.js"></script>
+  <script src="/static/account-settings.js?v=account-settings-1"></script>
+  <script src="/static/watch_command.js?v=54"></script>
+</body>
+</html>

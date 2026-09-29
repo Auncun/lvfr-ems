@@ -1,0 +1,5 @@
+/login /login.html 200
+/portal /portal.html 200
+/administration /administration.html 200
+/watch-command /watch_command.html 200
+/verification-pending /verification_pending.html 200

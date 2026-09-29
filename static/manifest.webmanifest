@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "LVFR EMS Operations",
+  "short_name": "LVFR EMS",
+  "description": "LVFR EMS personnel and operations tools",
+  "lang": "en",
+  "start_url": "/portal",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b1017",
+  "theme_color": "#101720",
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

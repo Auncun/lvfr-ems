@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101720">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
+  <title>Account access · LVFR EMS</title>
+  <link rel="stylesheet" href="/static/style.css?v=local-accounts-2">
+  <style>
+    body{min-height:100vh;display:grid;place-items:center;padding:18px;background:#0b1017}
+    .auth-card{width:min(430px,100%);padding:28px;background:#111720;border:1px solid #303945;border-radius:14px}
+    .auth-card h1{margin:0 0 8px}.auth-card>p{color:#9aa4b2;margin:0 0 20px}
+    .auth-tabs{display:flex;gap:8px;margin-bottom:18px}.auth-tabs button{flex:1}
+    .auth-form{display:grid;gap:12px}.auth-form label{display:grid;gap:6px;text-align:left}
+    .auth-form[hidden]{display:none!important}
+    .auth-form input{width:100%;box-sizing:border-box}.auth-form .check{display:flex;align-items:center;gap:8px}
+    .auth-form .check input{width:auto}.auth-message{min-height:20px;color:#ff8178;font-size:13px}
+    .auth-message.success{color:#56d364}.auth-note{font-size:12px;color:#8b949e;line-height:1.4}
+  </style>
+</head>
+<body>
+  <main class="auth-card">
+    <h1>LVFR EMS Operations</h1>
+    <p>Sign in or request an account.</p>
+    <button type="button" id="installAppButton" hidden>Install app</button>
+    <div class="auth-form">
+      <button type="button" id="googleSignInButton" class="primary">Continue with Google</button>
+      <p class="auth-note">Use the Google account linked to your approved LVFR account. New account linking is managed by an administrator.</p>
+    </div>
+    <details class="auth-note" style="margin-top:18px">
+      <summary>Request a new LVFR account</summary>
+      <form id="signupForm" class="auth-form" style="margin-top:12px">
+        <label>Name<input name="name" minlength="2" maxlength="48" autocomplete="name" required></label>
+        <label>Callsign<input name="callsign" maxlength="48" autocomplete="off" autocapitalize="characters" required></label>
+        <button type="submit">Continue with Google and request access</button>
+      </form>
+    </details>
+    <div id="authMessage" class="auth-message" role="status"></div>
+  </main>
+  <script src="/static/public-config.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async></script>
+  <script src="/static/google-auth.js"></script>
+  <script src="/static/login.js?v=google-oauth-1"></script>
+  <script src="/static/pwa.js"></script>
+</body>
+</html>

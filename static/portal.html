@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101720">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
+  <title>Choose an application · LVFR</title>
+  <link rel="stylesheet" href="/static/style.css?v=application-portal-4">
+  <style>
+    body{min-height:100vh;display:grid;place-items:center;padding:24px;background:#0b1017;color:#f3f6fa}
+    main{width:min(920px,100%)}
+    .portal-heading{text-align:center;margin-bottom:30px}
+    .portal-brand{display:flex;justify-content:center;align-items:center;gap:12px;margin-bottom:12px}
+    .portal-header-actions{display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:24px}
+    .portal-heading p{color:#9aa4b2;margin:8px 0}
+    .portal-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
+    .portal-card{display:flex;min-height:190px;flex-direction:column;justify-content:space-between;padding:24px;border:1px solid #303945;border-radius:16px;background:#111720;text-decoration:none;color:inherit;transition:border-color .15s,transform .15s}
+    #administrationCard[hidden]{display:none}
+    #emsCard[hidden]{display:none}
+    .portal-card:hover{border-color:#62a0ea;transform:translateY(-2px)}
+    .portal-card h2{margin:0 0 10px}.portal-card p{color:#9aa4b2;line-height:1.5;margin:0}
+    .portal-card span{align-self:flex-start;margin-top:22px;color:#8bbcff;font-weight:700}
+    .portal-footer{text-align:center;margin-top:22px}.portal-footer button{background:transparent}
+  </style>
+</head>
+<body>
+  <main>
+    <header class="portal-heading">
+      <div class="portal-brand"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"><h1>Choose an application</h1></div>
+      <p>Select where you want to continue.</p>
+    </header>
+    <div class="portal-header-actions"><span id="accountName" class="status-dot account-user-name"></span><button type="button" id="installAppButton" hidden>Install app</button><button type="button" id="manageAccountButton">Account settings</button><button type="button" data-action="logout">Log out</button></div>
+    <section class="portal-options" aria-label="Available applications">
+      <a class="portal-card" id="emsCard" href="/" hidden>
+        <div><h2>LVFR EMS Operations</h2><p>Open the member directory, training, ranks, and operations tools.</p></div>
+        <span>Open application →</span>
+      </a>
+      <a class="portal-card" href="/watch-command">
+        <div><h2>Watch Command</h2><p>Open the Watch Command workspace.</p></div>
+        <span>Open Watch Command →</span>
+      </a>
+      <a class="portal-card" id="administrationCard" href="/administration" hidden>
+        <div><h2>Commander</h2><p>Manage account access, roles, and account history.</p></div>
+        <span>Manage accounts</span>
+      </a>
+    </section>
+  </main>
+  <script src="/static/public-config.js"></script>
+  <script src="/static/google-auth.js"></script>
+  <script src="/static/account-settings.js?v=account-settings-1"></script>
+  <script src="/static/portal.js?v=commander-all-pages-1"></script>
+  <script src="/static/pwa.js"></script>
+</body>
+</html>
