@@ -48,24 +48,33 @@ export async function onRequest(context) {
   }
 
   let payload;
+  const finalUrl = (() => {
+    try {
+      const url = new URL(upstream.url);
+      return `${url.origin}${url.pathname}`;
+    } catch {
+      return "unknown";
+    }
+  })();
+  const contentType = upstream.headers.get('content-type') || 'unknown';
   try {
     payload = JSON.parse(await upstream.text());
   } catch (error) {
     console.error('Apps Script returned a non-JSON response:', {
       status: upstream.status,
-      contentType: upstream.headers.get('content-type'),
-      finalUrl: upstream.url,
+      contentType,
+      finalUrl,
       error,
     });
     return Response.json({
-      detail: `Apps Script returned an unreadable response (HTTP ${upstream.status}). Confirm the Web App is deployed to execute as you and is accessible to users.`
+      detail: `Apps Script returned a non-JSON response (HTTP ${upstream.status}, ${contentType}) from ${finalUrl}. Check the Cloudflare GAS_WEB_APP_URL override and confirm the Apps Script /exec deployment is active, executes as you, and allows access to users.`
     }, { status: 502 });
   }
 
   if (!payload || typeof payload !== 'object' || typeof payload.ok !== 'boolean') {
     console.error('Apps Script response did not use the expected API format:', {
       status: upstream.status,
-      finalUrl: upstream.url,
+      finalUrl,
     });
     return Response.json({
       detail: `The deployed Apps Script is not running the expected API version (HTTP ${upstream.status}). Replace Code.gs and deploy a new version.`
