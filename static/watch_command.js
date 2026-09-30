@@ -26,6 +26,7 @@ const formUnitMembers = document.querySelector('#formUnitMembers');
 const formUnitSubmit = document.querySelector('#submitFormUnit');
 const formUnitMessage = document.querySelector('#formUnitMessage');
 const memberNameCache = new Map();
+let suppressBackgroundSaveSuccess = false;
 let memberLookupTimer;
 let initialMemberLookupTimer;
 let loggedInCommander = null;
@@ -84,10 +85,37 @@ function ensureDraftId() {
   return id;
 }
 function setMessage(target, text, kind = '') {
+  if (/^Saving\b/i.test(String(text || ''))) return;
+  if (kind === 'success' && suppressBackgroundSaveSuccess) {
+    suppressBackgroundSaveSuccess = false;
+    return;
+  }
   target.textContent = text;
   target.className = kind;
 }
 async function request(url, options = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  if (method === 'POST' && new URL(url, location.href).pathname === '/api/watch-command') {
+    const pending = fetch(url, {
+      ...options,
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    }).then(async response => {
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401) {
+        location.assign('/login');
+        throw new Error('Your session expired. Sign in again.');
+      }
+      if (!response.ok) throw new Error(data.detail || 'Save failed.');
+      loadHistory();
+    }).catch(error => {
+      setMessage(message, `Save failed: ${error.message}. The local watch view may differ from the Sheet. Reload Watch Command to load the saved data.`, 'error');
+    });
+    suppressBackgroundSaveSuccess = true;
+    setTimeout(() => { suppressBackgroundSaveSuccess = false; }, 0);
+    void pending;
+    return { background_pending: true };
+  }
   const response = await fetch(url, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },

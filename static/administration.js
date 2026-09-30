@@ -117,14 +117,12 @@ async function loadNotifications() {
   }
 }
 async function markNotificationsRead(ids = []) {
-  try {
-    await api('/api/notifications/read', { method: 'POST', body: JSON.stringify({ ids }) });
-    const selected = new Set(ids.map(Number));
-    notificationItems = notificationItems.map(item => !ids.length || selected.has(Number(item.id)) ? { ...item, is_read: 1 } : item);
-    renderNotifications();
-  } catch (error) {
-    setMessage(error.message, 'error');
-  }
+  const selected = new Set(ids.map(Number));
+  notificationItems = notificationItems.map(item => !selected.size || selected.has(Number(item.id)) ? { ...item, is_read: 1 } : item);
+  renderNotifications();
+  void api('/api/notifications/read', { method: 'POST', body: JSON.stringify({ ids }) }).catch(error => {
+    setMessage(`Save failed: ${error.message}. Notification state may differ from Google Sheets. Reload notifications to refresh it.`, 'error');
+  });
 }
 async function performAction(button) {
   const { action, id } = button.dataset;
@@ -151,16 +149,28 @@ async function performAction(button) {
     delete: `/api/leaders/${encodeURIComponent(id)}`,
   };
   const method = action === 'delete' ? 'DELETE' : 'POST';
+  applyOptimisticAccountAction(account, action);
   button.disabled = true;
-  try {
-    const result = await api(paths[action], { method });
-    setMessage(result.status === 'saving' || result.status === 'queued'
-      ? 'Change queued for saving.' : 'Account updated.', 'success');
-    await loadAccounts();
-  } catch (error) {
-    setMessage(error.message, 'error');
-    button.disabled = false;
+  void api(paths[action], { method }).catch(error => {
+    setMessage(`Save failed: ${error.message}. The account view may differ from Google Sheets. Use Refresh Accounts to reload the correct data.`, 'error');
+  });
+}
+
+function applyOptimisticAccountAction(source, action) {
+  const account = { ...source };
+  for (const key of ['pending', 'approved', 'deactivated']) {
+    overview[key] = (overview[key] || []).filter(row => String(row.account_id) !== String(account.account_id));
   }
+  if (action === 'allow') { account.status = 'approved'; account.role = 'member'; account.is_admin = false; }
+  else if (action === 'deny' || action === 'delete') return renderAccounts();
+  else if (action === 'promote') { account.role = 'admin'; account.is_admin = true; }
+  else if (action === 'demote') { account.role = 'leader'; account.is_admin = false; }
+  else if (action === 'member') account.role = 'member';
+  else if (action === 'leader') account.role = 'leader';
+  else if (action === 'deactivate') account.status = 'deactivated';
+  else if (action === 'reactivate') account.status = 'approved';
+  (overview[account.status] || (overview[account.status] = [])).unshift(account);
+  renderAccounts();
 }
 document.querySelector('#accountRows').addEventListener('click', event => {
   const button = event.target.closest('button[data-action]');

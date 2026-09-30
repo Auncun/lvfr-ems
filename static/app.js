@@ -1,6 +1,7 @@
 ﻿const $ = s => document.querySelector(s);
 
 let config = {};
+const BACKGROUND_PENDING_MESSAGE = "BACKGROUND_SAVE_PENDING";
 
 
 // ============================================================
@@ -43,13 +44,15 @@ async function api(url, options = {}) {
 }
 
 function isBackgroundMutationRequest(url, options) {
-    if (String(options.method || "GET").toUpperCase() !== "POST") return false;
+    const method = String(options.method || "GET").toUpperCase();
+    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return false;
     const path = new URL(url, location.href).pathname;
     return new Set([
         "/api/activity", "/api/note", "/api/date", "/api/training", "/api/exam",
         "/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank",
-        "/api/change-callsign", "/api/terminate"
-    ]).has(path) || /^\/api\/member\/[^/]+\/instructor$/.test(path);
+        "/api/change-callsign", "/api/terminate", "/api/notifications/read"
+    ]).has(path) || /^\/api\/member\/[^/]+\/instructor$/.test(path) ||
+        /^\/api\/leaders\/[^/]+(?:\/(?:allow|deny|admin|demote|member|leader|deactivate|reactivate))?$/.test(path);
 }
 
 function startBackgroundMutation(url, options) {
@@ -58,7 +61,7 @@ function startBackgroundMutation(url, options) {
     try { payload = JSON.parse(options.body || "{}"); } catch {}
     const callsignMatch = path.match(/^\/api\/member\/([^/]+)\/instructor$/);
     const callsign = String(payload.callsign || (callsignMatch ? decodeURIComponent(callsignMatch[1]) : ""));
-    const rollback = applyOptimisticMutation(path, payload, callsign);
+    applyOptimisticMutation(path, payload, callsign);
     const request = fetch(url, {
         ...options,
         keepalive: true,
@@ -70,16 +73,14 @@ function startBackgroundMutation(url, options) {
             throw new Error("Your session expired. Please sign in again.");
         }
         if (!response.ok) throw new Error(result.detail || result.error || "Save failed.");
-        toast("Saved to Google Sheets.");
         window.dispatchEvent(new CustomEvent("lvfr:background-updated", { detail: { route: path, callsign, result } }));
         return result;
     }).catch(error => {
-        rollback();
-        toast(`Save failed: ${error.message || "Network error"}`);
+        toast(`Save failed: ${error.message || "Network error"}. The page may differ from Google Sheets. Use Sync now to reload the correct data.`);
     });
     // Let the click handler stop waiting while fetch continues independently.
     void request;
-    throw new Error("Saving to Google Sheets in the background…");
+    throw new Error(BACKGROUND_PENDING_MESSAGE);
 }
 
 function rankForCallsign(callsign) {
@@ -89,9 +90,21 @@ function rankForCallsign(callsign) {
 }
 
 function applyOptimisticMutation(route, payload, callsign) {
+    if (route.startsWith("/api/leaders/")) {
+        applyOptimisticAccountMutation(route);
+        return;
+    }
+    if (route === "/api/notifications/read") {
+        const readIds = new Set((payload.ids || []).map(Number));
+        notificationItems = notificationItems.map(item =>
+            !readIds.size || readIds.has(Number(item.id)) ? { ...item, is_read: 1 } : item
+        );
+        renderNotifications();
+        return;
+    }
     const key = String(callsign || "").trim().toUpperCase();
     const previous = memberCache.get(key);
-    if (!previous) return () => {};
+    if (!previous) return;
     const before = { ...previous };
     const updated = { ...previous };
     if (route === "/api/activity") updated.activity = payload.activity;
@@ -121,16 +134,40 @@ function applyOptimisticMutation(route, payload, callsign) {
     } else if (route === "/api/terminate") {
         memberCache.delete(key);
         removeCachedMemberRow(key);
-        return () => { memberCache.set(key, before); paintCachedMemberRow(before, key); };
+        return;
     }
     memberCache.set(key, updated);
     paintCachedMemberRow(updated, key);
     if (activeProfileMember?.callsign?.toUpperCase() === key && route !== "/api/change-callsign") profile(key, true);
-    return () => {
-        memberCache.set(key, before);
-        paintCachedMemberRow(before, key);
-        if (activeProfileMember?.callsign?.toUpperCase() === key) profile(key, true);
-    };
+}
+
+function applyOptimisticAccountMutation(route) {
+    const match = route.match(/^\/api\/leaders\/([^/]+)(?:\/([^/]+))?$/);
+    if (!match || !Array.isArray(leaderRows.approved)) return;
+    const accountId = decodeURIComponent(match[1]);
+    const action = match[2] || "delete";
+    const groups = ["pending", "approved", "deactivated"];
+    let account;
+    for (const group of groups) {
+        const list = leaderRows[group] || [];
+        const index = list.findIndex(row => String(row.account_id) === accountId);
+        if (index < 0) continue;
+        account = { ...list[index] };
+        list.splice(index, 1);
+        break;
+    }
+    if (!account) return;
+    if (action === "allow") { account.status = "approved"; account.role = "member"; account.is_admin = false; }
+    else if (action === "deny" || action === "delete") account = null;
+    else if (action === "admin") { account.role = "admin"; account.is_admin = true; }
+    else if (action === "demote") { account.role = "leader"; account.is_admin = false; }
+    else if (action === "member") account.role = "member";
+    else if (action === "leader") account.role = "leader";
+    else if (action === "deactivate") account.status = "deactivated";
+    else if (action === "reactivate") account.status = "approved";
+    if (account) (leaderRows[account.status] || (leaderRows[account.status] = [])).unshift(account);
+    leaderAuditRows.unshift({ name: account?.name || "", action, actor_name: "You", created_at: new Date().toISOString() });
+    renderLeaders();
 }
 
 function removeCachedMemberRow(callsign) {
@@ -183,6 +220,7 @@ window.addEventListener("lvfr:background-updated", event => {
     const activeTab = $(".tab.active")?.dataset.tab;
     if (activeTab === "eligible") loadEligible();
     if (activeTab === "inactive") loadInactive();
+    if (String(event.detail?.route || "").startsWith("/api/leaders/")) loadLeaders();
     if (callsign && activeProfileMember?.callsign?.toUpperCase() === callsign.toUpperCase()) profile(callsign, true);
     const logType = {
         "/api/training": "training", "/api/exam": "exam", "/api/note": "note",
@@ -282,6 +320,8 @@ function esc(x) {
 
 
 function toast(msg) {
+
+    if (String(msg || "") === BACKGROUND_PENDING_MESSAGE) return;
 
     const x = $("#toast");
 
@@ -3846,14 +3886,20 @@ if (syncButton) {
                     `Google Sheet synchronized - ${r.result?.members ?? 0} members`
                 );
 
+                const sourceMembers = await api("/api/members");
+                memberCache.clear();
+                sourceMembers.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
+                memberListRenderKey = "";
 
+                const activeTab = $(".tab.active")?.dataset.tab;
                 await Promise.all([
-
                     loadMembers(),
-
-                    syncStatus()
-
+                    syncStatus(),
+                    ...(activeTab === "eligible" ? [loadEligible()] : []),
+                    ...(activeTab === "inactive" && currentUserIsAdmin ? [loadInactive()] : [])
                 ]);
+
+                if (activeProfileMember?.callsign) profile(activeProfileMember.callsign, true);
 
 
             } catch (e) {
@@ -4152,7 +4198,9 @@ async function loadAccount() {
         currentUserAccountId = String(user.account_id || user.id || "");
         currentUserIsCommand = Boolean(user.is_command);
         const commandSyncPanel = $("#commandSyncPanel");
-        if (commandSyncPanel) commandSyncPanel.hidden = !(currentUserIsCommand || currentUserIsAdmin);
+        if (commandSyncPanel) commandSyncPanel.hidden = user.role === "member";
+        const autoSyncControl = $("#autoSyncBtn");
+        if (autoSyncControl) autoSyncControl.hidden = !(currentUserIsCommand || currentUserIsAdmin);
         currentInstructorTypes = String(user.instructor_type || "")
             .split("/").map(value => value.trim().toUpperCase()).filter(Boolean);
         const account = $("#accountName");

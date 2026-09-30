@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-09-30-optimistic-save-4',
+  apiVersion: '2026-09-30-optimistic-sync-5',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -73,7 +73,11 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/eligible' && method === 'GET') { requireLeader_(user); return eligibleMembers_(); }
   if (route === '/api/inactive' && method === 'GET') { requireAdmin_(user); return inactiveMembers_(); }
   if (route === '/api/sync-status' && method === 'GET') { requireLeader_(user); return syncStatus_(); }
-  if (route === '/api/sync' && method === 'POST') { requireCommand_(user); return { ok: true, message: 'Google Sheet synchronized', result: { members: listMembers_('').length } }; }
+  if (route === '/api/sync' && method === 'POST') {
+    requireLeader_(user);
+    invalidateRosterCache_();
+    return { ok: true, message: 'Google Sheet synchronized', result: { members: listMembers_('').length } };
+  }
   if (route === '/api/sync/auto' && method === 'POST') { requireCommand_(user); return { ok: true, auto_enabled: Boolean(data.enabled), interval_seconds: 15 }; }
   if (route === '/api/notifications' && method === 'GET') { requireApproved_(user); return { items: [], unread_count: 0 }; }
   if (route === '/api/notifications/read' && method === 'POST') { requireApproved_(user); return { ok: true }; }
