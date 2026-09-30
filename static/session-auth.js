@@ -4,9 +4,16 @@
   const nativeFetch = window.fetch.bind(window);
   const apiPrefix = /^(?:\/api\/|\/auth\/)/;
 
-  window.lvfrSessionToken = () => sessionStorage.getItem(TOKEN_KEY) || '';
-  window.lvfrSetSession = token => sessionStorage.setItem(TOKEN_KEY, token);
-  window.lvfrForgetSession = () => sessionStorage.removeItem(TOKEN_KEY);
+  window.lvfrSessionToken = () => localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || '';
+  window.lvfrSetSession = (token, remember = false) => {
+    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
+    (remember ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
+  };
+  window.lvfrForgetSession = () => {
+    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
+  };
 
   window.fetch = (input, init = {}) => {
     const requestUrl = input instanceof Request ? input.url : String(input);

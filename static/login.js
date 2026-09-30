@@ -17,6 +17,8 @@ async function submitAuth(form, route) {
   const button = form.querySelector('button[type="submit"]');
   const fields = Object.fromEntries(new FormData(form));
   if (fields.name) fields.name = String(fields.name).trim().replace(/\s+/g, ' ');
+  const remember = fields.remember_me === 'on';
+  fields.remember_me = remember;
   button.disabled = true;
   message.className = 'auth-message';
   message.textContent = route === '/auth/login' ? 'Signing in…' : 'Submitting account request…';
@@ -30,7 +32,7 @@ async function submitAuth(form, route) {
       message.className = 'auth-message success';
       return;
     }
-    window.lvfrSetSession(result.token);
+    window.lvfrSetSession(result.token, remember);
     await checkAccount();
   } catch (error) {
     message.textContent = error.message;
@@ -39,4 +41,10 @@ async function submitAuth(form, route) {
 
 loginForm.addEventListener('submit', event => { event.preventDefault(); submitAuth(loginForm, '/auth/login'); });
 signupForm.addEventListener('submit', event => { event.preventDefault(); submitAuth(signupForm, '/auth/signup'); });
+document.querySelectorAll('[data-show-password]').forEach(toggle => {
+  toggle.addEventListener('change', () => {
+    const password = toggle.closest('form').querySelector('input[name="password"]');
+    password.type = toggle.checked ? 'text' : 'password';
+  });
+});
 if (window.lvfrSessionToken()) checkAccount().catch(() => {});

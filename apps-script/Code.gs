@@ -141,7 +141,11 @@ function requireUser_(sessionToken) {
   if (!sessionToken) throw new Error('Sign in with your name and password.');
   const cache = CacheService.getScriptCache();
   const key = sessionCacheKey_(sessionToken);
-  const accountId = cache.get(key);
+  let accountId = cache.get(key);
+  if (!accountId) {
+    accountId = findRememberedSession_(sessionToken);
+    if (accountId) cache.put(key, accountId, 21600);
+  }
   if (!accountId) throw new Error('Your session expired. Sign in again.');
   const account = findAccountById_(accountId);
   if (!account) { cache.remove(key); throw new Error('Account not found.'); }
@@ -149,21 +153,33 @@ function requireUser_(sessionToken) {
 }
 
 function loginWithPassword_(data) {
-  const name = normalizeMemberName_(data.name), password = String(data.password || '');
+  const name = normalizeMemberName_(data.username || data.name), password = String(data.password || '');
   const cache = CacheService.getScriptCache();
   const throttleKey = 'login-attempts:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, name)).replace(/=+$/, '');
   const attempts = Number(cache.get(throttleKey) || 0);
   if (attempts >= 8) throw new Error('Too many sign-in attempts. Wait 10 minutes and try again.');
   const account = findAccountByName_(name);
-  if (!account || !account.passwordSalt || !account.passwordHash || !constantTimeEquals_(passwordHash_(password, account.passwordSalt), account.passwordHash)) {
+  const storedHash = account && account.passwordHash || '';
+  const isCurrentHash = storedHash.indexOf('v2$') === 0;
+  const verified = account && account.passwordSalt && storedHash && constantTimeEquals_(
+    isCurrentHash ? passwordHash_(password, account.passwordSalt) : legacyPasswordHash_(password, account.passwordSalt),
+    isCurrentHash ? storedHash.slice(3) : storedHash
+  );
+  if (!verified) {
     cache.put(throttleKey, String(attempts + 1), 600);
     throw new Error('Incorrect name or password.');
   }
   cache.remove(throttleKey);
   if (['denied', 'removed', 'deactivated'].includes(account.status)) throw new Error('This account is inactive. Contact a Commander.');
+  if (!isCurrentHash) {
+    const upgradedHash = 'v2$' + passwordHash_(password, account.passwordSalt);
+    account._sheet.getRange(account._row, 17).setValue(upgradedHash);
+    account.passwordHash = upgradedHash;
+  }
   applyCurrentRosterIdentity_(account);
   const token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
   CacheService.getScriptCache().put(sessionCacheKey_(token), account.accountId, 21600);
+  if (String(data.remember_me || '').toLowerCase() === 'on' || data.remember_me === true) saveRememberedSession_(token, account.accountId);
   return { token: token, user: publicUser_(account) };
 }
 
@@ -176,7 +192,7 @@ function signupWithPassword_(data) {
   if (name.length < 2 || name.length > 48) throw new Error('Name must be between 2 and 48 characters.');
   if (!/^[A-Za-z0-9]{4,20}$/.test(password)) throw new Error('Password must be 4–20 letters or numbers.');
   const salt = Utilities.getUuid().replace(/-/g, '');
-  const hash = passwordHash_(password, salt);
+  const hash = 'v2$' + passwordHash_(password, salt);
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
@@ -196,8 +212,14 @@ function signupWithPassword_(data) {
 function normalizeMemberName_(value) { return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
 function sessionCacheKey_(token) { return 'session:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token))).replace(/=+$/, ''); }
 function passwordHash_(password, salt) {
+  return iterativePasswordHash_(password, salt, 8000);
+}
+function legacyPasswordHash_(password, salt) {
+  return iterativePasswordHash_(password, salt, 30000);
+}
+function iterativePasswordHash_(password, salt, rounds) {
   let value = String(salt) + ':' + String(password);
-  for (let i = 0; i < 30000; i++) value = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value));
+  for (let i = 0; i < rounds; i++) value = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value));
   return value;
 }
 function constantTimeEquals_(a, b) {
@@ -205,7 +227,47 @@ function constantTimeEquals_(a, b) {
   for (let i = 0, n = Math.max(a.length, b.length); i < n; i++) diff |= (a.charCodeAt(i % (a.length || 1)) || 0) ^ (b.charCodeAt(i % (b.length || 1)) || 0);
   return diff === 0;
 }
-function logoutSession_(token) { if (token) CacheService.getScriptCache().remove(sessionCacheKey_(token)); }
+function logoutSession_(token) {
+  if (!token) return;
+  CacheService.getScriptCache().remove(sessionCacheKey_(token));
+  const sheet = rememberedSessionsSheet_(false);
+  if (!sheet || sheet.getLastRow() < 2) return;
+  const hash = sessionTokenHash_(token), hashes = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getDisplayValues();
+  const index = hashes.findIndex(row => row[0] === hash);
+  if (index >= 0) sheet.deleteRow(index + 2);
+}
+function sessionTokenHash_(token) {
+  return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token))).replace(/=+$/, '');
+}
+function rememberedSessionsSheet_(create) {
+  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+  let sheet = spreadsheet.getSheetByName('Auth Sessions');
+  if (!sheet && create) {
+    sheet = spreadsheet.insertSheet('Auth Sessions');
+    sheet.getRange(1, 1, 1, 4).setValues([['Token Hash', 'Account ID', 'Expires At', 'Created At']]);
+  }
+  return sheet;
+}
+function saveRememberedSession_(token, accountId) {
+  const sheet = rememberedSessionsSheet_(true), now = Date.now();
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    const rows = sheet.getRange(2, 1, lastRow - 1, 4).getDisplayValues();
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (!rows[i][2] || Date.parse(rows[i][2]) <= now) sheet.deleteRow(i + 2);
+    }
+  }
+  sheet.appendRow([sessionTokenHash_(token), accountId, new Date(now + 30 * 86400000).toISOString(), new Date(now).toISOString()]);
+}
+function findRememberedSession_(token) {
+  const sheet = rememberedSessionsSheet_(false);
+  if (!sheet || sheet.getLastRow() < 2) return null;
+  const hash = sessionTokenHash_(token), rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getDisplayValues();
+  const row = rows.find(item => item[0] === hash);
+  const expiresAt = row ? Date.parse(row[2]) : NaN;
+  if (!row || !row[1] || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
+  return row[1];
+}
 function findAccountById_(id) {
   const cache = CacheService.getScriptCache(), key = accountCacheKey_(id), cached = cache.get(key);
   if (cached) { try { return JSON.parse(cached); } catch (ignored) {} }
@@ -216,21 +278,44 @@ function findAccountById_(id) {
   return account;
 }
 function findAccountByName_(name) {
-  const rows = accountRows_().rows.filter(row => normalizeMemberName_(row[1]) === name && !['removed', 'denied'].includes(String(row[5] || '').toLowerCase()));
+  const directory = accountRows_();
+  const matches = directory.rows.map((row, index) => ({ row, index }))
+    .filter(item => normalizeMemberName_(item.row[1]) === name && !['removed', 'denied'].includes(String(item.row[5] || '').toLowerCase()));
+  const rows = matches.map(item => item.row);
   if (rows.length > 1) throw new Error('More than one account matches this name. Contact a Commander.');
   if (!rows.length) return null;
   const row = rows[0];
-  return { accountId: String(row[0] || ''), name: String(row[1] || ''), callsign: String(row[2] || ''), status: String(row[5] || '').toLowerCase(), role: String(row[6] || 'member').toLowerCase(), passwordSalt: String(row[15] || ''), passwordHash: String(row[16] || '') };
+  return { accountId: String(row[0] || ''), name: String(row[1] || ''), callsign: String(row[2] || ''), status: String(row[5] || '').toLowerCase(), role: String(row[6] || 'member').toLowerCase(), passwordSalt: String(row[15] || ''), passwordHash: String(row[16] || ''), _row: matches[0].index + 2, _sheet: directory.sheet };
 }
 function accountCacheKey_(id) {
   return 'account-id:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(id))).replace(/=+$/, '');
 }
 function rosterMembersByName_() {
+  const cache = CacheService.getScriptCache(), key = 'roster:name-index:v1';
+  const cached = cache.get(key);
+  if (cached) {
+    try {
+      const index = new Map();
+      JSON.parse(cached).forEach(([name, member]) => index.set(name, member));
+      return index;
+    } catch (ignored) {}
+  }
   const membersByName = new Map();
-  listMembers_('').forEach(member => {
-    const key = normalizeMemberName_(member.name);
-    membersByName.set(key, membersByName.has(key) ? null : member);
+  const sheet = rosterSheet_();
+  if (!sheet) throw new Error('Roster sheet was not found.');
+  const count = Math.max(0, sheet.getLastRow() - 1);
+  if (!count) return membersByName;
+  sheet.getRange(2, 2, count, 2).getDisplayValues().forEach(row => {
+    const callsign = String(row[0] || '').trim().toUpperCase();
+    const name = String(row[1] || '').trim();
+    if (!name || !/^[A-Z]+-\d+$/.test(callsign) || LVFR.ignoredCallsigns.has(callsign)) return;
+    const key = normalizeMemberName_(name);
+    membersByName.set(key, membersByName.has(key) ? null : { name, callsign });
   });
+  try {
+    const serialized = JSON.stringify(Array.from(membersByName.entries()));
+    if (serialized.length < 90000) cache.put(key, serialized, 60);
+  } catch (ignored) {}
   return membersByName;
 }
 function findRosterMemberByName_(name) {
@@ -240,6 +325,7 @@ function findRosterMemberByName_(name) {
   return members.get(name);
 }
 function applyCurrentRosterIdentity_(account) {
+  if (normalizeMemberName_(account.name) === 'admin' && String(account.role || '').toLowerCase() === 'admin' && !String(account.callsign || '').trim()) return account;
   const member = findRosterMemberByName_(normalizeMemberName_(account.name));
   if (!member) throw new Error('Your name was not found on the current LVFR roster. Contact a Commander.');
   account.name = member.name;
@@ -364,6 +450,7 @@ function listMembers_(search) {
 function invalidateRosterCache_() {
   const cache = CacheService.getScriptCache();
   const cacheKey = 'roster:members:v2';
+  cache.remove('roster:name-index:v1');
   cache.remove('leader-overview:v1');
   cache.remove('leader-overview:v2');
   const index = cache.get(cacheKey);
@@ -934,6 +1021,38 @@ function accountRows_() {
   if (!sheet || sheet.getLastRow() < 2) return { sheet, rows: [] };
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(17, sheet.getLastColumn())).getDisplayValues();
   return { sheet, rows };
+}
+
+// Run manually once from the Apps Script editor after setting the private
+// LVFR_INITIAL_ADMIN_PASSWORD script property. The property is deleted after
+// success; no reset route is exposed through the public API.
+function resetAllAccountsAndCreateAdmin() {
+  const properties = PropertiesService.getScriptProperties();
+  const password = String(properties.getProperty('LVFR_INITIAL_ADMIN_PASSWORD') || '');
+  if (!password) throw new Error('Set the private LVFR_INITIAL_ADMIN_PASSWORD script property before running this reset.');
+  if (!/^[A-Za-z0-9]{4,20}$/.test(password)) throw new Error('Initial admin password must be 4–20 English letters or numbers.');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+    const sheet = spreadsheet.getSheetByName(LVFR.accountsTab);
+    if (!sheet) throw new Error('The Accounts sheet is not configured. No data was changed.');
+    const lastRow = sheet.getLastRow();
+    const lastColumn = Math.max(17, sheet.getLastColumn());
+    const accountId = Utilities.getUuid();
+    const salt = Utilities.getUuid().replace(/-/g, '');
+    sheet.appendRow([accountId, 'ADMIN', '', '', '', 'approved', 'admin', new Date().toISOString(), new Date().toISOString(), 'Bootstrap', '', '', '', '', '', salt, 'v2$' + passwordHash_(password, salt)]);
+    SpreadsheetApp.flush();
+    if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, lastColumn).clearContent();
+    const sessions = spreadsheet.getSheetByName('Auth Sessions');
+    if (sessions && sessions.getLastRow() > 1) sessions.getRange(2, 1, sessions.getLastRow() - 1, sessions.getLastColumn()).clearContent();
+    SpreadsheetApp.flush();
+    properties.deleteProperty('LVFR_INITIAL_ADMIN_PASSWORD');
+    CacheService.getScriptCache().removeAll(['leader-overview:v1', 'leader-overview:v2', 'account-audit:v1', accountCacheKey_(accountId), 'roster:name-index:v1']);
+    try { recordAccountAudit_(accountId, 'ADMIN', '', 'Account Reset and Admin Created', 'Bootstrap'); }
+    catch (auditError) { console.error('Admin account reset completed but audit logging failed: ' + auditError); }
+    return { ok: true, account: 'ADMIN', status: 'approved', message: 'All account rows were replaced; Account Audit was preserved.' };
+  } finally { lock.releaseLock(); }
 }
 
 function accountObject_(row, membersByName) {

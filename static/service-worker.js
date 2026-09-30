@@ -1,4 +1,4 @@
-const CACHE_NAME = "lvfr-pwa-shell-v10";
+const CACHE_NAME = "lvfr-pwa-shell-v11";
 const OFFLINE_PAGE = "/offline.html";
 
 self.addEventListener("install", event => {
