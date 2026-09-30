@@ -40,7 +40,7 @@ async function submitAuth(form, route) {
       message.className = 'auth-message success';
       return;
     }
-    window.lvfrSetSession(result.token, remember);
+    window.lvfrSetSession(result.token, remember, result.user);
     // The login response already contains the authenticated user. Use it
     // directly instead of making a second /auth/me round-trip before redirect.
     routeForUser(result.user);

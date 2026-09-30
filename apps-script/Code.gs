@@ -201,15 +201,16 @@ function signupWithPassword_(data) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
-    const { sheet, rows } = accountRows_();
+    const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+    const sheet = spreadsheet.getSheetByName(LVFR.accountsTab);
+    const rows = accountRows_(spreadsheet).rows;
     if (!sheet) throw new Error('The Accounts sheet is not configured. Contact a Commander.');
     const existing = rows.filter(row => normalizeMemberName_(row[1]) === memberName && !['removed', 'denied'].includes(String(row[5] || '').toLowerCase()));
     if (existing.length) throw new Error('An account is already linked to this member name. Contact a Commander.');
     const id = Utilities.getUuid(), now = new Date().toISOString();
     sheet.appendRow([id, name, callsign, '', '', 'pending', 'member', now, '', '', '', '', '', '', '', salt, hash]);
-    SpreadsheetApp.flush();
     invalidateAccountRowsCache_();
-    try { recordAccountAudit_(id, name, callsign, 'Account Requested', name); }
+    try { recordAccountAudit_(id, name, callsign, 'Account Requested', name, spreadsheet); }
     catch (auditError) { console.error('Account was saved but audit logging failed: ' + auditError); }
     return { ok: true, status: 'pending', request_id: id, callsign: callsign };
   } finally { lock.releaseLock(); }
@@ -1031,15 +1032,16 @@ function changeInstructor_(callsign, data, user) {
 
 function actorName_(user) { return user.name || user.accountId || 'LVFR user'; }
 
-function accountRows_() {
-  const sheet = accountsSheet_();
+function accountRows_(spreadsheet) {
+  const sheet = accountsSheet_(spreadsheet);
   if (!sheet || sheet.getLastRow() < 2) return { sheet, rows: [] };
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(17, sheet.getLastColumn())).getDisplayValues();
   return { sheet, rows };
 }
 
-function accountsSheet_() {
-  return SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')).getSheetByName(LVFR.accountsTab);
+function accountsSheet_(spreadsheet) {
+  spreadsheet = spreadsheet || SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+  return spreadsheet.getSheetByName(LVFR.accountsTab);
 }
 
 // Cache account rows briefly so consecutive login attempts do not reopen and
@@ -1208,8 +1210,8 @@ function updateAccount_(accountId, action, actor) {
   return { ok: true, status: 'saving' };
 }
 
-function recordAccountAudit_(accountId, name, callsign, action, actorName) {
-  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+function recordAccountAudit_(accountId, name, callsign, action, actorName, spreadsheet) {
+  spreadsheet = spreadsheet || SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
   let sheet = spreadsheet.getSheetByName('Account Audit');
   if (!sheet) sheet = spreadsheet.insertSheet('Account Audit');
   if (sheet.getLastRow() === 0) sheet.appendRow(['Timestamp', 'Account ID', 'Name', 'Callsign', 'Action', 'By']);

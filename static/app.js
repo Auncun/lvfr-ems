@@ -732,6 +732,7 @@ async function loadMembers(silent = false) {
                 const count = $("#memberCount");
                 if (count) count.textContent = String(cachedView.count ?? 0);
                 memberListRenderKey = cachedView.renderKey || memberListRenderKey;
+                if (Array.isArray(cachedView.members)) cachedView.members.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
             }
         } catch {}
 
@@ -875,7 +876,7 @@ async function loadMembers(silent = false) {
         try {
             const html = membersTable.innerHTML;
             if (html.length < 1500000) sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify({
-                viewKey, html, count: rows.length, renderKey, savedAt: Date.now()
+                viewKey, html, count: rows.length, renderKey, members: loadedRows, savedAt: Date.now()
             }));
         } catch {}
 
@@ -2207,7 +2208,7 @@ let profileLoading = false;
 let activeProfileMember = null;
 let profileRenderToken = 0;
 let currentUserIsAdmin = false;
-let currentUserAccountId = "";
+let currentUserAccountId = String(window.lvfrCachedUser?.()?.account_id || window.lvfrCachedUser?.()?.id || "");
 let currentInstructorTypes = [];
 let currentUserIsCommand = false;
 
@@ -4296,6 +4297,7 @@ if (modal) {
 async function loadAccount() {
     try {
         const user = await api("/auth/me");
+        window.lvfrCacheUser?.(user);
         if (user.role === "member") {
             location.replace("/watch-command");
             return;
@@ -4357,7 +4359,24 @@ $("#changePasswordForm")?.addEventListener("submit", async event => {
 
 (async () => {
 
+    const cachedUser = window.lvfrCachedUser?.();
+    if (cachedUser?.role === "member") {
+        location.replace("/watch-command");
+        return;
+    }
+    if (cachedUser) {
+        currentUserIsAdmin = Boolean(cachedUser.is_admin);
+        currentUserAccountId = String(cachedUser.account_id || cachedUser.id || "");
+        currentUserIsCommand = Boolean(cachedUser.is_command);
+        if ($("#accountName")) $("#accountName").textContent = cachedUser.name || "";
+        if ($("#leadersTab")) $("#leadersTab").style.display = cachedUser.is_admin ? "" : "none";
+        if ($("#inactiveTab")) $("#inactiveTab").style.display = cachedUser.is_admin ? "" : "none";
+        if ($("#terminationLogTab")) $("#terminationLogTab").style.display = cachedUser.is_admin ? "" : "none";
+        if ($("#instructorLogTab")) $("#instructorLogTab").style.display = cachedUser.is_admin ? "" : "none";
+    }
+    let rosterLoad = cachedUser ? loadMembers() : null;
     await loadAccount();
+    if (!rosterLoad) rosterLoad = loadMembers();
     try {
         // Independent startup requests run together to avoid serial network
         // round trips before the portal becomes useful.
@@ -4365,7 +4384,7 @@ $("#changePasswordForm")?.addEventListener("submit", async event => {
             health(),
             loadNotifications(),
             loadConfig(),
-            loadMembers(),
+            rosterLoad,
             loadMembersLog("promotion"),
         ]);
         void syncStatus();
