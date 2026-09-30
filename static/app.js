@@ -1,7 +1,9 @@
 ﻿const $ = s => document.querySelector(s);
 
 let config = {};
-const API_READ_CACHE_MS = 15000;
+// Keep brief deduplication for rapid repeat reads while allowing polling to
+// pick up a change from another client without waiting on a stale browser copy.
+const API_READ_CACHE_MS = 5000;
 const apiReadCache = new Map();
 const BACKGROUND_PENDING_MESSAGE = "BACKGROUND_SAVE_PENDING";
 
@@ -853,7 +855,7 @@ async function loadMembers(silent = false) {
 // periodically instead; every device reads the shared Google Sheet.
 setInterval(() => {
     if (!document.hidden && $(".tab.active")?.dataset.tab === "members") loadMembers(true);
-}, 60000);
+}, 15000);
 document.addEventListener("visibilitychange", () => {
     if (!document.hidden && $(".tab.active")?.dataset.tab === "members") loadMembers(true);
 });

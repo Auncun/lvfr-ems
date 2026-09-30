@@ -314,7 +314,7 @@ function rosterMembersByName_() {
   });
   try {
     const serialized = JSON.stringify(Array.from(membersByName.entries()));
-    if (serialized.length < 90000) cache.put(key, serialized, 60);
+    if (serialized.length < 90000) cache.put(key, serialized, 300);
   } catch (ignored) {}
   return membersByName;
 }
@@ -384,14 +384,14 @@ function instructorTypes_(user) {
   return item ? item.type.toUpperCase().split('/').map(value => value.trim()) : [];
 }
 
-function instructorDirectory_() {
+function instructorDirectory_(spreadsheet) {
   const cache = CacheService.getScriptCache();
   const cacheKey = 'instructor-directory:v1';
   const cached = cache.get(cacheKey);
   if (cached) {
     try { return JSON.parse(cached); } catch (ignored) {}
   }
-  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
+  spreadsheet = spreadsheet || SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
   const byName = new Map();
   const addSheet = (title, nameColumn, statusColumn, dateColumn, type) => {
     const sheet = spreadsheet.getSheetByName(title);
@@ -414,7 +414,7 @@ function instructorDirectory_() {
   addSheet('HERT Certified', 2, 6, null, 'HERT');
   addSheet('FIREFIGHTER CERT', 1, 2, 4, 'FORT');
   const result = Array.from(byName.values());
-  try { cache.put(cacheKey, JSON.stringify(result), 60); } catch (ignored) {}
+  try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (ignored) {}
   return result;
 }
 
@@ -426,8 +426,8 @@ function isGreen_(color) {
   return green >= 190 && red <= 51 && blue <= 51;
 }
 
-function rosterSheet_() {
-  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
+function rosterSheet_(spreadsheet) {
+  spreadsheet = spreadsheet || SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
   return spreadsheet.getSheetByName(LVFR.rosterTab) || spreadsheet.getSheetByName('Ranks🎖️');
 }
 
@@ -493,23 +493,25 @@ function writeRosterCache_(cache, cacheKey, records) {
   if (count > 32) return;
   try {
     for (let part = 0; part < count; part++) {
-      cache.put(cacheKey + ':' + part, serialized.slice(part * chunkSize, (part + 1) * chunkSize), 60);
+      cache.put(cacheKey + ':' + part, serialized.slice(part * chunkSize, (part + 1) * chunkSize), 300);
     }
-    cache.put(cacheKey, JSON.stringify({ chunks: count }), 60);
+    cache.put(cacheKey, JSON.stringify({ chunks: count }), 300);
   } catch (ignored) {
     cache.remove(cacheKey);
   }
 }
 
 function readRosterMembers_() {
-  const sheet = rosterSheet_();
+  // Reuse one spreadsheet connection while building a cold roster snapshot.
+  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
+  const sheet = rosterSheet_(spreadsheet);
   if (!sheet) throw new Error('Roster sheet was not found.');
   const count = Math.max(0, sheet.getLastRow() - 1);
   if (!count) return [];
   const values = sheet.getRange(2, 1, count, 13).getDisplayValues();
   const colors = sheet.getRange(2, 1, count, 13).getBackgrounds();
-  const hertByName = hertDirectory_();
-  const instructorsByName = new Map(instructorDirectory_().map(item => [item.name.toLowerCase(), item]));
+  const hertByName = hertDirectory_(spreadsheet);
+  const instructorsByName = new Map(instructorDirectory_(spreadsheet).map(item => [item.name.toLowerCase(), item]));
   const rankByCallsign = Object.create(null);
   let rank = 'Probationary';
   const records = [];
@@ -586,9 +588,10 @@ function hertCertified_(name) {
   return Boolean(hertDirectory_().get(String(name || '').trim().toLowerCase()));
 }
 
-function hertDirectory_() {
+function hertDirectory_(spreadsheet) {
   const map = new Map();
-  const sheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')).getSheetByName('HERT Certified');
+  spreadsheet = spreadsheet || SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
+  const sheet = spreadsheet.getSheetByName('HERT Certified');
   if (!sheet || sheet.getLastRow() < 2) return map;
   const count = sheet.getLastRow() - 1;
   const rows = sheet.getRange(2, 2, count, 3).getDisplayValues();
