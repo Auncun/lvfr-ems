@@ -82,12 +82,44 @@ function startBackgroundMutation(url, options) {
     const previous = memberCache.get(callsign.trim().toUpperCase());
     const nextRanks = { EMT: "AEMT", AEMT: "Paramedic", Volunteer: "Senior Volunteer", "EMR/Volunteer": "Volunteer" };
     const optimisticRank = path === "/api/promote" ? (nextRanks[previous?.rank] || previous?.rank) : String(payload.new_rank || "");
-    const rollbackMember = previous ? { ...previous, optimistic_target: config.available_callsigns?.[optimisticRank] || "" } : null;
+    const optimisticTarget = path === "/api/change-callsign"
+        ? String(payload.new_callsign || "").trim().toUpperCase()
+        : config.available_callsigns?.[optimisticRank] || "";
+    const rollbackMember = previous ? { ...previous, optimistic_target: optimisticTarget } : null;
+    const noChange = previous && (
+        (path === "/api/activity" && previous.activity === payload.activity) ||
+        (path === "/api/exam" && Boolean(previous.has_supervisor_exam) === !payload.remove) ||
+        (path === "/api/training" && (
+            String(payload.training || "").toLowerCase() === "hert" ? Boolean(previous.has_hert) === !payload.remove :
+            payload.training === "Basic Firefighting" ? Boolean(previous.has_basic_firefighting) === !payload.remove :
+            payload.training === "Advanced Firefighting" ? Boolean(previous.has_advanced_firefighting) === !payload.remove : false
+        )) ||
+        (/^\/api\/member\/[^/]+\/instructor$/.test(path) &&
+            String(previous.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes(String(payload.instructor_type || "").toUpperCase()) === Boolean(payload.assigned))
+    );
+    if (noChange) {
+        toast(path === "/api/activity" ? `Already ${payload.activity}.` : "No change needed; this value is already set.");
+        throw new Error(BACKGROUND_PENDING_MESSAGE);
+    }
     apiReadCache.clear();
     try { sessionStorage.removeItem("lvfr.roster.snapshot.v1"); } catch {}
     applyOptimisticMutation(path, payload, callsign);
-    if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(path)) {
-        toast("Updated on this screen. Saving to Google Sheets…");
+    const pendingRank = path === "/api/promote" ? optimisticRank : String(payload.new_rank || optimisticRank);
+    if (path === "/api/promote") toast(`Promoted to ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
+    else if (path === "/api/force-promote" || path === "/api/change-rank") toast(`Changed to ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
+    else if (path === "/api/demote") toast(`Demoted to ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
+    else if (path === "/api/change-callsign") toast(`Callsign changed to ${optimisticTarget}`);
+    else if (path === "/api/activity") toast(`Activity changed to ${payload.activity}.`);
+    else if (path === "/api/training") toast(`${payload.training} ${payload.remove ? "removed" : "added"}.`);
+    else if (path === "/api/exam") toast(`Supervisor Exam ${payload.remove ? "removed" : "added"}.`);
+    else if (/^\/api\/member\/[^/]+\/instructor$/.test(path)) toast(`${payload.instructor_type} Instructor ${payload.assigned ? "added" : "removed"}.`);
+    else if (path === "/api/terminate") toast("Member terminated.");
+    else if (path === "/api/note") toast("Member note updated.");
+    else if (path === "/api/date") toast("Rank date updated.");
+    else if (path.startsWith("/api/leaders/")) {
+        const action = path.match(/\/(allow|deny|admin|demote|member|leader|deactivate|reactivate)$/)?.[1] || "delete";
+        const messages = { allow: "Account activated.", deny: "Account request denied.", admin: "Commander access granted.", demote: "Commander access removed.", member: "Member access set.", leader: "Leader access set.", deactivate: "Account deactivated.", reactivate: "Account reactivated.", delete: "Account deleted." };
+        toast(messages[action]);
     }
     const request = fetch(url, {
         ...options,
@@ -100,9 +132,10 @@ function startBackgroundMutation(url, options) {
             throw new Error("Your session expired. Please sign in again.");
         }
         if (!response.ok) throw new Error(result.detail || result.error || "Save failed.");
-        window.dispatchEvent(new CustomEvent("lvfr:background-updated", { detail: { route: path, callsign, result } }));
+        window.dispatchEvent(new CustomEvent("lvfr:background-updated", { detail: { route: path, callsign, result, optimisticCallsign: optimisticTarget } }));
         return result;
     }).catch(error => {
+        if (path.startsWith("/api/leaders/")) void loadLeaders();
         rollbackOptimisticMutation(path, callsign, rollbackMember);
         toast(`Save failed: ${error.message || "Network error"}. Local change was reverted. Please run Sync now to reload the correct data.`);
     });
@@ -126,6 +159,7 @@ function rollbackOptimisticMutation(route, callsign, previous) {
         activeProfileMember = restored;
         profile(key, true, restored);
     }
+    if (route === "/api/terminate") void loadMembers(true);
 }
 
 function isBackgroundPending(error) {
@@ -188,6 +222,7 @@ function applyOptimisticMutation(route, payload, callsign) {
     } else if (route === "/api/change-callsign") {
         updated.callsign = String(payload.new_callsign || previous.callsign).toUpperCase();
         updated.rank = rankForCallsign(updated.callsign) || previous.rank;
+        updated.optimistic_from = key;
     } else if (route === "/api/terminate") {
         memberCache.delete(key);
         removeCachedMemberRow(key);
@@ -269,10 +304,12 @@ function paintCachedMemberRow(member, oldCallsign) {
 window.addEventListener("lvfr:background-updated", event => {
     const route = String(event.detail?.route || "");
     const result = event.detail?.result || {};
-    if (route === "/api/promote") toast(`Promoted to ${result.new_rank} — ${result.new_callsign}`);
-    else if (["/api/force-promote", "/api/change-rank"].includes(route)) toast(`Changed to ${result.new_rank} — ${result.new_callsign}`);
-    else if (route === "/api/demote") toast(`Demoted to ${result.new_rank} — ${result.new_callsign}`);
-    else if (route === "/api/terminate") toast("Member terminated");
+    const actualCallsign = String(result.new_callsign || "").trim().toUpperCase();
+    const predictedCallsign = String(event.detail?.optimisticCallsign || "").trim().toUpperCase();
+    if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(route)) {
+        if (!predictedCallsign) toast(`${route === "/api/promote" ? "Promoted" : route === "/api/demote" ? "Demoted" : "Changed"} to ${result.new_rank} - ${actualCallsign}`);
+        else if (actualCallsign && predictedCallsign !== actualCallsign) toast(`Callsign confirmed as ${actualCallsign}`);
+    }
     const callsign = String(event.detail?.callsign || "").trim().toUpperCase();
     const newCallsign = String(event.detail?.result?.new_callsign || "").trim().toUpperCase();
     if (callsign && newCallsign && callsign !== newCallsign) {
@@ -1251,10 +1288,24 @@ async function loadLeaders() {
     const audit = $("#leaderAuditTable");
     if (!pending && !all && !instructors && !audit) return;
 
-    if (pending) pending.innerHTML = '<div class="empty">Loading...</div>';
-    if (all) all.innerHTML = '<div class="empty">Loading...</div>';
-    if (instructors) instructors.innerHTML = '<div class="empty">Loading...</div>';
-    if (audit) audit.innerHTML = '<div class="empty">Loading...</div>';
+    let hadCachedData = false;
+    try {
+        const leaderCacheKey = `lvfr.leaders.${currentUserAccountId}.v1`;
+        const cached = JSON.parse(sessionStorage.getItem(leaderCacheKey) || "null");
+        if (cached?.data && Date.now() - cached.savedAt < 10 * 60 * 1000) {
+            leaderRows = cached.data;
+            instructorRows = cached.instructors || [];
+            leaderAuditRows = Array.isArray(leaderRows.audit) ? leaderRows.audit : [];
+            renderLeaders();
+            hadCachedData = true;
+        }
+    } catch {}
+    if (!hadCachedData) {
+        if (pending) pending.innerHTML = '<div class="empty">Loading...</div>';
+        if (all) all.innerHTML = '<div class="empty">Loading...</div>';
+        if (instructors) instructors.innerHTML = '<div class="empty">Loading...</div>';
+        if (audit) audit.innerHTML = '<div class="empty">Loading...</div>';
+    }
 
     try {
         const [accounts, instructorsData] = await Promise.all([
@@ -1264,8 +1315,10 @@ async function loadLeaders() {
         leaderRows = accounts;
         instructorRows = Array.isArray(instructorsData) ? instructorsData : [];
         leaderAuditRows = Array.isArray(leaderRows.audit) ? leaderRows.audit : [];
+        try { sessionStorage.setItem(`lvfr.leaders.${currentUserAccountId}.v1`, JSON.stringify({ data: leaderRows, instructors: instructorRows, savedAt: Date.now() })); } catch {}
         renderLeaders();
     } catch (e) {
+        if (hadCachedData) return;
         leaderRows = { approved: [], pending: [], deactivated: [] };
         instructorRows = [];
         leaderAuditRows = [];
@@ -1407,6 +1460,7 @@ async function resolveLeader(discordId, decision) {
         toast(decision === "allow" ? "Activated" : "Denial queued; saving in background.");
         await loadLeaders();
     } catch (e) {
+        if (isBackgroundPending(e)) return;
         toast(e.message);
     }
 }
@@ -1419,6 +1473,7 @@ async function removeLeader(discordId) {
         toast("Deletion queued; saving in background.");
         await loadLeaders();
     } catch (e) {
+        if (isBackgroundPending(e)) return;
         toast(e.message);
     }
 }
@@ -1431,6 +1486,7 @@ async function setAccountStatus(discordId, action) {
         toast(activating ? "Reactivated" : "Deactivation queued; saving in background.");
         await loadLeaders();
     } catch (e) {
+        if (isBackgroundPending(e)) return;
         toast(e.message);
     }
 }
@@ -1443,6 +1499,7 @@ async function setLeaderAdmin(discordId, makeAdmin) {
         toast(makeAdmin ? "Commander promotion queued; saving in background." : "Commander access removal queued; saving in background.");
         await loadLeaders();
     } catch (e) {
+        if (isBackgroundPending(e)) return;
         toast(e.message);
     }
 }
@@ -1455,6 +1512,7 @@ async function setMemberRole(discordId, role) {
         toast(makeMember ? "Member role queued; access will be limited to Watch Command." : "Leader role queued.");
         await loadLeaders();
     } catch (e) {
+        if (isBackgroundPending(e)) return;
         toast(e.message);
     }
 }
@@ -1540,8 +1598,16 @@ async function loadMembersLog(
         return;
     }
 
-    container.innerHTML =
-        '<div class="empty">Loadingâ€¦</div>';
+    let hadCachedData = false;
+    try {
+        const cached = JSON.parse(sessionStorage.getItem(`lvfr.log.${currentUserAccountId}.${type}.v1`) || "null");
+        if (Array.isArray(cached?.rows) && Date.now() - cached.savedAt < 10 * 60 * 1000) {
+            currentLogRows = cached.rows;
+            hadCachedData = true;
+            renderMembersLog();
+        }
+    } catch {}
+    if (!hadCachedData) container.innerHTML = '<div class="empty">Loading…</div>';
 
 
     try {
@@ -1563,6 +1629,8 @@ async function loadMembersLog(
                 ? rows
                 : [];
 
+        try { sessionStorage.setItem(`lvfr.log.${currentUserAccountId}.${type}.v1`, JSON.stringify({ rows: currentLogRows, savedAt: Date.now() })); } catch {}
+
         if (type === "callsign") {
             currentLogRows = currentLogRows.filter(isCallsignChangeLog);
         }
@@ -1572,6 +1640,8 @@ async function loadMembersLog(
 
 
     } catch (e) {
+
+        if (hadCachedData) return;
 
         currentLogRows = [];
 
@@ -2917,6 +2987,7 @@ async function setInstructor(cs, assigned) {
             : `No change: member is already ${assigned ? "an" : "not an"} ${instructorType} Instructor.`);
         if (result.changed) profile(cs, true);
     } catch (error) {
+        if (isBackgroundPending(error)) return;
         toast(error.message);
     }
 }
@@ -2925,8 +2996,8 @@ async function setInstructor(cs, assigned) {
 function updateTrainingPermission() {
     const selected = String($("#training")?.value || "").trim().toLowerCase();
     const requiredType = selected === "hert" ? "HERT" : "FORT";
-    const hasInstructorCertificate = currentInstructorTypes.length > 0;
-    const allowed = currentInstructorTypes.includes(requiredType);
+    const hasInstructorCertificate = currentUserIsAdmin || currentInstructorTypes.length > 0;
+    const allowed = currentUserIsAdmin || currentInstructorTypes.includes(requiredType);
     const trainingField = $("#trainingField");
     if (trainingField) trainingField.style.display = hasInstructorCertificate ? "" : "none";
     ["#addTrainingButton", "#deleteTrainingButton"].forEach(selector => {
@@ -3059,6 +3130,7 @@ async function training(
 
 
     } catch (e) {
+        if (isBackgroundPending(e)) return;
         toast(
             e.message
         );
@@ -3164,6 +3236,7 @@ async function examChange(
 
 
     } catch (e) {
+        if (isBackgroundPending(e)) return;
         toast(
             e.message
         );
@@ -3253,6 +3326,7 @@ async function activity(cs) {
 
 
     } catch (e) {
+        if (isBackgroundPending(e)) return;
 
         toast(
             e.message
@@ -3330,6 +3404,7 @@ async function note(cs) {
 
 
     } catch (e) {
+        if (isBackgroundPending(e)) return;
 
         toast(
             e.message
@@ -3380,6 +3455,7 @@ async function dateChange(cs) {
 
 
     } catch (e) {
+        if (isBackgroundPending(e)) return;
 
         toast(
             e.message
@@ -3684,9 +3760,11 @@ async function changeCS(
 
 
     } catch (e) {
+        if (isBackgroundPending(e)) return;
 
-        if (e.code === "rank_mismatch" && confirm(
-            `This callsign corresponds to ${e.expected}, while the member is ${e.actual}. Continue and update the rank to ${e.expected}?`
+        const selectedCallsignRank = rankForCallsign(newcsElement?.value || "");
+        if (currentUserIsAdmin && selectedCallsignRank && /belongs to a different rank/i.test(e.message || "") && confirm(
+            `This callsign corresponds to ${selectedCallsignRank}. Continue and change the member's rank too?`
         )) return changeCS(cs, true);
 
 

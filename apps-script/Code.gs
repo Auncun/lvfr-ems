@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-09-30-member-name-auth-2',
+  apiVersion: '2026-09-30-member-name-auth-3',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -886,7 +886,7 @@ function changeMemberRank_(data, user, operation) {
   if (operation === 'DEMOTION' && !(newLevel < oldLevel)) throw new Error('You can only demote to a lower rank.');
   if (operation === 'CHANGE_RANK' && ![
     'AEMT|Senior Volunteer', 'EMT|Volunteer', 'Senior Volunteer|AEMT', 'Volunteer|EMT'
-  ].includes(old.rank + '|' + rank)) throw new Error('Rank transition is not allowed.');
+  ].includes(old.rank + '|' + rank)) throw new Error('This rank change is not supported. Use Force Promote or Demote for rank changes within the same career track; Change Rank is only for EMT/Volunteer and AEMT/Senior Volunteer transitions.');
   const target = nextEmptyCallsign_(rank);
   moveMember_(old, target, rank, user, operation);
   return { ok: true, new_callsign: target.callsign, new_rank: rank };

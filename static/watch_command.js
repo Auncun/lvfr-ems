@@ -165,8 +165,9 @@ function refreshRollCallSummary() {
   }
 }
 function normalizeAttachedUnit(value) {
-  const match = String(value || '').trim().match(/^(Guardian|Nomad|Dive|Engine)-?(\d{1,4})$/i);
-  return match ? `${match[1][0].toUpperCase()}${match[1].slice(1).toLowerCase()}-${Number(match[2])}` : '';
+  const unit = String(value || '').trim().replace(/\s+/g, ' ');
+  if (!unit || unit.length > 24 || /[|()\r\n]/.test(unit)) return '';
+  return unit;
 }
 function addAttachedUnit(unit, rawAttachment) {
   if (!rawAttachment) return unit;
@@ -871,7 +872,7 @@ async function addInitialRollCallMember() {
   const baseUnit = normalizeInitialUnit(initialUnitInput.value);
   const attachmentText = baseUnit ? initialAttachedUnit.value.trim() : '';
   if (attachmentText && !normalizeAttachedUnit(attachmentText)) {
-    setMessage(initialRollcallMessage, 'Attached unit must look like Engine-1, Guardian-2, Nomad-1, or Dive-1.', 'error');
+    setMessage(initialRollcallMessage, 'Enter any attached unit name (up to 24 characters).', 'error');
     initialAttachedUnit.focus();
     return;
   }
@@ -1114,7 +1115,7 @@ async function recordActivity() {
     return;
   }
   if (attachmentText && !normalizeAttachedUnit(attachmentText)) {
-    setMessage(quickMessage, 'Attached unit must look like Engine-1, Guardian-2, Nomad-1, or Dive-1.', 'error');
+    setMessage(quickMessage, 'Enter any attached unit name (up to 24 characters).', 'error');
     activityAttachedUnit.focus();
     quickButton.disabled = false;
     return;
