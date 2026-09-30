@@ -2500,17 +2500,18 @@ async function profile(
 
                         <div>
 
-                            ${requirementStatus(
-                                trainings,
-                                "Basic_Firefighting",
-                                "Basic FORT"
-                            )}
-
-                            ${requirementStatus(
-                                trainings,
-                                "Advanced_Firefighting",
-                                "Advanced FORT"
-                            )}
+                            ${trainings.length === 0
+                                ? `<span class="badge terminate-status">No Training</span>`
+                                : `${requirementStatus(
+                                    trainings,
+                                    "Basic_Firefighting",
+                                    "Basic FORT"
+                                )}${requirementStatus(
+                                    trainings,
+                                    "Advanced_Firefighting",
+                                    "Advanced FORT"
+                                )}`
+                            }
 
                         </div>
 
@@ -2523,11 +2524,10 @@ async function profile(
 
                         <div>
 
-                            ${requirementStatus(
-                                exams,
-                                "Supervisor_exam",
-                                "Supervisor Exam"
-                            )}
+                            ${exams.some(exam => String(exam ?? "").toLowerCase() === "supervisor_exam")
+                                ? requirementStatus(exams, "Supervisor_exam", "Supervisor Exam")
+                                : `<span class="badge terminate-status">No Supervisor Exam</span>`
+                            }
 
                         </div>
 
