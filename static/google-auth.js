@@ -44,6 +44,14 @@
         }
         sessionStorage.setItem(TOKEN_KEY, result.access_token);
         onResult(null, result.access_token);
+      },
+      error_callback: error => {
+        const message = error.type === "popup_failed_to_open"
+          ? "Google sign-in popup was blocked. Allow popups for this site and try again."
+          : error.type === "popup_closed"
+            ? "Google sign-in was cancelled. Try again when ready."
+            : "Google sign-in could not open. Check your browser settings and try again.";
+        onResult(new Error(message));
       }
     });
     client.requestAccessToken({ prompt: "select_account" });
