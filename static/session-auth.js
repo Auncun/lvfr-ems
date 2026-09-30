@@ -8,11 +8,13 @@
   window.lvfrSetSession = (token, remember = false) => {
     localStorage.removeItem(TOKEN_KEY);
     sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem('lvfr.roster.snapshot.v1');
     (remember ? localStorage : sessionStorage).setItem(TOKEN_KEY, token);
   };
   window.lvfrForgetSession = () => {
     localStorage.removeItem(TOKEN_KEY);
     sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem('lvfr.roster.snapshot.v1');
   };
 
   window.fetch = (input, init = {}) => {

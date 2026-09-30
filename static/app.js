@@ -23,6 +23,7 @@ async function api(url, options = {}) {
         }
     } else if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
         apiReadCache.clear();
+        try { sessionStorage.removeItem("lvfr.roster.snapshot.v1"); } catch {}
     }
     const r = await fetch(url, {
         ...options,
@@ -79,6 +80,7 @@ function startBackgroundMutation(url, options) {
     const callsignMatch = path.match(/^\/api\/member\/([^/]+)\/instructor$/);
     const callsign = String(payload.callsign || (callsignMatch ? decodeURIComponent(callsignMatch[1]) : ""));
     apiReadCache.clear();
+    try { sessionStorage.removeItem("lvfr.roster.snapshot.v1"); } catch {}
     applyOptimisticMutation(path, payload, callsign);
     const request = fetch(url, {
         ...options,
@@ -709,6 +711,30 @@ async function loadMembers(silent = false) {
                     : ""
             );
 
+        // Restore this tab's last rendered roster immediately, then continue
+        // below with the normal request so newer sheet data replaces it.
+        const viewKey = JSON.stringify([
+            currentUserAccountId, q,
+            $("#filterHert")?.value || "all",
+            $("#filterFortInstructor")?.value || "all",
+            $("#filterHertInstructor")?.value || "all",
+            $("#filterBasic")?.value || "all",
+            $("#filterAdvanced")?.value || "all",
+            $("#filterSupervisorExam")?.value || "all",
+            $("#filterActivity")?.value || "all",
+            $("#filterRank")?.value || "all"
+        ]);
+        try {
+            const cachedView = JSON.parse(sessionStorage.getItem("lvfr.roster.snapshot.v1") || "null");
+            if (cachedView?.viewKey === viewKey && typeof cachedView.html === "string") {
+                const table = $("#membersTable");
+                if (table) table.innerHTML = cachedView.html;
+                const count = $("#memberCount");
+                if (count) count.textContent = String(cachedView.count ?? 0);
+                memberListRenderKey = cachedView.renderKey || memberListRenderKey;
+            }
+        } catch {}
+
         const loadedRows =
             await api(
                 "/api/members?search=" + q
@@ -843,6 +869,15 @@ async function loadMembers(silent = false) {
                 `
 
                 : empty();
+
+        // Keep only the current view in sessionStorage (per tab, cleared at
+        // logout). A size guard avoids filling the browser's storage quota.
+        try {
+            const html = membersTable.innerHTML;
+            if (html.length < 1500000) sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify({
+                viewKey, html, count: rows.length, renderKey, savedAt: Date.now()
+            }));
+        } catch {}
 
     } catch (e) {
         if (!silent) toast(e.message);
