@@ -10,7 +10,15 @@ async function checkAccount() {
     message.textContent = 'Your account is waiting for Commander approval.';
     return;
   }
-  location.replace(payload.role === 'member' ? '/watch-command' : '/portal');
+  routeForUser(payload);
+}
+
+function routeForUser(user) {
+  if (user.status !== 'approved') {
+    message.textContent = 'Your account is waiting for Commander approval.';
+    return;
+  }
+  location.replace(user.role === 'member' ? '/watch-command' : '/portal');
 }
 
 async function submitAuth(form, route) {
@@ -33,7 +41,9 @@ async function submitAuth(form, route) {
       return;
     }
     window.lvfrSetSession(result.token, remember);
-    await checkAccount();
+    // The login response already contains the authenticated user. Use it
+    // directly instead of making a second /auth/me round-trip before redirect.
+    routeForUser(result.user);
   } catch (error) {
     message.textContent = error.message;
   } finally { button.disabled = false; }
