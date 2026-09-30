@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="About the LVFR EMS Operations portal and how Google sign-in is used.">
+  <title>About · LVFR EMS Operations</title>
+  <style>
+    :root{color-scheme:dark;font:16px/1.65 system-ui,sans-serif;background:#0b1017;color:#e6edf3}
+    body{max-width:820px;margin:0 auto;padding:28px 18px 48px}main{background:#111720;border:1px solid #303945;border-radius:14px;padding:clamp(20px,5vw,42px)}
+    h1,h2{line-height:1.25}p,li{color:#c4ccd5}a{color:#8cc8ff}nav,footer{display:flex;gap:18px;flex-wrap:wrap;margin:0 0 22px}footer{margin:24px 0 0}section{margin-top:28px}details{margin-top:24px;border-top:1px solid #303945;padding-top:16px}summary{cursor:pointer;color:#8cc8ff}
+  </style>
+</head>
+<body>
+  <nav><a href="/login">Sign in</a><a href="/privacy.html">Privacy policy</a></nav>
+  <main>
+    <h1>LVFR EMS Operations</h1>
+    <p>This portal supports authorized LVFR EMS personnel with roster administration, training and examination records, activity status, and watch-command logs. Access is limited to accounts linked to an LVFR roster entry and approved by an LVFR Commander.</p>
+    <section>
+      <h2>Google sign-in and permissions</h2>
+      <p>Google sign-in verifies your Google account. For approved operational accounts, the portal also checks whether that account can edit the LVFR roster spreadsheet. This check requests read-only Drive file metadata; it does not use your Google token to read or edit spreadsheet contents. Spreadsheet operations are performed by the LVFR Apps Script service under its owner's authorization.</p>
+      <p>New account requests ask for your name and LVFR callsign so a Commander can match and approve the request. The portal never asks you to enter your Google password on this site; Google handles the sign-in screen.</p>
+    </section>
+    <details>
+      <summary>العربية</summary>
+      <section lang="ar" dir="rtl">
+        <h2>عن بوابة عمليات LVFR EMS</h2>
+        <p>تدعم هذه البوابة أفراد EMS المعتمدين في LVFR في إدارة roster وسجلات التدريب والاختبارات وحالة النشاط وسجلات المناوبة. يقتصر الدخول على الحسابات المرتبطة بعضو في roster والتي وافق عليها أحد القادة.</p>
+        <h2>تسجيل الدخول وصلاحيات Google</h2>
+        <p>يتحقق تسجيل الدخول من حساب Google. وللحسابات التشغيلية المعتمدة، تتحقق البوابة أيضاً من قدرة الحساب على تعديل ملف roster. يطلب هذا الفحص قراءة بيانات وصفية للملف فقط، ولا يستخدم رمز Google الخاص بك لقراءة محتوى الجداول أو تعديله. تنفذ خدمة Apps Script التابعة لـLVFR عمليات الجداول بصلاحيات مالكها.</p>
+        <p>يطلب التسجيل اسمك ونداءك الوظيفي في LVFR لمطابقة الطلب ومراجعته. لا يطلب هذا الموقع كلمة مرور Google؛ تتولى Google شاشة تسجيل الدخول.</p>
+      </section>
+    </details>
+    <footer><a href="/privacy.html">Privacy policy / سياسة الخصوصية</a><a href="/login">Sign in / تسجيل الدخول</a></footer>
+  </main>
+</body>
+</html>

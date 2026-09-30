@@ -35,7 +35,9 @@
     }
     const client = google.accounts.oauth2.initTokenClient({
       client_id: clientId,
-      scope: "openid email profile https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.metadata.readonly",
+      // Sheet access is performed by Apps Script as its owner; the user's
+      // OAuth token is only used for identity and the Drive edit check.
+      scope: "openid email profile https://www.googleapis.com/auth/drive.metadata.readonly",
       include_granted_scopes: true,
       callback: result => {
         if (result.error || !result.access_token) {

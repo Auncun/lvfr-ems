@@ -166,7 +166,9 @@ function googleIdentity_(accessToken) {
   if (response.getResponseCode() !== 200) throw new Error('Google sign-in expired. Sign in again.');
   const identity = JSON.parse(response.getContentText());
   if (!identity.email || identity.email_verified !== true || !identity.sub) throw new Error('A verified Google email is required.');
-  cache.put(cacheKey, JSON.stringify(identity), 60);
+  // The token fingerprint is one-way and the OAuth token itself is never
+  // cached. Reuse the verified identity between quick API calls/navigation.
+  cache.put(cacheKey, JSON.stringify(identity), 300);
   return identity;
 }
 
@@ -176,7 +178,19 @@ function bindGoogleSub_(accountId, sub) {
   if (index < 0) throw new Error('Account not found.');
   const existing = String(rows[index][13] || '');
   if (existing && existing !== sub) throw new Error('This Google account does not match the account link. Contact a Commander.');
-  if (!existing) sheet.getRange(index + 2, 14).setValue(sub);
+  if (!existing) {
+    sheet.getRange(index + 2, 14).setValue(sub);
+    invalidateAccountCache_(rows[index][12]);
+  }
+}
+
+function invalidateAccountCache_(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!normalizedEmail) return;
+  const emailHash = Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, normalizedEmail)
+  ).replace(/=+$/, '');
+  CacheService.getScriptCache().remove('account-email:' + emailHash);
 }
 
 function signupWithGoogle_(accessToken, data) {
@@ -262,7 +276,7 @@ function findAccountByEmail_(email) {
       role: String(row[6] || 'leader').toLowerCase(),
       googleSub: String(row[13] || '')
     };
-    cache.put(cacheKey, JSON.stringify(account), 45);
+    cache.put(cacheKey, JSON.stringify(account), 120);
     return account;
   }
   return null;
@@ -1048,12 +1062,7 @@ function updateAccount_(accountId, action, actor) {
     default: throw new Error('Unknown account action.');
   }
   recordAccountAudit_(accountId, name, callsign, action, actorName);
-  if (accountEmail) {
-    const emailHash = Utilities.base64EncodeWebSafe(
-      Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, accountEmail)
-    ).replace(/=+$/, '');
-    CacheService.getScriptCache().remove('account-email:' + emailHash);
-  }
+  invalidateAccountCache_(accountEmail);
   return { ok: true, status: 'saving' };
 }
 
