@@ -38,8 +38,76 @@ async function api(url, options = {}) {
         throw error;
     }
 
+    if (d && d.queued === true && d.job_id) {
+        monitorBackgroundJob(d.job_id);
+        const queued = new Error("Accepted for background saving.");
+        queued.backgroundQueued = true;
+        throw queued;
+    }
     return d;
 }
+
+const activeBackgroundJobs = new Set();
+const backgroundJobStorageKey = "lvfr.background.jobs";
+function persistBackgroundJobs() {
+    try { sessionStorage.setItem(backgroundJobStorageKey, JSON.stringify([...activeBackgroundJobs])); } catch {}
+}
+function monitorBackgroundJob(jobId) {
+    if (activeBackgroundJobs.has(jobId)) return;
+    activeBackgroundJobs.add(jobId);
+    persistBackgroundJobs();
+    const forget = () => { activeBackgroundJobs.delete(jobId); persistBackgroundJobs(); };
+    let checks = 0;
+    const poll = async () => {
+        if (++checks > 25) {
+            forget();
+            toast("Save is still queued. It will continue in the background.");
+            return;
+        }
+        try {
+            const job = await api(`/api/jobs/${encodeURIComponent(jobId)}`);
+            if (job.status === "completed") {
+                forget();
+                toast("Background save completed.");
+                window.dispatchEvent(new CustomEvent("lvfr:background-updated", { detail: job }));
+                return;
+            }
+            if (job.status === "failed") {
+                forget();
+                toast(`Background save failed: ${job.error || "Unknown error"}`);
+                return;
+            }
+        } catch (error) {
+            if (error.message.includes("session expired")) {
+                forget();
+                return;
+            }
+        }
+        setTimeout(poll, 12000);
+    };
+    setTimeout(poll, 12000);
+}
+
+window.addEventListener("lvfr:background-updated", event => {
+    loadMembers(true);
+    setTimeout(() => loadMembers(true), 1500);
+    syncStatus();
+    const callsign = String(event.detail?.callsign || "");
+    if (callsign && activeProfileMember?.callsign === callsign) profile(callsign, true);
+    const logType = {
+        "/api/training": "training", "/api/exam": "exam", "/api/note": "note",
+        "/api/activity": "activity", "/api/terminate": "termination",
+        "/api/member/{callsign}/instructor": "instructor",
+        "/api/promote": "promotion", "/api/force-promote": "promotion",
+        "/api/demote": "promotion", "/api/change-rank": "promotion",
+        "/api/change-callsign": "callsign"
+    }[event.detail?.route === "/api/member/" + callsign + "/instructor" ? "/api/member/{callsign}/instructor" : event.detail?.route];
+    if (logType) loadMembersLog(logType);
+});
+
+try {
+    JSON.parse(sessionStorage.getItem(backgroundJobStorageKey) || "[]").forEach(monitorBackgroundJob);
+} catch {}
 
 function toggleLeaderActions(event, menu) {
     event.preventDefault();
@@ -618,7 +686,7 @@ async function loadMembers(silent = false) {
 // periodically instead; every device reads the shared Google Sheet.
 setInterval(() => {
     if (!document.hidden && $(".tab.active")?.dataset.tab === "members") loadMembers(true);
-}, 15000);
+}, 60000);
 document.addEventListener("visibilitychange", () => {
     if (!document.hidden && $(".tab.active")?.dataset.tab === "members") loadMembers(true);
 });
@@ -4004,29 +4072,23 @@ $("#changePasswordForm")?.addEventListener("submit", async event => {
 (async () => {
 
     await loadAccount();
-    await health();
-    await loadNotifications();
-
     try {
-
-        await loadConfig();
-
-        await loadMembers();
-
-        await loadMembersLog(
-            "promotion"
-        );
-
+        // Independent startup requests run together to avoid serial network
+        // round trips before the portal becomes useful.
+        await Promise.all([
+            health(),
+            loadNotifications(),
+            loadConfig(),
+            loadMembers(),
+            loadMembersLog("promotion"),
+        ]);
     } catch (e) {
-
-        toast(
-            e.message
-        );
+        toast(e.message);
     }
 
 })();
 
-setInterval(() => { if (!document.hidden) syncStatus(); }, 10000);
+setInterval(() => { if (!document.hidden) syncStatus(); }, 60000);
 setInterval(() => {
     if (!document.hidden) loadNotifications();
-}, 45000);
+}, 120000);

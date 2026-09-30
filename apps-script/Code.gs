@@ -7,6 +7,7 @@
  */
 
 const LVFR = Object.freeze({
+  apiVersion: '2026-09-30-roster-performance-2',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -20,7 +21,7 @@ const LVFR = Object.freeze({
 });
 
 function doGet(e) {
-  return output_({ ok: true, service: 'LVFR EMS Apps Script API', postOnly: true });
+  return output_({ ok: true, service: 'LVFR EMS Apps Script API', version: LVFR.apiVersion, postOnly: true });
 }
 
 function doPost(e) {
@@ -28,11 +29,27 @@ function doPost(e) {
     const input = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     const route = String(input.route || '');
     const params = input.params || {};
+    if (route === '/api/health' && String(input.method || 'GET') === 'GET') {
+      return output_({ ok: true, data: { ok: true, backend: 'Google Apps Script', version: LVFR.apiVersion } });
+    }
     if (route === '/auth/signup' && String(input.method || 'GET') === 'POST') {
       return output_({ ok: true, data: signupWithGoogle_(input.accessToken, input.data || {}) });
     }
+    const method = String(input.method || 'GET');
     const user = requireUser_(input.accessToken);
-    return output_({ ok: true, data: dispatch_(route, String(input.method || 'GET'), params, input.data || {}, user) });
+    const jobRoute = route.match(/^\/api\/jobs\/([^/]+)$/);
+    if (jobRoute && method === 'GET') return output_({ ok: true, data: getBackgroundJob_(decodeURIComponent(jobRoute[1]), user) });
+    if (method === 'POST' && isBackgroundMutation_(route)) {
+      return output_({ ok: true, data: enqueueBackgroundMutation_(route, input.data || {}, user) });
+    }
+    const data = dispatch_(route, method, params, input.data || {}, user);
+    if (method === 'POST' && [
+      '/api/activity', '/api/note', '/api/date', '/api/training', '/api/exam',
+      '/api/promote', '/api/force-promote', '/api/demote', '/api/change-rank',
+      '/api/change-callsign', '/api/terminate'
+    ].includes(route)) invalidateRosterCache_();
+    if (method === 'POST' && /^\/api\/member\/[^/]+\/instructor$/.test(route)) invalidateRosterCache_();
+    return output_({ ok: true, data });
   } catch (error) {
     console.error(error && error.stack ? error.stack : error);
     return output_({
@@ -40,6 +57,104 @@ function doPost(e) {
       error: error && error.message ? error.message : 'Request failed'
     });
   }
+}
+
+const BACKGROUND_MUTATION_ROUTES = new Set([
+  '/api/activity', '/api/note', '/api/date', '/api/training', '/api/exam',
+  '/api/promote', '/api/force-promote', '/api/demote', '/api/change-rank',
+  '/api/change-callsign', '/api/terminate'
+]);
+function isBackgroundMutation_(route) {
+  return BACKGROUND_MUTATION_ROUTES.has(route) || /^\/api\/member\/[^/]+\/instructor$/.test(route);
+}
+
+const JOB_TAB = 'PWA Background Jobs';
+const JOB_HEADERS = ['job_id', 'route', 'payload', 'actor_id', 'created_at', 'updated_at', 'status', 'result', 'error'];
+function jobsSheet_() {
+  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+  let sheet = spreadsheet.getSheetByName(JOB_TAB);
+  if (!sheet) sheet = spreadsheet.insertSheet(JOB_TAB);
+  if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, JOB_HEADERS.length).setValues([JOB_HEADERS]);
+  return sheet;
+}
+
+function enqueueBackgroundMutation_(route, payload, user) {
+  requireApproved_(user);
+  if (route === '/api/activity' || route === '/api/date' || route === '/api/terminate' ||
+      route === '/api/force-promote' || route === '/api/demote' || route === '/api/change-rank' ||
+      /^\/api\/member\/[^/]+\/instructor$/.test(route)) requireAdmin_(user);
+  else if (route === '/api/exam') requireCommand_(user);
+  else if (route === '/api/training') requireTrainingPermission_(payload.training, user);
+  else requireLeader_(user);
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = jobsSheet_();
+    const now = new Date().toISOString(), id = Utilities.getUuid();
+    sheet.appendRow([id, route, JSON.stringify(payload), user.accountId, now, now, 'queued', '', '']);
+    return { queued: true, job_id: id, status: 'queued', message: 'Accepted for background saving.' };
+  } finally { lock.releaseLock(); }
+}
+
+function getBackgroundJob_(jobId, user) {
+  requireApproved_(user);
+  const sheet = jobsSheet_();
+  if (sheet.getLastRow() < 2) throw new Error('Background job was not found.');
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, JOB_HEADERS.length).getDisplayValues();
+  const row = rows.find(item => item[0] === jobId);
+  if (!row) throw new Error('Background job was not found.');
+  if (row[3] !== user.accountId && !isAdmin_(user)) throw new Error('You cannot view another user’s background job.');
+  let result = null;
+  try { result = row[7] ? JSON.parse(row[7]) : null; } catch (ignored) {}
+  let payload = {};
+  try { payload = JSON.parse(row[2] || '{}'); } catch (ignored) {}
+  const routeCallsign = String(row[1] || '').match(/^\/api\/member\/([^/]+)\/instructor$/);
+  return { job_id: row[0], route: row[1], status: row[6], result, error: row[8] || null, updated_at: row[5], callsign: payload.callsign || (routeCallsign ? decodeURIComponent(routeCallsign[1]) : '') };
+}
+
+// Run once from the Apps Script editor to install the durable background worker.
+function installBackgroundWorker() {
+  const exists = ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === 'processBackgroundJobs');
+  if (!exists) ScriptApp.newTrigger('processBackgroundJobs').timeBased().everyMinutes(1).create();
+}
+
+function processBackgroundJobs() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return;
+  try {
+    const sheet = jobsSheet_();
+    if (sheet.getLastRow() < 2) return;
+    const count = sheet.getLastRow() - 1;
+    const rows = sheet.getRange(2, 1, count, JOB_HEADERS.length).getDisplayValues();
+    const accounts = accountRows_().rows;
+    let handled = 0;
+    for (let i = 0; i < rows.length && handled < 5; i++) {
+      const row = rows[i];
+      if (row[6] === 'running' && Date.now() - Date.parse(row[5]) > 10 * 60 * 1000) {
+        sheet.getRange(i + 2, 6, 1, 4).setValues([[new Date().toISOString(), 'failed', '', 'Worker stopped unexpectedly. Check the roster before retrying this operation.']]);
+        continue;
+      }
+      if (row[6] !== 'queued') continue;
+      handled++;
+      const sheetRow = i + 2, now = new Date().toISOString();
+      sheet.getRange(sheetRow, 6, 1, 2).setValues([[now, 'running']]);
+      try {
+        const accountRow = accounts.find(item => String(item[0]) === row[3]);
+        if (!accountRow || String(accountRow[5] || '').toLowerCase() !== 'approved') throw new Error('The account is no longer active; operation cancelled.');
+        const user = {
+          accountId: String(accountRow[0]), name: String(accountRow[1] || ''), callsign: String(accountRow[2] || ''),
+          status: String(accountRow[5] || '').toLowerCase(), role: String(accountRow[6] || 'leader').toLowerCase(),
+          email: String(accountRow[12] || '')
+        };
+        const result = dispatch_(row[1], 'POST', {}, JSON.parse(row[2] || '{}'), user);
+        invalidateRosterCache_();
+        sheet.getRange(sheetRow, 6, 1, 4).setValues([[new Date().toISOString(), 'completed', JSON.stringify(result), '']]);
+      } catch (error) {
+        sheet.getRange(sheetRow, 6, 1, 4).setValues([[new Date().toISOString(), 'failed', '', String(error && error.message || error)]]);
+      }
+    }
+  } finally { lock.releaseLock(); }
 }
 
 function dispatch_(route, method, params, data, user) {
@@ -133,12 +248,22 @@ function requireUser_(accessToken) {
 
 function googleIdentity_(accessToken) {
   if (!accessToken) throw new Error('Sign in with Google to continue.');
+  // Cache identity briefly by a one-way token fingerprint. The OAuth token
+  // itself is never written to Apps Script cache or spreadsheet storage.
+  const tokenHash = Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, accessToken)
+  ).replace(/=+$/, '');
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'google-identity:' + tokenHash;
+  const cachedIdentity = cache.get(cacheKey);
+  if (cachedIdentity) return JSON.parse(cachedIdentity);
   const response = UrlFetchApp.fetch('https://openidconnect.googleapis.com/v1/userinfo', {
     method: 'get', headers: { Authorization: 'Bearer ' + accessToken }, muteHttpExceptions: true
   });
   if (response.getResponseCode() !== 200) throw new Error('Google sign-in expired. Sign in again.');
   const identity = JSON.parse(response.getContentText());
   if (!identity.email || identity.email_verified !== true || !identity.sub) throw new Error('A verified Google email is required.');
+  cache.put(cacheKey, JSON.stringify(identity), 60);
   return identity;
 }
 
@@ -183,7 +308,22 @@ function verifyRosterEditor_(accessToken, subject) {
     muteHttpExceptions: true
   });
   if (response.getResponseCode() !== 200) {
-    throw new Error('Your Google account must have access to the LVFR roster spreadsheet.');
+    const status = response.getResponseCode();
+    let reason = '';
+    try {
+      const body = JSON.parse(response.getContentText());
+      reason = String(body && body.error && body.error.errors && body.error.errors[0] && body.error.errors[0].reason || '');
+    } catch (ignored) {}
+    if (status === 401) {
+      throw new Error('Google Drive permission is missing from this sign-in. Sign out, sign in again, and grant the requested Drive metadata permission.');
+    }
+    if (reason === 'accessNotConfigured' || reason === 'SERVICE_DISABLED') {
+      throw new Error('Google Drive API is not enabled for the OAuth Cloud project. Enable Google Drive API, then sign in again.');
+    }
+    if (status === 404) {
+      throw new Error('The LVFR roster spreadsheet was not found for this account. Check the roster spreadsheet ID and sharing.');
+    }
+    throw new Error('Google Drive could not verify roster access (HTTP ' + status + '). Enable Google Drive API and confirm this account can open the roster spreadsheet.');
   }
   const file = JSON.parse(response.getContentText());
   if (!file.capabilities || file.capabilities.canEdit !== true) {
@@ -193,15 +333,23 @@ function verifyRosterEditor_(accessToken, subject) {
 }
 
 function findAccountByEmail_(email) {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  const emailHash = Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, normalizedEmail)
+  ).replace(/=+$/, '');
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'account-email:' + emailHash;
+  const cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
   const id = requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID');
   const sheet = SpreadsheetApp.openById(id).getSheetByName(LVFR.accountsTab);
   if (!sheet || sheet.getLastRow() < 2) throw new Error('Account directory is not configured.');
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(14, sheet.getLastColumn())).getDisplayValues();
-  const target = email.trim().toLowerCase();
+  const target = normalizedEmail;
   for (const row of rows) {
     // Column M is reserved for the linked Google email; N stores the stable sub.
     if (String(row[12] || '').trim().toLowerCase() !== target) continue;
-    return {
+    const account = {
       accountId: String(row[0] || ''),
       name: String(row[1] || ''),
       callsign: String(row[2] || ''),
@@ -209,6 +357,8 @@ function findAccountByEmail_(email) {
       role: String(row[6] || 'leader').toLowerCase(),
       googleSub: String(row[13] || '')
     };
+    cache.put(cacheKey, JSON.stringify(account), 15);
+    return account;
   }
   return null;
 }
@@ -313,13 +463,17 @@ function listMembers_(search) {
     records = readRosterMembers_();
     const serialized = JSON.stringify(records);
     if (serialized.length < 95000) {
-      try { cache.put(cacheKey, serialized, 12); } catch (ignored) { /* Cache is an optimization only. */ }
+      try { cache.put(cacheKey, serialized, 60); } catch (ignored) { /* Cache is an optimization only. */ }
     }
   }
   const query = String(search || '').trim().toLowerCase();
   if (!query) return records;
   return records.filter(item => [item.callsign, item.name, item.rank]
     .some(value => String(value).toLowerCase().includes(query)));
+}
+
+function invalidateRosterCache_() {
+  CacheService.getScriptCache().remove('roster:members:v1');
 }
 
 function readRosterMembers_() {
@@ -838,6 +992,7 @@ function updateAccount_(accountId, action, actor) {
   const index = rows.findIndex(row => String(row[0]) === String(accountId));
   if (index < 0) throw new Error('Account not found.');
   const rowNumber = index + 2, row = rows[index];
+  const accountEmail = String(row[12] || '').trim().toLowerCase();
   let status = String(row[5] || '').toLowerCase(), role = String(row[6] || 'leader').toLowerCase();
   const now = new Date().toISOString(), actorName = actorName_(actor), name = row[1] || '', callsign = row[2] || '';
   switch (action) {
@@ -888,6 +1043,12 @@ function updateAccount_(accountId, action, actor) {
     default: throw new Error('Unknown account action.');
   }
   recordAccountAudit_(accountId, name, callsign, action, actorName);
+  if (accountEmail) {
+    const emailHash = Utilities.base64EncodeWebSafe(
+      Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, accountEmail)
+    ).replace(/=+$/, '');
+    CacheService.getScriptCache().remove('account-email:' + emailHash);
+  }
   return { ok: true, status: 'saving' };
 }
 
