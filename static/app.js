@@ -1,7 +1,7 @@
 ﻿const $ = s => document.querySelector(s);
 
 let config = {};
-const API_READ_CACHE_MS = 60000;
+const API_READ_CACHE_MS = 15000;
 const apiReadCache = new Map();
 const BACKGROUND_PENDING_MESSAGE = "BACKGROUND_SAVE_PENDING";
 

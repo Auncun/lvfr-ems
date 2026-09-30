@@ -76,8 +76,6 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/sync' && method === 'POST') {
     requireLeader_(user);
     invalidateRosterCache_();
-    invalidateMemberLogsCache_();
-    invalidateLeaderOverviewCache_();
     return { ok: true, message: 'Google Sheet synchronized', result: { members: listMembers_('').length } };
   }
   if (route === '/api/sync/auto' && method === 'POST') { requireCommand_(user); return { ok: true, auto_enabled: Boolean(data.enabled), interval_seconds: 15 }; }
@@ -366,7 +364,7 @@ function instructorDirectory_() {
   addSheet('HERT Certified', 2, 6, null, 'HERT');
   addSheet('FIREFIGHTER CERT', 1, 2, 4, 'FORT');
   const result = Array.from(byName.values());
-  try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (ignored) {}
+  try { cache.put(cacheKey, JSON.stringify(result), 60); } catch (ignored) {}
   return result;
 }
 
@@ -404,7 +402,6 @@ function invalidateRosterCache_() {
   const cacheKey = 'roster:members:v2';
   const index = cache.get(cacheKey);
   cache.remove(cacheKey);
-  cache.removeAll(['instructor-directory:v1', 'hert-directory:v1']);
   if (!index) return;
   try {
     const count = Number(JSON.parse(index).chunks || 0);
@@ -443,9 +440,9 @@ function writeRosterCache_(cache, cacheKey, records) {
   if (count > 32) return;
   try {
     for (let part = 0; part < count; part++) {
-      cache.put(cacheKey + ':' + part, serialized.slice(part * chunkSize, (part + 1) * chunkSize), 300);
+      cache.put(cacheKey + ':' + part, serialized.slice(part * chunkSize, (part + 1) * chunkSize), 60);
     }
-    cache.put(cacheKey, JSON.stringify({ chunks: count }), 300);
+    cache.put(cacheKey, JSON.stringify({ chunks: count }), 60);
   } catch (ignored) {
     cache.remove(cacheKey);
   }
@@ -537,18 +534,9 @@ function hertCertified_(name) {
 }
 
 function hertDirectory_() {
-  const cache = CacheService.getScriptCache();
-  const cacheKey = 'hert-directory:v1';
-  const cached = cache.get(cacheKey);
-  if (cached) {
-    try { return new Map(JSON.parse(cached).map(name => [name, true])); } catch (ignored) {}
-  }
   const map = new Map();
   const sheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')).getSheetByName('HERT Certified');
-  if (!sheet || sheet.getLastRow() < 2) {
-    try { cache.put(cacheKey, '[]', 300); } catch (ignored) {}
-    return map;
-  }
+  if (!sheet || sheet.getLastRow() < 2) return map;
   const count = sheet.getLastRow() - 1;
   const rows = sheet.getRange(2, 2, count, 3).getDisplayValues();
   const colors = sheet.getRange(2, 2, count, 3).getBackgrounds();
@@ -556,7 +544,6 @@ function hertDirectory_() {
     const name = String(row[0] || '').trim();
     if (name && hasColor_(colors[index][2])) map.set(name.toLowerCase(), true);
   });
-  try { cache.put(cacheKey, JSON.stringify(Array.from(map.keys())), 300); } catch (ignored) {}
   return map;
 }
 
@@ -617,8 +604,8 @@ function syncStatus_() {
 const APP_LOG_TAB = 'PWA Activity Log';
 const APP_LOG_HEADERS = ['id', 'kind', 'log_date', 'callsign', 'member_name', 'action', 'details', 'changed_by', 'old_rank', 'new_rank', 'old_callsign', 'new_callsign'];
 
-function appLogSheet_() {
-  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+function appLogSheet_(spreadsheet) {
+  spreadsheet = spreadsheet || SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
   let sheet = spreadsheet.getSheetByName(APP_LOG_TAB);
   if (!sheet) sheet = spreadsheet.insertSheet(APP_LOG_TAB);
   if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, APP_LOG_HEADERS.length).setValues([APP_LOG_HEADERS]);
@@ -639,56 +626,29 @@ function memberLogs_(kind) {
   const cacheKey = 'member-logs:v1:' + String(kind || '').toLowerCase();
   const cached = cache.get(cacheKey);
   if (cached) {
-    try {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed)) return parsed; // Legacy single-entry cache.
-      const count = Number(parsed.chunks || 0);
-      if (count > 0 && count <= 32) {
-        const names = Array.from({ length: count }, (_, part) => cacheKey + ':' + part);
-        const parts = cache.getAll(names);
-        let serialized = '';
-        for (const name of names) {
-          if (typeof parts[name] !== 'string') throw new Error('Incomplete log cache');
-          serialized += parts[name];
-        }
-        return JSON.parse(serialized);
-      }
-    } catch (ignored) {}
+    try { return JSON.parse(cached); } catch (ignored) {}
   }
   const result = readMemberLogs_(kind);
   const serialized = JSON.stringify(result);
-  try {
-    if (serialized.length < 90000) {
-      cache.put(cacheKey, serialized, 180);
-    } else {
-      const chunkSize = 18000;
-      const count = Math.ceil(serialized.length / chunkSize);
-      if (count <= 32) {
-        for (let part = 0; part < count; part++) {
-          cache.put(cacheKey + ':' + part, serialized.slice(part * chunkSize, (part + 1) * chunkSize), 180);
-        }
-        cache.put(cacheKey, JSON.stringify({ chunks: count }), 180);
-      }
-    }
-  } catch (ignored) {
-    cache.remove(cacheKey);
+  if (serialized.length < 90000) {
+    try { cache.put(cacheKey, serialized, 45); } catch (ignored) {}
   }
   return result;
 }
 
 function invalidateMemberLogsCache_() {
-  const cache = CacheService.getScriptCache();
-  const keys = [
+  CacheService.getScriptCache().removeAll([
     'member-logs:v1:promotion', 'member-logs:v1:callsign', 'member-logs:v1:training',
     'member-logs:v1:exam', 'member-logs:v1:note', 'member-logs:v1:activity',
     'member-logs:v1:instructor', 'member-logs:v1:termination'
-  ];
-  const allKeys = keys.flatMap(key => [key, ...Array.from({ length: 32 }, (_, part) => key + ':' + part)]);
-  cache.removeAll(allKeys);
+  ]);
 }
 
 function readMemberLogs_(kind) {
-  const sheet = appLogSheet_();
+  // Reuse one spreadsheet handle for both logs. A cold log request should not
+  // open the same private spreadsheet twice.
+  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+  const sheet = appLogSheet_(spreadsheet);
   const lastRow = sheet.getLastRow();
   const rowCount = Math.min(Math.max(0, lastRow - 1), 2000);
   const rows = rowCount ? sheet.getRange(lastRow - rowCount + 1, 1, rowCount, APP_LOG_HEADERS.length).getDisplayValues() : [];
@@ -716,14 +676,22 @@ function readMemberLogs_(kind) {
     }
     return record;
   });
-  const archive = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')).getSheetByName('Logs');
+  const archive = spreadsheet.getSheetByName('Logs');
   if (!archive || archive.getLastRow() < 2) return current.slice(-200).reverse();
   const archiveLastRow = archive.getLastRow();
-  const archiveCount = Math.min(archiveLastRow - 1, 5000);
-  const oldRows = archive.getRange(archiveLastRow - archiveCount + 1, 1, archiveCount, Math.min(11, archive.getLastColumn())).getDisplayValues();
-  const historical = oldRows.map(row => {
-    const event = String(row[1] || ''), lower = event.toLowerCase();
-    const category = lower.includes('terminat') ? 'termination'
+  const archiveColumns = Math.min(11, archive.getLastColumn());
+  const historical = [];
+  // Read backward in batches. Most log types find their latest 200 entries
+  // near the end of the archive, avoiding a 5,000-row scan on every cold load.
+  // Continue farther back when a type is rare so older history remains visible.
+  const batchSize = 500;
+  for (let endRow = archiveLastRow; endRow >= 2 && historical.length < 200; endRow -= batchSize) {
+    const startRow = Math.max(2, endRow - batchSize + 1);
+    const oldRows = archive.getRange(startRow, 1, endRow - startRow + 1, archiveColumns).getDisplayValues();
+    for (let i = oldRows.length - 1; i >= 0; i--) {
+      const row = oldRows[i];
+      const event = String(row[1] || ''), lower = event.toLowerCase();
+      const category = lower.includes('terminat') ? 'termination'
       : lower.includes('training') || lower.includes('hert') ? 'training'
       : lower.includes('exam') ? 'exam'
       : lower.includes('note') ? 'note'
@@ -731,15 +699,17 @@ function readMemberLogs_(kind) {
       : lower.includes('instructor') ? 'instructor'
       : lower.includes('callsign') || lower.includes('promot') || lower.includes('demot') || lower.includes('rank') ? (lower.includes('callsign') ? 'callsign' : 'promotion')
       : '';
-    if (category !== kind) return null;
-    return {
+      if (category !== kind) continue;
+      historical.push({
       id: 'archive-' + row[0], log_date: row[0], created_at: row[0], event,
       member_name: row[2], callsign: row[3], old_callsign: row[4], new_callsign: row[5],
       old_rank: row[6], new_rank: row[7], details: row[8], promoted_by: row[9], changed_by: row[9],
       actor_callsign: row[10], promo_date: row[0], termination_date: row[0],
       training_name: row[8], exam_name: row[8], note: row[8], action: event
-    };
-  }).filter(Boolean);
+      });
+      if (historical.length >= 200) break;
+    }
+  }
   return [...historical, ...current].sort((a, b) => String(b.log_date || '').localeCompare(String(a.log_date || ''))).slice(0, 200);
 }
 
@@ -1017,22 +987,7 @@ function leaderOverview_() {
   const cacheKey = 'leader-overview:v1';
   const cached = cache.get(cacheKey);
   if (cached) {
-    try {
-      const parsed = JSON.parse(cached);
-      if (parsed && parsed.chunks) {
-        const count = Number(parsed.chunks);
-        if (count > 0 && count <= 32) {
-          const names = Array.from({ length: count }, (_, part) => cacheKey + ':' + part);
-          const parts = cache.getAll(names);
-          let serialized = '';
-          for (const name of names) {
-            if (typeof parts[name] !== 'string') throw new Error('Incomplete leader cache');
-            serialized += parts[name];
-          }
-          return JSON.parse(serialized);
-        }
-      } else if (parsed && typeof parsed === 'object') return parsed;
-    } catch (ignored) {}
+    try { return JSON.parse(cached); } catch (ignored) {}
   }
   const accounts = accountRows_().rows.map(accountObject_);
   const result = {
@@ -1041,25 +996,8 @@ function leaderOverview_() {
     deactivated: accounts.filter(row => row.status === 'deactivated'),
     audit: accountAudit_()
   };
-  const serialized = JSON.stringify(result);
-  try {
-    if (serialized.length < 90000) cache.put(cacheKey, serialized, 120);
-    else {
-      const chunkSize = 18000, count = Math.ceil(serialized.length / chunkSize);
-      if (count <= 32) {
-        for (let part = 0; part < count; part++) {
-          cache.put(cacheKey + ':' + part, serialized.slice(part * chunkSize, (part + 1) * chunkSize), 120);
-        }
-        cache.put(cacheKey, JSON.stringify({ chunks: count }), 120);
-      }
-    }
-  } catch (ignored) { cache.remove(cacheKey); }
+  try { cache.put(cacheKey, JSON.stringify(result), 30); } catch (ignored) {}
   return result;
-}
-
-function invalidateLeaderOverviewCache_() {
-  const cache = CacheService.getScriptCache();
-  cache.removeAll(['leader-overview:v1', 'account-audit:v1', ...Array.from({ length: 32 }, (_, part) => 'leader-overview:v1:' + part)]);
 }
 
 function accountAudit_() {
@@ -1076,7 +1014,7 @@ function accountAudit_() {
   const result = sheet.getRange(lastRow - count + 1, 1, count, 6).getDisplayValues().reverse().map(row => ({
     created_at: row[0], account_id: row[1], name: row[2], callsign: row[3], action: row[4], actor_name: row[5], by: row[5]
   }));
-  try { cache.put(cacheKey, JSON.stringify(result), 120); } catch (ignored) {}
+  try { cache.put(cacheKey, JSON.stringify(result), 45); } catch (ignored) {}
   return result;
 }
 
@@ -1147,7 +1085,7 @@ function recordAccountAudit_(accountId, name, callsign, action, actorName) {
   if (!sheet) sheet = spreadsheet.insertSheet('Account Audit');
   if (sheet.getLastRow() === 0) sheet.appendRow(['Timestamp', 'Account ID', 'Name', 'Callsign', 'Action', 'By']);
   sheet.appendRow([new Date().toISOString(), accountId, name, callsign, action, actorName]);
-  invalidateLeaderOverviewCache_();
+  CacheService.getScriptCache().removeAll(['leader-overview:v1', 'account-audit:v1']);
 }
 
 function rosterMember_(callsign) {
