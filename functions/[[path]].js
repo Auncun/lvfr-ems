@@ -37,16 +37,45 @@ export async function onRequest(context) {
     redirect: "follow",
   });
 
+  let upstream;
   try {
-    const upstream = await fetch(upstreamRequest);
-    const payload = await upstream.json();
-    if (!payload.ok) {
-      const message = payload.error || "The request was rejected.";
-      const status = /sign in again|access token/i.test(message) ? 401 : 400;
-      return Response.json({ detail: message }, { status });
-    }
-    return Response.json(payload.data);
-  } catch {
-    return Response.json({ detail: "The application server is temporarily unavailable." }, { status: 502 });
+    upstream = await fetch(upstreamRequest);
+  } catch (error) {
+    console.error('Apps Script request failed before receiving a response:', error);
+    return Response.json({
+      detail: "Cloudflare could not connect to the Apps Script web app. Check its deployment URL and availability."
+    }, { status: 502 });
   }
+
+  let payload;
+  try {
+    payload = JSON.parse(await upstream.text());
+  } catch (error) {
+    console.error('Apps Script returned a non-JSON response:', {
+      status: upstream.status,
+      contentType: upstream.headers.get('content-type'),
+      finalUrl: upstream.url,
+      error,
+    });
+    return Response.json({
+      detail: `Apps Script returned an unreadable response (HTTP ${upstream.status}). Confirm the Web App is deployed to execute as you and is accessible to users.`
+    }, { status: 502 });
+  }
+
+  if (!payload || typeof payload !== 'object' || typeof payload.ok !== 'boolean') {
+    console.error('Apps Script response did not use the expected API format:', {
+      status: upstream.status,
+      finalUrl: upstream.url,
+    });
+    return Response.json({
+      detail: `The deployed Apps Script is not running the expected API version (HTTP ${upstream.status}). Replace Code.gs and deploy a new version.`
+    }, { status: 502 });
+  }
+
+  if (!payload.ok) {
+    const message = payload.error || "The request was rejected.";
+    const status = /sign in again|access token/i.test(message) ? 401 : 400;
+    return Response.json({ detail: message }, { status });
+  }
+  return Response.json(payload.data);
 }
