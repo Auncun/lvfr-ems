@@ -4467,8 +4467,9 @@ accountDialog?.querySelectorAll("[data-toggle-passwords]").forEach(toggle => tog
 $("#manageAccountButton")?.addEventListener("click", async () => {
     accountDialog?.classList.remove("hidden");
     try {
-        const user = await api("/auth/me");
-        const profile = await api("/api/account/profile").catch(() => ({}));
+        const user = window.lvfrCachedUser?.() || await api("/auth/me");
+        const cachedProfile = memberCache.get(String(user.callsign || "").toUpperCase());
+        const profile = cachedProfile || await api("/api/account/profile").catch(() => ({}));
         const set = (id, value) => { const el = $(id); if (el) el.textContent = value || "—"; };
         set("#accountNameDisplay", user.name);
         set("#accountCallsignDisplay", user.callsign);
@@ -4514,13 +4515,12 @@ $("#changePasswordForm")?.addEventListener("submit", async event => {
         if ($("#terminationLogTab")) $("#terminationLogTab").style.display = cachedUser.is_admin ? "" : "none";
         if ($("#instructorLogTab")) $("#instructorLogTab").style.display = cachedUser.is_admin ? "" : "none";
     }
-    let rosterLoad = cachedUser ? loadMembers() : null;
-    await loadAccount();
-    if (!rosterLoad) rosterLoad = loadMembers();
+    const rosterLoad = loadMembers();
     try {
-        // Independent startup requests run together to avoid serial network
-        // round trips before the portal becomes useful.
+        // Keep authentication and the independent page data requests in flight
+        // together so roster rendering does not wait for /auth/me.
         await Promise.all([
+            loadAccount(),
             health(),
             loadNotifications(),
             loadConfig(),

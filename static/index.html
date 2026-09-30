@@ -23,7 +23,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=notifications-3"
+    href="/static/style.css?v=account-layout-4"
 >
 
 <style>
@@ -734,12 +734,14 @@
             <dt>Training</dt><dd id="accountTrainingDisplay"></dd>
             <dt>Supervisor exam</dt><dd id="accountExamDisplay"></dd>
         </dl>
-        <h3>Change password</h3>
-        <form id="changePasswordForm" class="form-grid">
-            <label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label>
-            <label>New password<input name="new_password" type="password" minlength="4" maxlength="20" pattern="[A-Za-z0-9]{4,20}" autocomplete="new-password" required></label>
-            <button type="submit" class="primary">Change password</button>
-        </form>
+        <details class="account-password-section">
+            <summary>Change password</summary>
+            <form id="changePasswordForm" class="form-grid">
+                <label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label>
+                <label>New password<input name="new_password" type="password" minlength="4" maxlength="20" pattern="[A-Za-z0-9]{4,20}" autocomplete="new-password" required></label>
+                <button type="submit" class="primary">Change password</button>
+            </form>
+        </details>
     </div>
 </div>
 
@@ -786,8 +788,8 @@
      APPLICATION JAVASCRIPT
      ========================================================= -->
 
-<script src="/static/session-auth.js?v=password-session-4"></script>
-<script src="/static/app.js?v=profile-training-status-15"></script>
+<script src="/static/session-auth.js?v=logout-feedback-5"></script>
+<script src="/static/app.js?v=account-load-16"></script>
 <script src="/static/pwa.js"></script>
 
 

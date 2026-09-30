@@ -46,6 +46,8 @@
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || !new URL(form.action, location.href).pathname.endsWith('/auth/logout')) return;
     event.preventDefault();
+    const button = form.querySelector('button[type="submit"]');
+    if (button) { button.disabled = true; button.textContent = 'Signing out…'; }
     window.lvfrLogout();
   });
 

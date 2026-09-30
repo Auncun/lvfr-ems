@@ -253,6 +253,52 @@ tr:hover {
     border-radius:14px;
     padding:24px
 }
+#accountDialog .modal-box {
+    width:min(560px,100%);
+    padding:28px;
+    box-shadow:0 24px 70px #0009
+}
+#accountDialog h2 {
+    margin:0 40px 20px 0
+}
+.account-details {
+    display:grid;
+    grid-template-columns:minmax(115px,.7fr) minmax(0,1.3fr);
+    gap:0;
+    margin:0 0 22px;
+    border:1px solid #303945;
+    border-radius:10px;
+    overflow:hidden
+}
+.account-details dt,.account-details dd {
+    margin:0;
+    padding:10px 12px;
+    border-bottom:1px solid #303945
+}
+.account-details dt {
+    color:#9aa4b2;
+    background:#151d27
+}
+.account-details dd {
+    overflow-wrap:anywhere
+}
+.account-details dt:nth-last-of-type(1),.account-details dd:last-child {
+    border-bottom:0
+}
+.account-password-section {
+    border-top:1px solid #303945;
+    padding-top:16px
+}
+.account-password-section summary {
+    width:fit-content;
+    color:#7db7ff;
+    cursor:pointer;
+    font-weight:600
+}
+.account-password-section[open] .form-grid {
+    display:grid;
+    margin-top:16px
+}
 .close {
     position:absolute;
     right:14px;
@@ -294,6 +340,7 @@ tr:hover {
     flex-direction:column;
     align-items:flex-start
 }
+
 .top-actions {
     width:100%;
     justify-content:space-between
@@ -308,6 +355,12 @@ main {
     grid-template-columns:1fr
 }
 
+}
+
+@media(max-width:480px) {
+    #accountDialog .modal-box { padding:22px 16px }
+    .account-details { grid-template-columns:minmax(100px,.75fr) minmax(0,1.25fr) }
+    .account-details dt,.account-details dd { padding:9px 8px }
 }
 
 /* ============================================================
