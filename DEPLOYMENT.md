@@ -3,7 +3,7 @@
 لا يستخدم المشروع Render أو VPS. الواجهة PWA ثابتة على Cloudflare Pages، ويعمل Google Apps Script كواجهة API مشتركة تتصل بجداول Google. رابطا النشر اللذان زودتني بهما:
 
 - Pages: `https://lvfr-ems.pages.dev/`
-- Apps Script Web App: `https://script.google.com/macros/s/AKfycbyBdjIEgSN1LZButFPrJA1C9_6w3xClnX370rDRic7fMqkVKsjw5uw0EX8gw4vO-Tav/exec`
+- Apps Script Web App: `https://script.google.com/macros/s/AKfycbyoset4GXE3nQi6kXJvhiBOzLX-OP0_PxaxlHlzB66en5qpiQGEL67DPY48oeGhrqbc/exec`
 
 Apps Script خدمة Google سحابية؛ هذا التصميم لا يحتاج إلى خادم VPS أو Render، لكنه يحتاج إنترنت حتى تتزامن الأجهزة.
 
@@ -29,7 +29,7 @@ Apps Script خدمة Google سحابية؛ هذا التصميم لا يحتاج
 
 ## تحديث Cloudflare Pages
 
-انشر أحدث ملفات المشروع من مجلد العمل. يجب أن يصل مجلد `functions/` إلى جذر مستودع Pages ليعمل وسيط API، وأن يكون Build command هو `python build_static.py` ومجلد الإخراج `dist`. يرسل وسيط Pages طلبات `/api/*` و`/auth/*` إلى رابط Apps Script أعلاه؛ يمكن ضبط `GAS_WEB_APP_URL` كمتغير Pages لتجاوز الرابط الافتراضي في `functions/[[path]].js`.
+انشر أحدث ملفات المشروع من مجلد العمل. يجب أن يصل مجلد `functions/` إلى جذر مستودع Pages ليعمل وسيط API، وأن يكون Build command هو `python build_static.py` ومجلد الإخراج `dist`. يرسل وسيط Pages طلبات `/api/*` و`/auth/*` إلى رابط Apps Script أعلاه؛ يمكن ضبط `GAS_WEB_APP_URL` كمتغير Pages لتجاوز الرابط الافتراضي في `functions/[[path]].js`. إذا كان هذا المتغير مضبوطاً في Cloudflare، حدّثه إلى رابط النشر أعلاه أو احذفه لاستخدام الرابط الافتراضي.
 
 لا تضف Redirect Rules لتحويل مسارات مثل `/login` إلى `/login.html`؛ Cloudflare Pages يتعامل تلقائيًا مع المسارات النظيفة وملفات HTML. قواعد التحويل السابقة أُزيلت لتجنب حلقة إعادة توجيه.
 

@@ -1,5 +1,5 @@
 const API_PATHS = ["/api/", "/auth/"];
-const DEFAULT_GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyBdjIEgSN1LZButFPrJA1C9_6w3xClnX370rDRic7fMqkVKsjw5uw0EX8gw4vO-Tav/exec";
+const DEFAULT_GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyoset4GXE3nQi6kXJvhiBOzLX-OP0_PxaxlHlzB66en5qpiQGEL67DPY48oeGhrqbc/exec";
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -34,12 +34,25 @@ export async function onRequest(context) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ route, method: request.method, params, accessToken, data }),
-    redirect: "follow",
+    redirect: "manual",
   });
 
   let upstream;
   try {
     upstream = await fetch(upstreamRequest);
+    // Apps Script ContentService sends the completed response through a
+    // googleusercontent.com redirect. Follow that response URL explicitly so
+    // the request body is never replayed and the generated query is retained.
+    if ([301, 302, 303, 307, 308].includes(upstream.status)) {
+      const location = upstream.headers.get("location");
+      if (!location) throw new Error(`Apps Script redirect ${upstream.status} had no Location header.`);
+      const redirectedUrl = new URL(location, target);
+      upstream = await fetch(new Request(redirectedUrl.toString(), {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+        redirect: "follow",
+      }));
+    }
   } catch (error) {
     console.error('Apps Script request failed before receiving a response:', error);
     return Response.json({

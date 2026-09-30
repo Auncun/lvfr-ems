@@ -603,7 +603,7 @@ async function health() {
                 "#56d364";
         }
 
-    } catch {
+    } catch (error) {
 
         const dbStatus = $("#dbStatus");
 
@@ -611,6 +611,8 @@ async function health() {
 
             dbStatus.textContent =
                 "Google Apps Script offline";
+
+            dbStatus.title = error?.message || "Health request failed";
 
             dbStatus.style.color =
                 "#ff7b72";

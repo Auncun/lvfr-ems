@@ -17,6 +17,9 @@ def main():
 
     for page in SOURCE.glob("*.html"):
         shutil.copy2(page, OUTPUT / page.name)
+    verification_file = SOURCE / "google4285870199bf6708.html"
+    if verification_file.is_file():
+        shutil.copy2(verification_file, OUTPUT / verification_file.name)
     for asset in SOURCE.iterdir():
         if asset.is_file() and asset.name in {
             "manifest.webmanifest", "service-worker.js", "pwa-icon.svg", "offline.html",
