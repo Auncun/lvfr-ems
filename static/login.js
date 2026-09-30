@@ -16,7 +16,7 @@ async function checkAccount() {
 async function submitAuth(form, route) {
   const button = form.querySelector('button[type="submit"]');
   const fields = Object.fromEntries(new FormData(form));
-  if (fields.callsign) fields.callsign = String(fields.callsign).trim().toUpperCase();
+  if (fields.name) fields.name = String(fields.name).trim().replace(/\s+/g, ' ');
   button.disabled = true;
   message.className = 'auth-message';
   message.textContent = route === '/auth/login' ? 'Signing in…' : 'Submitting account request…';
@@ -26,7 +26,7 @@ async function submitAuth(form, route) {
     if (!response.ok) throw new Error(result.detail || 'Could not complete the request.');
     if (route === '/auth/signup') {
       form.reset();
-      message.textContent = 'Request sent. A Commander must approve the account before you can sign in.';
+      message.textContent = `Request ${result.request_id} was saved for ${result.callsign}. A Commander must approve it before sign-in.`;
       message.className = 'auth-message success';
       return;
     }

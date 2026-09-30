@@ -63,14 +63,14 @@ function renderAccounts() {
   const query = document.querySelector('#accountSearch').value.trim().toLowerCase();
   const rows = allAccounts().filter(account =>
     (selectedStatus === 'all' || account.status === selectedStatus)
-    && `${account.display_name || account.username} ${account.username} ${account.callsign}`.toLowerCase().includes(query));
+    && `${account.display_name || account.name} ${account.callsign}`.toLowerCase().includes(query));
   countEl.textContent = `${rows.length} account${rows.length === 1 ? '' : 's'}`;
   if (!rows.length) {
     accountRows.innerHTML = '<tr><td colspan="6">No accounts match this filter.</td></tr>';
     return;
   }
   accountRows.innerHTML = rows.map(account => `
-    <tr><td><strong>${esc(account.display_name || account.username)}</strong>${account.approved_by ? `<br><small class="muted">Approved by ${esc(account.approved_by)}</small>` : ''}</td>
+    <tr><td><strong>${esc(account.display_name || account.name)}</strong>${account.approved_by ? `<br><small class="muted">Approved by ${esc(account.approved_by)}</small>` : ''}</td>
       <td>${esc(account.callsign || '—')}</td><td>${esc(account.status)}</td>
       <td>${account.is_admin ? 'Commander' : account.role === 'member' ? 'Member' : account.status === 'pending' ? '—' : 'Leader'}</td>
       <td>${esc(account.requested_at || '—')}</td><td><div class="admin-actions">${accountActions(account)}</div></td></tr>`).join('');
@@ -128,7 +128,7 @@ async function performAction(button) {
   const { action, id } = button.dataset;
   const account = allAccounts().find(row => row.account_id === id);
   if (!account) return;
-  const accountLabel = account.display_name || account.username;
+  const accountLabel = account.display_name || account.name;
   const confirmations = {
     deny: `Deny the account request for ${accountLabel}?`,
     deactivate: `Deactivate ${accountLabel}'s account?`,

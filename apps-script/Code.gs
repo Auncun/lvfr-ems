@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-09-30-password-auth-1',
+  apiVersion: '2026-09-30-member-name-auth-2',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -138,52 +138,62 @@ function dispatch_(route, method, params, data, user) {
 }
 
 function requireUser_(sessionToken) {
-  if (!sessionToken) throw new Error('Sign in with your username and password.');
+  if (!sessionToken) throw new Error('Sign in with your name and password.');
   const cache = CacheService.getScriptCache();
   const key = sessionCacheKey_(sessionToken);
   const accountId = cache.get(key);
   if (!accountId) throw new Error('Your session expired. Sign in again.');
   const account = findAccountById_(accountId);
   if (!account) { cache.remove(key); throw new Error('Account not found.'); }
-  return account;
+  return applyCurrentRosterIdentity_(account);
 }
 
 function loginWithPassword_(data) {
-  const username = normalizeUsername_(data.username), password = String(data.password || '');
+  const name = normalizeMemberName_(data.name), password = String(data.password || '');
   const cache = CacheService.getScriptCache();
-  const throttleKey = 'login-attempts:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, username)).replace(/=+$/, '');
+  const throttleKey = 'login-attempts:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, name)).replace(/=+$/, '');
   const attempts = Number(cache.get(throttleKey) || 0);
   if (attempts >= 8) throw new Error('Too many sign-in attempts. Wait 10 minutes and try again.');
-  const account = findAccountByUsername_(username);
+  const account = findAccountByName_(name);
   if (!account || !account.passwordSalt || !account.passwordHash || !constantTimeEquals_(passwordHash_(password, account.passwordSalt), account.passwordHash)) {
     cache.put(throttleKey, String(attempts + 1), 600);
-    throw new Error('Incorrect username or password.');
+    throw new Error('Incorrect name or password.');
   }
   cache.remove(throttleKey);
   if (['denied', 'removed', 'deactivated'].includes(account.status)) throw new Error('This account is inactive. Contact a Commander.');
+  applyCurrentRosterIdentity_(account);
   const token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
   CacheService.getScriptCache().put(sessionCacheKey_(token), account.accountId, 21600);
   return { token: token, user: publicUser_(account) };
 }
 
 function signupWithPassword_(data) {
-  const name = String(data.name || '').trim().replace(/\s+/g, ' '), callsign = String(data.callsign || '').trim().toUpperCase();
-  const username = normalizeUsername_(data.username), password = String(data.password || '');
+  const requestedName = String(data.name || '').trim().replace(/\s+/g, ' '), password = String(data.password || '');
+  const memberName = normalizeMemberName_(requestedName);
+  const member = findRosterMemberByName_(memberName);
+  if (!member) throw new Error('Name was not found on the LVFR roster. Enter your name as it appears on the roster.');
+  const name = member.name, callsign = member.callsign;
   if (name.length < 2 || name.length > 48) throw new Error('Name must be between 2 and 48 characters.');
-  if (!callsign || callsign.length > 48 || LVFR.ignoredCallsigns.has(callsign)) throw new Error('Enter a valid LVFR Callsign.');
-  if (!/^[a-z0-9._-]{3,32}$/.test(username)) throw new Error('Username must be 3–32 characters: letters, numbers, dot, underscore or hyphen.');
-  if (password.length < 10 || password.length > 128) throw new Error('Password must be between 10 and 128 characters.');
-  if (!rosterMember_(callsign)) throw new Error('Callsign was not found on the LVFR roster.');
-  const { sheet, rows } = accountRows_();
-  if (rows.some(row => String(row[14] || '').trim().toLowerCase() === username)) throw new Error('That username is already in use.');
-  if (rows.some(row => String(row[2] || '').trim().toUpperCase() === callsign && !['removed', 'denied'].includes(String(row[5] || '').toLowerCase()))) throw new Error('An account is already linked to that Callsign.');
-  const id = Utilities.getUuid(), now = new Date().toISOString(), salt = Utilities.getUuid().replace(/-/g, '');
-  sheet.appendRow([id, name, callsign, '', '', 'pending', 'member', now, '', '', '', '', '', '', username, salt, passwordHash_(password, salt)]);
-  recordAccountAudit_(id, name, callsign, 'Account Requested', username);
-  return { ok: true, status: 'pending', request_id: id };
+  if (!/^[A-Za-z0-9]{4,20}$/.test(password)) throw new Error('Password must be 4–20 letters or numbers.');
+  const salt = Utilities.getUuid().replace(/-/g, '');
+  const hash = passwordHash_(password, salt);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const { sheet, rows } = accountRows_();
+    if (!sheet) throw new Error('The Accounts sheet is not configured. Contact a Commander.');
+    const existing = rows.filter(row => normalizeMemberName_(row[1]) === memberName && !['removed', 'denied'].includes(String(row[5] || '').toLowerCase()));
+    if (existing.length) throw new Error('An account is already linked to this member name. Contact a Commander.');
+    const id = Utilities.getUuid(), now = new Date().toISOString();
+    sheet.appendRow([id, name, callsign, '', '', 'pending', 'member', now, '', '', '', '', '', '', '', salt, hash]);
+    SpreadsheetApp.flush();
+    try { recordAccountAudit_(id, name, callsign, 'Account Requested', name); }
+    catch (auditError) { console.error('Account was saved but audit logging failed: ' + auditError); }
+    return { ok: true, status: 'pending', request_id: id, callsign: callsign };
+  } finally { lock.releaseLock(); }
 }
 
-function normalizeUsername_(value) { return String(value || '').trim().toLowerCase(); }
+function normalizeMemberName_(value) { return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
 function sessionCacheKey_(token) { return 'session:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token))).replace(/=+$/, ''); }
 function passwordHash_(password, salt) {
   let value = String(salt) + ':' + String(password);
@@ -196,11 +206,45 @@ function constantTimeEquals_(a, b) {
   return diff === 0;
 }
 function logoutSession_(token) { if (token) CacheService.getScriptCache().remove(sessionCacheKey_(token)); }
-function findAccountById_(id) { return accountRows_().rows.map(accountObject_).find(a => a.accountId === String(id)) || null; }
-function findAccountByUsername_(username) {
-  const row = accountRows_().rows.find(r => String(r[14] || '').trim().toLowerCase() === username);
+function findAccountById_(id) {
+  const cache = CacheService.getScriptCache(), key = accountCacheKey_(id), cached = cache.get(key);
+  if (cached) { try { return JSON.parse(cached); } catch (ignored) {} }
+  const row = accountRows_().rows.find(item => String(item[0] || '') === String(id));
   if (!row) return null;
-  return { accountId: String(row[0] || ''), name: String(row[1] || ''), callsign: String(row[2] || ''), status: String(row[5] || '').toLowerCase(), role: String(row[6] || 'member').toLowerCase(), username: String(row[14] || ''), passwordSalt: String(row[15] || ''), passwordHash: String(row[16] || '') };
+  const account = accountObject_(row);
+  try { cache.put(key, JSON.stringify(account), 30); } catch (ignored) {}
+  return account;
+}
+function findAccountByName_(name) {
+  const rows = accountRows_().rows.filter(row => normalizeMemberName_(row[1]) === name && !['removed', 'denied'].includes(String(row[5] || '').toLowerCase()));
+  if (rows.length > 1) throw new Error('More than one account matches this name. Contact a Commander.');
+  if (!rows.length) return null;
+  const row = rows[0];
+  return { accountId: String(row[0] || ''), name: String(row[1] || ''), callsign: String(row[2] || ''), status: String(row[5] || '').toLowerCase(), role: String(row[6] || 'member').toLowerCase(), passwordSalt: String(row[15] || ''), passwordHash: String(row[16] || '') };
+}
+function accountCacheKey_(id) {
+  return 'account-id:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(id))).replace(/=+$/, '');
+}
+function rosterMembersByName_() {
+  const membersByName = new Map();
+  listMembers_('').forEach(member => {
+    const key = normalizeMemberName_(member.name);
+    membersByName.set(key, membersByName.has(key) ? null : member);
+  });
+  return membersByName;
+}
+function findRosterMemberByName_(name) {
+  const members = rosterMembersByName_();
+  if (!members.has(name)) return null;
+  if (!members.get(name)) throw new Error('More than one roster member has this name. Contact a Commander.');
+  return members.get(name);
+}
+function applyCurrentRosterIdentity_(account) {
+  const member = findRosterMemberByName_(normalizeMemberName_(account.name));
+  if (!member) throw new Error('Your name was not found on the current LVFR roster. Contact a Commander.');
+  account.name = member.name;
+  account.callsign = member.callsign;
+  return account;
 }
 
 function publicUser_(user) {
@@ -209,7 +253,6 @@ function publicUser_(user) {
     id: user.accountId || user.account_id,
     name: user.name,
     callsign: user.callsign,
-    username: user.username,
     role: user.role,
     status: user.status,
     is_admin: user.role === 'admin' || user.role === 'commander',
@@ -321,6 +364,8 @@ function listMembers_(search) {
 function invalidateRosterCache_() {
   const cache = CacheService.getScriptCache();
   const cacheKey = 'roster:members:v2';
+  cache.remove('leader-overview:v1');
+  cache.remove('leader-overview:v2');
   const index = cache.get(cacheKey);
   cache.remove(cacheKey);
   if (!index) return;
@@ -891,12 +936,14 @@ function accountRows_() {
   return { sheet, rows };
 }
 
-function accountObject_(row) {
+function accountObject_(row, membersByName) {
   const isAdmin = ['admin', 'commander'].includes(String(row[6] || '').toLowerCase());
+  const name = String(row[1] || '');
+  const currentMember = membersByName && membersByName.get(normalizeMemberName_(name));
   return {
     accountId: String(row[0] || ''),
-    account_id: String(row[0] || ''), name: String(row[1] || ''), display_name: String(row[1] || ''),
-    username: String(row[14] || ''), callsign: String(row[2] || ''), status: String(row[5] || '').toLowerCase(),
+    account_id: String(row[0] || ''), name, display_name: name,
+    callsign: currentMember ? currentMember.callsign : String(row[2] || ''), status: String(row[5] || '').toLowerCase(),
     role: String(row[6] || 'leader').toLowerCase(), is_admin: isAdmin,
     created_at: String(row[7] || ''), requested_at: String(row[7] || ''), linked_at: String(row[7] || ''),
     activated_at: String(row[8] || ''), approved_at: String(row[8] || ''), approved_by: String(row[9] || ''),
@@ -906,12 +953,13 @@ function accountObject_(row) {
 
 function leaderOverview_() {
   const cache = CacheService.getScriptCache();
-  const cacheKey = 'leader-overview:v1';
+  const cacheKey = 'leader-overview:v2';
   const cached = cache.get(cacheKey);
   if (cached) {
     try { return JSON.parse(cached); } catch (ignored) {}
   }
-  const accounts = accountRows_().rows.map(accountObject_);
+  const membersByName = rosterMembersByName_();
+  const accounts = accountRows_().rows.map(row => accountObject_(row, membersByName));
   const result = {
     approved: accounts.filter(row => row.status === 'approved'),
     pending: accounts.filter(row => row.status === 'pending'),
@@ -996,6 +1044,7 @@ function updateAccount_(accountId, action, actor) {
     default: throw new Error('Unknown account action.');
   }
   recordAccountAudit_(accountId, name, callsign, action, actorName);
+  CacheService.getScriptCache().remove(accountCacheKey_(accountId));
   return { ok: true, status: 'saving' };
 }
 
@@ -1005,7 +1054,7 @@ function recordAccountAudit_(accountId, name, callsign, action, actorName) {
   if (!sheet) sheet = spreadsheet.insertSheet('Account Audit');
   if (sheet.getLastRow() === 0) sheet.appendRow(['Timestamp', 'Account ID', 'Name', 'Callsign', 'Action', 'By']);
   sheet.appendRow([new Date().toISOString(), accountId, name, callsign, action, actorName]);
-  CacheService.getScriptCache().removeAll(['leader-overview:v1', 'account-audit:v1']);
+  CacheService.getScriptCache().removeAll(['leader-overview:v2', 'account-audit:v1']);
 }
 
 function rosterMember_(callsign) {
@@ -1090,10 +1139,15 @@ function saveWatchLog_(input, user) {
 function accountsForRollCall_() {
   const sheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')).getSheetByName(LVFR.accountsTab);
   if (!sheet || sheet.getLastRow() < 2) return [];
-  return sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(14, sheet.getLastColumn())).getDisplayValues().map(row => ({
-    accountId: String(row[0] || ''), name: String(row[1] || ''), callsign: String(row[2] || '').trim().toUpperCase(),
-    status: String(row[5] || '').toLowerCase(), role: String(row[6] || 'leader').toLowerCase()
-  }));
+  const membersByName = rosterMembersByName_();
+  return sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(17, sheet.getLastColumn())).getDisplayValues().map(row => {
+    const member = membersByName.get(normalizeMemberName_(row[1]));
+    return {
+      accountId: String(row[0] || ''), name: String(row[1] || ''),
+      callsign: member ? member.callsign : String(row[2] || '').trim().toUpperCase(),
+      status: String(row[5] || '').toLowerCase(), role: String(row[6] || 'leader').toLowerCase()
+    };
+  });
 }
 
 function linkedWatchAccounts_(rollCall, accounts) {

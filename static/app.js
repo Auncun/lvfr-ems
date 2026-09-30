@@ -4276,8 +4276,8 @@ async function loadAccount() {
         if (account) account.textContent = user.name;
         const nameDisplay = $("#accountNameDisplay");
         if (nameDisplay) nameDisplay.textContent = `Signed in as ${user.name}`;
-        const usernameDisplay = $("#accountUsernameDisplay");
-        if (usernameDisplay) usernameDisplay.textContent = `Username: ${user.username || ""}`;
+        const callsignDisplay = $("#accountCallsignDisplay");
+        if (callsignDisplay) callsignDisplay.textContent = `Current callsign: ${user.callsign || ""}`;
         const leadersTab = $("#leadersTab");
         if (leadersTab) leadersTab.style.display = user.is_admin ? "" : "none";
         const inactiveTab = $("#inactiveTab");

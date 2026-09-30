@@ -10,8 +10,8 @@
       <button type="button" class="close" id="closeAccountSettings" aria-label="Close">×</button>
       <h2 id="accountSettingsTitle">Account settings</h2>
       <p id="accountSettingsName">Loading account…</p>
-      <p id="accountSettingsUsername" class="small-muted"></p>
-      <p>Sign in with your LVFR username and password.</p>
+      <p id="accountSettingsCallsign" class="small-muted"></p>
+      <p>Sign in with your LVFR name and password.</p>
     </div>`;
   document.body.append(dialog);
 
@@ -22,7 +22,7 @@
       const user = await response.json();
       if (!response.ok) throw new Error(user.detail || 'Could not load account details.');
       dialog.querySelector('#accountSettingsName').textContent = user.name || '';
-      dialog.querySelector('#accountSettingsUsername').textContent = `Username: ${user.username || ''}`;
+      dialog.querySelector('#accountSettingsCallsign').textContent = `Current callsign: ${user.callsign || ''}`;
     } catch (error) {
       dialog.querySelector('#accountSettingsName').textContent = error.message;
     }

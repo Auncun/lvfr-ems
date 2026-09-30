@@ -1,4 +1,4 @@
-/* Short lived username/password session bridge shared by the PWA and API proxy. */
+/* Short lived member-name/password session bridge shared by the PWA and API proxy. */
 (function () {
   const TOKEN_KEY = 'lvfr.session.token';
   const nativeFetch = window.fetch.bind(window);
