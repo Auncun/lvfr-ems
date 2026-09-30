@@ -2463,7 +2463,7 @@ def get_hert_certified_status(member_name):
     use the latest successful value stored in HERTCache.
 
     This prevents /api/member/{callsign} from returning
-    HTTP 500 when Google OAuth / Sheets has a temporary
+    HTTP 500 when Google Sheets has a temporary
     network timeout such as WinError 10060.
     """
 

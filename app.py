@@ -553,7 +553,7 @@ def _persist_account_change(row, action, actor):
 
 def _persist_account_change_then_apply(row, action, actor):
     _persist_account_change(row, action, actor)
-    # Keep the account pending in the authentication cache until Google Sheets
+    # Keep the account pending in the authentication cache until the Sheets
     # confirms the write. Only then can the user sign in.
     _apply_account_change_locally(row, action, actor)
 

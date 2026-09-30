@@ -24,7 +24,7 @@ export async function onRequest(context) {
   const route = incoming.pathname;
   const params = Object.fromEntries(incoming.searchParams.entries());
   const authorization = request.headers.get("Authorization") || "";
-  const accessToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  const sessionToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
 
   let data = {};
   if (!['GET', 'HEAD'].includes(request.method)) {
@@ -33,7 +33,7 @@ export async function onRequest(context) {
   const upstreamRequest = new Request(target.toString(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ route, method: request.method, params, accessToken, data }),
+    body: JSON.stringify({ route, method: request.method, params, sessionToken, data }),
     redirect: "manual",
   });
 

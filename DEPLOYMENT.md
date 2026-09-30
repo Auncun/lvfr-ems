@@ -1,4 +1,4 @@
-﻿# نشر LVFR EMS باستخدام Google Apps Script
+# نشر LVFR EMS باستخدام Google Apps Script
 
 لا يستخدم المشروع Render أو VPS. الواجهة PWA ثابتة على Cloudflare Pages، ويعمل Google Apps Script كواجهة API مشتركة تتصل بجداول Google. رابطا النشر اللذان زودتني بهما:
 
@@ -20,11 +20,10 @@ Apps Script خدمة Google سحابية؛ هذا التصميم لا يحتاج
 1. افتح مشروع Apps Script المرتبط برابط `/exec` أعلاه.
 2. استبدل محتوى `Code.gs` بالمحتوى الحالي من `apps-script/Code.gs`، وتأكد أن manifest يتضمن الصلاحيات الموجودة في `apps-script/appsscript.json`.
 3. من **Deploy → Manage deployments** عدّل نشر Web App، واختر **New version** ثم **Deploy**. أبقِ التنفيذ **Execute as: Me**.
-4. أبقِ Google OAuth صالحًا مؤقتًا حتى ينقل أصحاب الحسابات القديمة دخولهم من خيار تعيين كلمة المرور في صفحة الدخول.
-5. في Google Cloud OAuth Authorized JavaScript origins، احتفظ بالأصل `https://lvfr-ems.pages.dev` حتى يكتمل ترحيل الحسابات القديمة.
-6. تأكد أن خصائص Apps Script ما زالت تحتوي `LVFR_ROSTER_SPREADSHEET_ID` و`LVFR_PRIVATE_SPREADSHEET_ID`، وأن حساب مالك Apps Script يستطيع فتح الجدولين.
-7. في تبويب `Accounts`، اترك الأعمدة A–N كما هي وأضف O باسم `Username` وP باسم `Password Salt` وQ باسم `Password Hash`. لا تملأ كلمة مرور يدويًا ولا تشارك الجدول الخاص مع أعضاء التطبيق.
-8. ينقل صاحب كل حساب قديم حسابه مرة واحدة من رابط «Set a password for an existing Google-linked account». تبقى الموافقة والدور كما هما. المستخدمون الجدد يطلبون حسابًا ويحتاجون موافقة قائد.
+4. لا يلزم إعداد Google لتسجيل الدخول؛ يستخدم الحساب اسم المستخدم وكلمة المرور.
+5. تأكد أن خصائص Apps Script ما زالت تحتوي `LVFR_ROSTER_SPREADSHEET_ID` و`LVFR_PRIVATE_SPREADSHEET_ID`، وأن حساب مالك Apps Script يستطيع فتح الجدولين.
+6. في تبويب `Accounts`، احتفظ بالأعمدة A–L وأضف O باسم `Username` وP باسم `Password Salt` وQ باسم `Password Hash`. امسح القيم القديمة من M وN لأنها لم تعد مستخدمة. لا تملأ كلمة مرور يدويًا ولا تشارك الجدول الخاص مع أعضاء التطبيق.
+7. تم ترحيل بيانات الحسابات الحالية إلى أسماء المستخدمين وكلمات المرور؛ المستخدمون الجدد يطلبون حسابًا ويحتاجون موافقة قائد.
 
 في إعداد Web App اختر **Execute as: Me** و**Who has access: Anyone**؛ التحقق من المستخدم يتم داخل التطبيق بواسطة كلمة المرور وجلسة مؤقتة، بينما يصل Apps Script إلى الجداول بصلاحية مالك المشروع.
 
@@ -38,8 +37,8 @@ Apps Script خدمة Google سحابية؛ هذا التصميم لا يحتاج
 
 ## نقاط لازمة قبل الاستخدام
 
-- OAuth Client ID موجود في `static/public-config.js`، وهو معرف عام. لا تضع OAuth Client Secret أو ملف حساب الخدمة في ملفات `static/` أو `dist/`.
+- لا توجد إعدادات خارجية لتسجيل الدخول.
 - عند طلب حساب جديد، يجب أن يطابق Callsign موجودًا في roster؛ يوافق Commander عليه من إدارة الحسابات.
-- رمز الجلسة المؤقت يبقى في `sessionStorage` حتى انتهاء الجلسة أو إغلاق التبويب. Google OAuth مطلوب مؤقتًا لترحيل الحسابات القديمة فقط.
-- مجلد `dist/` جُدّد من ملفات `static/`. لم أتمكن من تشغيل `python build_static.py` مباشرة لأن Python غير قابل للتشغيل في بيئة العمل الحالية.
+- رمز الجلسة المؤقت يبقى في `sessionStorage` حتى انتهاء الجلسة أو إغلاق التبويب.
+- مزامنة ملفات النشر في `dist/` مع التغييرات في `static/`. أمر البناء المعتاد هو `python build_static.py`.
 

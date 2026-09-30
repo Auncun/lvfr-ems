@@ -38,10 +38,9 @@ function doPost(e) {
       return output_({ ok: true, data: signupWithPassword_(input.data || {}) });
     }
     if (route === '/auth/login' && String(input.method || 'GET') === 'POST') return output_({ ok: true, data: loginWithPassword_(input.data || {}) });
-    if (route === '/auth/claim' && String(input.method || 'GET') === 'POST') return output_({ ok: true, data: claimLegacyAccount_(input.accessToken, input.data || {}) });
-    if (route === '/auth/logout' && String(input.method || 'GET') === 'POST') { logoutSession_(input.accessToken); return output_({ ok: true, data: { ok: true } }); }
+    if (route === '/auth/logout' && String(input.method || 'GET') === 'POST') { logoutSession_(input.sessionToken); return output_({ ok: true, data: { ok: true } }); }
     const method = String(input.method || 'GET');
-    const user = requireUser_(input.accessToken);
+    const user = requireUser_(input.sessionToken);
     const data = dispatch_(route, method, params, input.data || {}, user);
     if (method === 'POST' && [
       '/api/activity', '/api/note', '/api/date', '/api/training', '/api/exam',
@@ -138,10 +137,10 @@ function dispatch_(route, method, params, data, user) {
   throw new Error('This API operation has not yet been migrated to Apps Script: ' + route);
 }
 
-function requireUser_(accessToken) {
-  if (!accessToken) throw new Error('Sign in with your username and password.');
+function requireUser_(sessionToken) {
+  if (!sessionToken) throw new Error('Sign in with your username and password.');
   const cache = CacheService.getScriptCache();
-  const key = sessionCacheKey_(accessToken);
+  const key = sessionCacheKey_(sessionToken);
   const accountId = cache.get(key);
   if (!accountId) throw new Error('Your session expired. Sign in again.');
   const account = findAccountById_(accountId);
@@ -184,25 +183,6 @@ function signupWithPassword_(data) {
   return { ok: true, status: 'pending', request_id: id };
 }
 
-function claimLegacyAccount_(accessToken, data) {
-  const identity = googleIdentity_(accessToken), username = normalizeUsername_(data.username), password = String(data.password || '');
-  if (!/^[a-z0-9._-]{3,32}$/.test(username)) throw new Error('Username must be 3–32 characters: letters, numbers, dot, underscore or hyphen.');
-  if (password.length < 10 || password.length > 128) throw new Error('Password must be between 10 and 128 characters.');
-  const { sheet, rows } = accountRows_();
-  const index = rows.findIndex(row => String(row[12] || '').trim().toLowerCase() === identity.email && (!String(row[13] || '') || String(row[13] || '') === identity.sub));
-  if (index < 0) throw new Error('No existing account is linked to this Google account. Submit a new account request instead.');
-  if (rows.some((row, i) => i !== index && String(row[14] || '').trim().toLowerCase() === username)) throw new Error('That username is already in use.');
-  if (String(rows[index][15] || '') && String(rows[index][16] || '')) throw new Error('This account already has a username and password. Sign in with them.');
-  const salt = Utilities.getUuid().replace(/-/g, '');
-  sheet.getRange(index + 2, 15, 1, 3).setValues([[username, salt, passwordHash_(password, salt)]]);
-  if (!String(rows[index][13] || '')) sheet.getRange(index + 2, 14).setValue(identity.sub);
-  invalidateAccountCache_(identity.email);
-  const accountId = String(rows[index][0] || '');
-  const token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
-  CacheService.getScriptCache().put(sessionCacheKey_(token), accountId, 21600);
-  return { token: token };
-}
-
 function normalizeUsername_(value) { return String(value || '').trim().toLowerCase(); }
 function sessionCacheKey_(token) { return 'session:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token))).replace(/=+$/, ''); }
 function passwordHash_(password, salt) {
@@ -223,146 +203,13 @@ function findAccountByUsername_(username) {
   return { accountId: String(row[0] || ''), name: String(row[1] || ''), callsign: String(row[2] || ''), status: String(row[5] || '').toLowerCase(), role: String(row[6] || 'member').toLowerCase(), username: String(row[14] || ''), passwordSalt: String(row[15] || ''), passwordHash: String(row[16] || '') };
 }
 
-function googleIdentity_(accessToken) {
-  if (!accessToken) throw new Error('Sign in with Google to continue.');
-  // Cache identity briefly by a one-way token fingerprint. The OAuth token
-  // itself is never written to Apps Script cache or spreadsheet storage.
-  const tokenHash = Utilities.base64EncodeWebSafe(
-    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, accessToken)
-  ).replace(/=+$/, '');
-  const cache = CacheService.getScriptCache();
-  const cacheKey = 'google-identity:' + tokenHash;
-  const cachedIdentity = cache.get(cacheKey);
-  if (cachedIdentity) return JSON.parse(cachedIdentity);
-  const response = UrlFetchApp.fetch('https://openidconnect.googleapis.com/v1/userinfo', {
-    method: 'get', headers: { Authorization: 'Bearer ' + accessToken }, muteHttpExceptions: true
-  });
-  if (response.getResponseCode() !== 200) throw new Error('Google sign-in expired. Sign in again.');
-  const identity = JSON.parse(response.getContentText());
-  if (!identity.email || identity.email_verified !== true || !identity.sub) throw new Error('A verified Google email is required.');
-  // The token fingerprint is one-way and the OAuth token itself is never
-  // cached. Reuse the verified identity between quick API calls/navigation.
-  cache.put(cacheKey, JSON.stringify(identity), 300);
-  return identity;
-}
-
-function bindGoogleSub_(accountId, sub) {
-  const { sheet, rows } = accountRows_();
-  const index = rows.findIndex(row => String(row[0]) === String(accountId));
-  if (index < 0) throw new Error('Account not found.');
-  const existing = String(rows[index][13] || '');
-  if (existing && existing !== sub) throw new Error('This Google account does not match the account link. Contact a Commander.');
-  if (!existing) {
-    sheet.getRange(index + 2, 14).setValue(sub);
-    invalidateAccountCache_(rows[index][12]);
-  }
-}
-
-function invalidateAccountCache_(email) {
-  const normalizedEmail = String(email || '').trim().toLowerCase();
-  if (!normalizedEmail) return;
-  const emailHash = Utilities.base64EncodeWebSafe(
-    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, normalizedEmail)
-  ).replace(/=+$/, '');
-  CacheService.getScriptCache().remove('account-email:' + emailHash);
-}
-
-function signupWithGoogle_(accessToken, data) {
-  const identity = googleIdentity_(accessToken);
-  if (findAccountByEmail_(identity.email)) throw new Error('This Google account already has an LVFR account.');
-  const name = String(data.name || '').trim().replace(/\s+/g, ' ');
-  const callsign = String(data.callsign || '').trim().toUpperCase();
-  if (name.length < 2 || name.length > 48) throw new Error('Name must be between 2 and 48 characters.');
-  if (!callsign || callsign.length > 48 || LVFR.ignoredCallsigns.has(callsign)) throw new Error('Enter a valid LVFR Callsign.');
-  if (!rosterMember_(callsign)) throw new Error('Callsign was not found on the LVFR roster.');
-  const { sheet, rows } = accountRows_();
-  if (rows.some(row => String(row[2] || '').trim().toUpperCase() === callsign && !['removed', 'denied'].includes(String(row[5] || '').toLowerCase()))) {
-    throw new Error('An account is already linked to that Callsign.');
-  }
-  const accountId = Utilities.getUuid();
-  const now = new Date().toISOString();
-  sheet.appendRow([accountId, name, callsign, '', '', 'pending', 'member', now, '', '', '', '', identity.email, identity.sub]);
-  recordAccountAudit_(accountId, name, callsign, 'Account Requested', identity.email);
-  return { ok: true, status: 'pending', request_id: accountId };
-}
-
-function verifyRosterEditor_(accessToken, subject) {
-  const cache = CacheService.getScriptCache();
-  const cacheKey = 'roster-editor:' + subject;
-  if (cache.get(cacheKey) === 'yes') return;
-  const id = requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID');
-  const url = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(id) +
-    '?fields=capabilities(canEdit)&supportsAllDrives=true';
-  const response = UrlFetchApp.fetch(url, {
-    method: 'get',
-    headers: { Authorization: 'Bearer ' + accessToken },
-    muteHttpExceptions: true
-  });
-  if (response.getResponseCode() !== 200) {
-    const status = response.getResponseCode();
-    let reason = '';
-    try {
-      const body = JSON.parse(response.getContentText());
-      reason = String(body && body.error && body.error.errors && body.error.errors[0] && body.error.errors[0].reason || '');
-    } catch (ignored) {}
-    if (status === 401) {
-      throw new Error('Google Drive permission is missing from this sign-in. Sign out, sign in again, and grant the requested Drive metadata permission.');
-    }
-    if (reason === 'accessNotConfigured' || reason === 'SERVICE_DISABLED') {
-      throw new Error('Google Drive API is not enabled for the OAuth Cloud project. Enable Google Drive API, then sign in again.');
-    }
-    if (status === 404) {
-      throw new Error('The LVFR roster spreadsheet was not found for this account. Check the roster spreadsheet ID and sharing.');
-    }
-    throw new Error('Google Drive could not verify roster access (HTTP ' + status + '). Enable Google Drive API and confirm this account can open the roster spreadsheet.');
-  }
-  const file = JSON.parse(response.getContentText());
-  if (!file.capabilities || file.capabilities.canEdit !== true) {
-    throw new Error('Your Google account needs edit access to the LVFR roster spreadsheet.');
-  }
-  // Keep this per-user permission check warm across page navigation so every
-  // API call does not immediately issue another Drive metadata request.
-  cache.put(cacheKey, 'yes', 300);
-}
-
-function findAccountByEmail_(email) {
-  const normalizedEmail = String(email || '').trim().toLowerCase();
-  const emailHash = Utilities.base64EncodeWebSafe(
-    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, normalizedEmail)
-  ).replace(/=+$/, '');
-  const cache = CacheService.getScriptCache();
-  const cacheKey = 'account-email:' + emailHash;
-  const cached = cache.get(cacheKey);
-  if (cached) return JSON.parse(cached);
-  const id = requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID');
-  const sheet = SpreadsheetApp.openById(id).getSheetByName(LVFR.accountsTab);
-  if (!sheet || sheet.getLastRow() < 2) throw new Error('Account directory is not configured.');
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(17, sheet.getLastColumn())).getDisplayValues();
-  const target = normalizedEmail;
-  for (const row of rows) {
-    // Column M is reserved for the linked Google email; N stores the stable sub.
-    if (String(row[12] || '').trim().toLowerCase() !== target) continue;
-    const account = {
-      accountId: String(row[0] || ''),
-      name: String(row[1] || ''),
-      callsign: String(row[2] || ''),
-      status: String(row[5] || '').toLowerCase(),
-      role: String(row[6] || 'leader').toLowerCase(),
-      googleSub: String(row[13] || '')
-    };
-    cache.put(cacheKey, JSON.stringify(account), 120);
-    return account;
-  }
-  return null;
-}
-
 function publicUser_(user) {
   return {
     account_id: user.accountId || user.account_id,
     id: user.accountId || user.account_id,
     name: user.name,
     callsign: user.callsign,
-    email: user.email,
+    username: user.username,
     role: user.role,
     status: user.status,
     is_admin: user.role === 'admin' || user.role === 'commander',
@@ -1035,12 +882,12 @@ function changeInstructor_(callsign, data, user) {
   return { ok: true, changed: current !== assigned, assigned, instructor_type: type, status: current !== assigned ? 'queued' : 'unchanged' };
 }
 
-function actorName_(user) { return user.name || user.email || user.accountId || 'LVFR user'; }
+function actorName_(user) { return user.name || user.accountId || 'LVFR user'; }
 
 function accountRows_() {
   const sheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')).getSheetByName(LVFR.accountsTab);
   if (!sheet || sheet.getLastRow() < 2) return { sheet, rows: [] };
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(14, sheet.getLastColumn())).getDisplayValues();
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(17, sheet.getLastColumn())).getDisplayValues();
   return { sheet, rows };
 }
 
@@ -1099,7 +946,6 @@ function updateAccount_(accountId, action, actor) {
   const index = rows.findIndex(row => String(row[0]) === String(accountId));
   if (index < 0) throw new Error('Account not found.');
   const rowNumber = index + 2, row = rows[index];
-  const accountEmail = String(row[12] || '').trim().toLowerCase();
   let status = String(row[5] || '').toLowerCase(), role = String(row[6] || 'leader').toLowerCase();
   const now = new Date().toISOString(), actorName = actorName_(actor), name = row[1] || '', callsign = row[2] || '';
   switch (action) {
@@ -1150,7 +996,6 @@ function updateAccount_(accountId, action, actor) {
     default: throw new Error('Unknown account action.');
   }
   recordAccountAudit_(accountId, name, callsign, action, actorName);
-  invalidateAccountCache_(accountEmail);
   return { ok: true, status: 'saving' };
 }
 
@@ -1190,7 +1035,7 @@ function listWatchLogs_() {
   const sheet = watchSheet_();
   if (sheet.getLastRow() < 2) return [];
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, WATCH_HEADERS.length).getValues();
-  const accounts = accountsWithEmail_();
+  const accounts = accountsForRollCall_();
   return rows.slice(-100).reverse().map(values => {
     const record = Object.fromEntries(WATCH_HEADERS.map((key, index) => [key, values[index]]));
     record.id = Number(record.id);
@@ -1242,7 +1087,7 @@ function saveWatchLog_(input, user) {
   }
 }
 
-function accountsWithEmail_() {
+function accountsForRollCall_() {
   const sheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')).getSheetByName(LVFR.accountsTab);
   if (!sheet || sheet.getLastRow() < 2) return [];
   return sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(14, sheet.getLastColumn())).getDisplayValues().map(row => ({

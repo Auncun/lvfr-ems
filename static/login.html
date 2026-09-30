@@ -42,20 +42,10 @@
         <button type="submit">Create account and request access</button>
       </form>
     </details>
-    <details class="auth-note" style="margin-top:18px">
-      <summary>Set a password for an existing Google-linked account</summary>
-      <form id="claimForm" class="auth-form" style="margin-top:12px">
-        <label>New username<input name="username" minlength="3" maxlength="32" autocomplete="username" pattern="[A-Za-z0-9._-]{3,32}" required></label>
-        <label>New password<input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" required></label>
-        <button type="submit">Verify old account and set password</button>
-      </form>
-    </details>
     <p class="auth-note" dir="rtl"><a href="/about.html">عن البوابة</a> · <a href="/privacy.html">سياسة الخصوصية</a></p>
     <div id="authMessage" class="auth-message" role="status"></div>
   </main>
-  <script src="/static/google-auth.js?v=password-session-1"></script>
-  <script src="/static/public-config.js"></script>
-  <script src="https://accounts.google.com/gsi/client" async></script>
+  <script src="/static/session-auth.js?v=password-session-2"></script>
   <script src="/static/login.js?v=password-login-1"></script>
   <script src="/static/pwa.js"></script>
 </body>

@@ -21,20 +21,19 @@
     <section>
       <h2>Information used</h2>
       <ul>
-        <li>LVFR accounts use a username and password. Existing Google-linked accounts use Google verification once to set their new credentials.</li>
-        <li>Account requests include the name and LVFR callsign you submit.</li>
+        <li>LVFR accounts use a username and password. Account requests include the name and LVFR callsign you submit.</li>
         <li>Passwords are transmitted over HTTPS. The server stores a salted, repeatedly hashed password value and keeps a temporary session token in your browser session.</li>
         <li>Operational records can include roster details, rank and callsign changes, training and exam status, activity, notes, watch-command logs, and account audit events.</li>
       </ul>
     </section>
     <section>
       <h2>How information is used and stored</h2>
-      <p>Information is used to authenticate accounts, administer LVFR access, maintain EMS roster and training records, and document operational activity. Account and operational records are stored in private Google Sheets controlled by LVFR and are available to authorized LVFR administrators according to their roles. Google services process sign-in and spreadsheet operations; Cloudflare Pages delivers the website and proxies API requests.</p>
+      <p>Information is used to authenticate accounts, administer LVFR access, maintain EMS roster and training records, and document operational activity. Account and operational records are stored in private Google Sheets controlled by LVFR and are available to authorized LVFR administrators according to their roles. Google Sheets stores the records; Cloudflare Pages delivers the website and proxies API requests.</p>
       <p>The session token is held temporarily in your browser session and sent over HTTPS to authenticate requests. Passwords are not written to the spreadsheet; only their salt and derived hash are stored.</p>
     </section>
     <section>
       <h2>Sharing, retention, and choices</h2>
-      <p>Information is used for LVFR operations and is not used by this portal for advertising. It is available to authorized LVFR personnel and the service providers needed to operate sign-in, hosting, and spreadsheets.</p>
+      <p>Information is used for LVFR operations and is not used by this portal for advertising. It is available to authorized LVFR personnel and the service providers needed to operate hosting and spreadsheets.</p>
       <p>The application has no automatic deletion schedule. Records may remain in LVFR spreadsheets, including audit history, after an account is deactivated or marked removed. To ask about access, correction, or removal of account information, contact an LVFR Commander through your established LVFR contact channel.</p>
       <p>You can end the browser session by signing out or closing the browser tab.</p>
     </section>
@@ -46,16 +45,15 @@
         <p><strong>الخدمة:</strong> بوابة عمليات LVFR EMS. تشرح هذه السياسة المعلومات التي تتعامل معها البوابة وأسباب استخدامها. البوابة مخصصة لإدارة roster وعمليات EMS في LVFR.</p>
         <h2>المعلومات المستخدمة</h2>
         <ul>
-          <li>تستخدم حسابات LVFR اسم مستخدم وكلمة مرور. يتحقق أصحاب الحسابات المرتبطة سابقًا بـ Google مرة واحدة لتعيين بيانات الدخول الجديدة.</li>
-          <li>يتضمن طلب الحساب الاسم والنداء الوظيفي في LVFR اللذين تدخلهما.</li>
-          <li>للحسابات التشغيلية المعتمدة، تُستخدم صلاحية قراءة بيانات Drive الوصفية فقط للتحقق من قدرة حسابك على تعديل ملف roster. لا تستخدم البوابة هذه الصلاحية لقراءة محتوى الملفات.</li>
+          <li>تستخدم حسابات LVFR اسم مستخدم وكلمة مرور. يتضمن طلب الحساب الاسم والنداء الوظيفي في LVFR اللذين تدخلهما.</li>
+          <li>تُرسل كلمات المرور عبر HTTPS، ويخزن الخادم ملحًا وبصمة مشتقة من كلمة المرور. يحفظ المتصفح رمز جلسة مؤقتًا أثناء استخدام البوابة.</li>
           <li>قد تشمل السجلات التشغيلية بيانات roster وتغييرات الرتب والنداءات الوظيفية وحالة التدريب والاختبارات والنشاط والملاحظات وسجلات المناوبة وسجل تدقيق الحسابات.</li>
         </ul>
         <h2>الاستخدام والتخزين</h2>
-        <p>تُستخدم المعلومات للتحقق من الحسابات وإدارة صلاحيات LVFR وحفظ سجلات roster والتدريب وتوثيق النشاط التشغيلي. تُحفظ سجلات الحسابات والعمليات في جداول Google خاصة تتحكم بها LVFR، ويصل إليها أفراد LVFR المخولون بحسب أدوارهم. تعالج خدمات Google تسجيل الدخول والجداول، وتستضيف Cloudflare Pages الموقع وتعمل وسيطاً لطلبات API.</p>
+        <p>تُستخدم المعلومات للتحقق من الحسابات وإدارة صلاحيات LVFR وحفظ سجلات roster والتدريب وتوثيق النشاط التشغيلي. تُحفظ سجلات الحسابات والعمليات في جداول Google خاصة تتحكم بها LVFR، ويصل إليها أفراد LVFR المخولون بحسب أدوارهم. تستضيف Cloudflare Pages الموقع وتعمل وسيطًا لطلبات API.</p>
         <p>يُحفظ رمز الجلسة مؤقتًا في جلسة المتصفح ويُرسل عبر HTTPS. لا تحفظ الخدمة كلمات المرور في الجداول؛ تحفظ الملح وبصمة مشتقة منها فقط.</p>
         <h2>المشاركة والاحتفاظ والخيارات</h2>
-        <p>تُستخدم المعلومات لعمليات LVFR، ولا تستخدمها البوابة للإعلانات. يطلع عليها أفراد LVFR المخولون ومزودو الخدمات اللازمون لتشغيل تسجيل الدخول والاستضافة والجداول.</p>
+        <p>تُستخدم المعلومات لعمليات LVFR، ولا تستخدمها البوابة للإعلانات. يطلع عليها أفراد LVFR المخولون ومزودو الخدمات اللازمون للاستضافة والجداول.</p>
         <p>لا تملك البوابة حالياً جدول حذف آلياً. قد تبقى السجلات في جداول LVFR، بما فيها سجلات التدقيق، بعد تعطيل الحساب أو وضعه بحالة «محذوف». لطلب الاطلاع على بيانات الحساب أو تصحيحها أو حذفها، تواصل مع أحد قادة LVFR عبر قناة التواصل المعتمدة لديك.</p>
         <p>يمكنك إنهاء جلسة المتصفح بتسجيل الخروج أو إغلاق علامة التبويب.</p>
         <p><strong>آخر تحديث:</strong> 30 سبتمبر 2026.</p>

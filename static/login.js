@@ -1,7 +1,6 @@
 const message = document.querySelector('#authMessage');
 const loginForm = document.querySelector('#loginForm');
 const signupForm = document.querySelector('#signupForm');
-const claimForm = document.querySelector('#claimForm');
 
 async function checkAccount() {
   const response = await fetch('/auth/me');
@@ -40,28 +39,4 @@ async function submitAuth(form, route) {
 
 loginForm.addEventListener('submit', event => { event.preventDefault(); submitAuth(loginForm, '/auth/login'); });
 signupForm.addEventListener('submit', event => { event.preventDefault(); submitAuth(signupForm, '/auth/signup'); });
-claimForm.addEventListener('submit', event => {
-  event.preventDefault();
-  const fields = Object.fromEntries(new FormData(claimForm));
-  const button = claimForm.querySelector('button[type="submit"]');
-  const clientId = window.LVFR_PUBLIC_CONFIG?.googleOAuthClientId;
-  if (!clientId || !window.google?.accounts?.oauth2) { message.textContent = 'Google verification is not available yet. Try again shortly.'; return; }
-  button.disabled = true;
-  message.textContent = 'Verify your existing Google-linked account…';
-  const client = google.accounts.oauth2.initTokenClient({
-    client_id: clientId, scope: 'openid email profile', include_granted_scopes: true,
-    callback: async result => {
-      try {
-        if (result.error || !result.access_token) throw new Error(result.error_description || 'Google verification was not completed.');
-        const response = await fetch('/auth/claim', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${result.access_token}` }, body: JSON.stringify(fields) });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.detail || 'Could not update the account.');
-        window.lvfrSetSession(payload.token);
-        await checkAccount();
-      } catch (error) { message.textContent = error.message; button.disabled = false; }
-    },
-    error_callback: () => { message.textContent = 'Google verification could not open. Allow popups and try again.'; button.disabled = false; }
-  });
-  client.requestAccessToken({ prompt: 'select_account' });
-});
 if (window.lvfrSessionToken()) checkAccount().catch(() => {});
