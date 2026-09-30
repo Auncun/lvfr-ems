@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-09-30-optimistic-sync-5',
+  apiVersion: '2026-09-30-fast-cache-6',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -232,7 +232,9 @@ function verifyRosterEditor_(accessToken, subject) {
   if (!file.capabilities || file.capabilities.canEdit !== true) {
     throw new Error('Your Google account needs edit access to the LVFR roster spreadsheet.');
   }
-  cache.put(cacheKey, 'yes', 30);
+  // Keep this per-user permission check warm across page navigation so every
+  // API call does not immediately issue another Drive metadata request.
+  cache.put(cacheKey, 'yes', 300);
 }
 
 function findAccountByEmail_(email) {
@@ -260,7 +262,7 @@ function findAccountByEmail_(email) {
       role: String(row[6] || 'leader').toLowerCase(),
       googleSub: String(row[13] || '')
     };
-    cache.put(cacheKey, JSON.stringify(account), 15);
+    cache.put(cacheKey, JSON.stringify(account), 45);
     return account;
   }
   return null;
@@ -286,7 +288,9 @@ function requireApproved_(user) {
 
 function requireLeader_(user) {
   requireApproved_(user);
-  if (user.role === 'member') throw new Error('Members can only use Watch Command.');
+  if (!['leader', 'admin', 'commander'].includes(String(user.role || '').toLowerCase())) {
+    throw new Error('This LVFR account is not authorized for EMS Operations.');
+  }
 }
 
 function requireAdmin_(user) {
@@ -317,6 +321,12 @@ function instructorTypes_(user) {
 }
 
 function instructorDirectory_() {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'instructor-directory:v1';
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    try { return JSON.parse(cached); } catch (ignored) {}
+  }
   const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
   const byName = new Map();
   const addSheet = (title, nameColumn, statusColumn, dateColumn, type) => {
@@ -339,7 +349,9 @@ function instructorDirectory_() {
   };
   addSheet('HERT Certified', 2, 6, null, 'HERT');
   addSheet('FIREFIGHTER CERT', 1, 2, 4, 'FORT');
-  return Array.from(byName.values());
+  const result = Array.from(byName.values());
+  try { cache.put(cacheKey, JSON.stringify(result), 60); } catch (ignored) {}
+  return result;
 }
 
 function isGreen_(color) {
@@ -357,17 +369,13 @@ function rosterSheet_() {
 
 function listMembers_(search) {
   const cache = CacheService.getScriptCache();
-  const cacheKey = 'roster:members:v1';
+  const cacheKey = 'roster:members:v2';
   let records;
-  const cached = cache.get(cacheKey);
-  if (cached) {
-    records = JSON.parse(cached);
-  } else {
+  const cached = readRosterCache_(cache, cacheKey);
+  if (cached) records = cached;
+  else {
     records = readRosterMembers_();
-    const serialized = JSON.stringify(records);
-    if (serialized.length < 95000) {
-      try { cache.put(cacheKey, serialized, 60); } catch (ignored) { /* Cache is an optimization only. */ }
-    }
+    writeRosterCache_(cache, cacheKey, records);
   }
   const query = String(search || '').trim().toLowerCase();
   if (!query) return records;
@@ -376,7 +384,54 @@ function listMembers_(search) {
 }
 
 function invalidateRosterCache_() {
-  CacheService.getScriptCache().remove('roster:members:v1');
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'roster:members:v2';
+  const index = cache.get(cacheKey);
+  cache.remove(cacheKey);
+  if (!index) return;
+  try {
+    const count = Number(JSON.parse(index).chunks || 0);
+    if (count > 0 && count <= 32) {
+      cache.removeAll(Array.from({ length: count }, (_, part) => cacheKey + ':' + part));
+    }
+  } catch (ignored) {}
+}
+
+// Apps Script CacheService rejects entries near 100 KB. Split large rosters
+// so the shared roster snapshot remains usable instead of rereading Sheets on
+// every API request. Store the index last so partial writes are never served.
+function readRosterCache_(cache, cacheKey) {
+  const index = cache.get(cacheKey);
+  if (!index) return null;
+  try {
+    const count = Number(JSON.parse(index).chunks || 0);
+    if (!count || count > 32) return null;
+    const parts = cache.getAll(Array.from({ length: count }, (_, part) => cacheKey + ':' + part));
+    let serialized = '';
+    for (let part = 0; part < count; part++) {
+      const value = parts[cacheKey + ':' + part];
+      if (typeof value !== 'string') return null;
+      serialized += value;
+    }
+    return JSON.parse(serialized);
+  } catch (ignored) {
+    return null;
+  }
+}
+
+function writeRosterCache_(cache, cacheKey, records) {
+  const serialized = JSON.stringify(records);
+  const chunkSize = 20000;
+  const count = Math.ceil(serialized.length / chunkSize);
+  if (count > 32) return;
+  try {
+    for (let part = 0; part < count; part++) {
+      cache.put(cacheKey + ':' + part, serialized.slice(part * chunkSize, (part + 1) * chunkSize), 60);
+    }
+    cache.put(cacheKey, JSON.stringify({ chunks: count }), 60);
+  } catch (ignored) {
+    cache.remove(cacheKey);
+  }
 }
 
 function readRosterMembers_() {
@@ -549,11 +604,37 @@ function appendAppLog_(record) {
   row[0] = Math.max(0, sheet.getLastRow() - 1) + 1;
   row[2] = row[2] || new Date().toISOString();
   sheet.appendRow(row);
+  invalidateMemberLogsCache_();
 }
 
 function memberLogs_(kind) {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'member-logs:v1:' + String(kind || '').toLowerCase();
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    try { return JSON.parse(cached); } catch (ignored) {}
+  }
+  const result = readMemberLogs_(kind);
+  const serialized = JSON.stringify(result);
+  if (serialized.length < 90000) {
+    try { cache.put(cacheKey, serialized, 45); } catch (ignored) {}
+  }
+  return result;
+}
+
+function invalidateMemberLogsCache_() {
+  CacheService.getScriptCache().removeAll([
+    'member-logs:v1:promotion', 'member-logs:v1:callsign', 'member-logs:v1:training',
+    'member-logs:v1:exam', 'member-logs:v1:note', 'member-logs:v1:activity',
+    'member-logs:v1:instructor', 'member-logs:v1:termination'
+  ]);
+}
+
+function readMemberLogs_(kind) {
   const sheet = appLogSheet_();
-  const rows = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, APP_LOG_HEADERS.length).getDisplayValues();
+  const lastRow = sheet.getLastRow();
+  const rowCount = Math.min(Math.max(0, lastRow - 1), 2000);
+  const rows = rowCount ? sheet.getRange(lastRow - rowCount + 1, 1, rowCount, APP_LOG_HEADERS.length).getDisplayValues() : [];
   const aliases = { promotion: ['promotion'], callsign: ['callsign'], training: ['training'], exam: ['exam'], note: ['note'], activity: ['activity'], instructor: ['instructor'], termination: ['termination'] };
   const allowed = aliases[kind] || [];
   const current = rows.filter(row => allowed.includes(String(row[1]).toLowerCase())).map(row => {
@@ -580,7 +661,9 @@ function memberLogs_(kind) {
   });
   const archive = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')).getSheetByName('Logs');
   if (!archive || archive.getLastRow() < 2) return current.slice(-200).reverse();
-  const oldRows = archive.getRange(2, 1, archive.getLastRow() - 1, Math.min(11, archive.getLastColumn())).getDisplayValues();
+  const archiveLastRow = archive.getLastRow();
+  const archiveCount = Math.min(archiveLastRow - 1, 5000);
+  const oldRows = archive.getRange(archiveLastRow - archiveCount + 1, 1, archiveCount, Math.min(11, archive.getLastColumn())).getDisplayValues();
   const historical = oldRows.map(row => {
     const event = String(row[1] || ''), lower = event.toLowerCase();
     const category = lower.includes('terminat') ? 'termination'
@@ -844,6 +927,7 @@ function changeInstructor_(callsign, data, user) {
   const current = isGreen_(cell.getBackground());
   if (current !== assigned) {
     cell.setBackground(assigned ? '#00ff00' : '#ffffff');
+    CacheService.getScriptCache().remove('instructor-directory:v1');
     if (type === 'FORT') sheet.getRange(index + 2, 4).setValue(assigned ? new Date() : '');
     appendAppLog_({ kind: 'instructor', callsign: member.callsign, member_name: member.name, action: type + (assigned ? ' Instructor Assigned' : ' Instructor Removed'), details: type, changed_by: actorName_(user) });
   }
@@ -872,21 +956,39 @@ function accountObject_(row) {
 }
 
 function leaderOverview_() {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'leader-overview:v1';
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    try { return JSON.parse(cached); } catch (ignored) {}
+  }
   const accounts = accountRows_().rows.map(accountObject_);
-  return {
+  const result = {
     approved: accounts.filter(row => row.status === 'approved'),
     pending: accounts.filter(row => row.status === 'pending'),
     deactivated: accounts.filter(row => row.status === 'deactivated'),
     audit: accountAudit_()
   };
+  try { cache.put(cacheKey, JSON.stringify(result), 30); } catch (ignored) {}
+  return result;
 }
 
 function accountAudit_() {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'account-audit:v1';
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    try { return JSON.parse(cached); } catch (ignored) {}
+  }
   const sheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')).getSheetByName('Account Audit');
   if (!sheet || sheet.getLastRow() < 2) return [];
-  return sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getDisplayValues().slice(-200).reverse().map(row => ({
+  const lastRow = sheet.getLastRow();
+  const count = Math.min(lastRow - 1, 200);
+  const result = sheet.getRange(lastRow - count + 1, 1, count, 6).getDisplayValues().reverse().map(row => ({
     created_at: row[0], account_id: row[1], name: row[2], callsign: row[3], action: row[4], actor_name: row[5], by: row[5]
   }));
+  try { cache.put(cacheKey, JSON.stringify(result), 45); } catch (ignored) {}
+  return result;
 }
 
 function updateAccount_(accountId, action, actor) {
@@ -961,6 +1063,7 @@ function recordAccountAudit_(accountId, name, callsign, action, actorName) {
   if (!sheet) sheet = spreadsheet.insertSheet('Account Audit');
   if (sheet.getLastRow() === 0) sheet.appendRow(['Timestamp', 'Account ID', 'Name', 'Callsign', 'Action', 'By']);
   sheet.appendRow([new Date().toISOString(), accountId, name, callsign, action, actorName]);
+  CacheService.getScriptCache().removeAll(['leader-overview:v1', 'account-audit:v1']);
 }
 
 function rosterMember_(callsign) {

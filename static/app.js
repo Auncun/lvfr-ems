@@ -1,6 +1,8 @@
 ﻿const $ = s => document.querySelector(s);
 
 let config = {};
+const API_READ_CACHE_MS = 15000;
+const apiReadCache = new Map();
 const BACKGROUND_PENDING_MESSAGE = "BACKGROUND_SAVE_PENDING";
 
 
@@ -10,6 +12,16 @@ const BACKGROUND_PENDING_MESSAGE = "BACKGROUND_SAVE_PENDING";
 
 async function api(url, options = {}) {
     if (isBackgroundMutationRequest(url, options)) return startBackgroundMutation(url, options);
+    const method = String(options.method || "GET").toUpperCase();
+    const cacheableRead = method === "GET" && new URL(url, location.href).pathname.startsWith("/api/");
+    if (cacheableRead) {
+        const cached = apiReadCache.get(url);
+        if (cached && Date.now() - cached.savedAt < API_READ_CACHE_MS) {
+            try { return JSON.parse(cached.body); } catch { apiReadCache.delete(url); }
+        }
+    } else if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        apiReadCache.clear();
+    }
     const r = await fetch(url, {
         ...options,
 
@@ -40,6 +52,9 @@ async function api(url, options = {}) {
         throw error;
     }
 
+    if (cacheableRead) {
+        try { apiReadCache.set(url, { savedAt: Date.now(), body: JSON.stringify(d) }); } catch {}
+    }
     return d;
 }
 
@@ -61,6 +76,7 @@ function startBackgroundMutation(url, options) {
     try { payload = JSON.parse(options.body || "{}"); } catch {}
     const callsignMatch = path.match(/^\/api\/member\/([^/]+)\/instructor$/);
     const callsign = String(payload.callsign || (callsignMatch ? decodeURIComponent(callsignMatch[1]) : ""));
+    apiReadCache.clear();
     applyOptimisticMutation(path, payload, callsign);
     const request = fetch(url, {
         ...options,
@@ -563,8 +579,6 @@ async function health() {
             dbStatus.style.color =
                 "#56d364";
         }
-
-        await syncStatus();
 
     } catch {
 
@@ -4188,9 +4202,7 @@ if (modal) {
 async function loadAccount() {
     try {
         const user = await api("/auth/me");
-        // Pages serves every HTML file as a public static asset. Keep members
-        // on their permitted Watch Command view before initializing the roster UI.
-        if (user.role === "member" && location.pathname !== "/watch-command") {
+        if (user.role === "member") {
             location.replace("/watch-command");
             return;
         }
@@ -4262,6 +4274,7 @@ $("#changePasswordForm")?.addEventListener("submit", async event => {
             loadMembers(),
             loadMembersLog("promotion"),
         ]);
+        void syncStatus();
     } catch (e) {
         toast(e.message);
     }
