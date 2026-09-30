@@ -29,6 +29,8 @@ Apps Script خدمة Google سحابية؛ هذا التصميم لا يحتاج
 
 انشر أحدث ملفات المشروع من مجلد العمل. يجب أن يصل مجلد `functions/` إلى جذر مستودع Pages ليعمل وسيط API، وأن يكون Build command هو `python build_static.py` ومجلد الإخراج `dist`. يرسل وسيط Pages طلبات `/api/*` و`/auth/*` إلى رابط Apps Script أعلاه؛ يمكن ضبط `GAS_WEB_APP_URL` كمتغير Pages لتجاوز الرابط الافتراضي في `functions/[[path]].js`.
 
+لا تضف Redirect Rules لتحويل مسارات مثل `/login` إلى `/login.html`؛ Cloudflare Pages يتعامل تلقائيًا مع المسارات النظيفة وملفات HTML. قواعد التحويل السابقة أُزيلت لتجنب حلقة إعادة توجيه.
+
 ## نقاط لازمة قبل الاستخدام
 
 - OAuth Client ID موجود في `static/public-config.js`، وهو معرف عام. لا تضع OAuth Client Secret أو ملف حساب الخدمة في ملفات `static/` أو `dist/`.
