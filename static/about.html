@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <meta name="description" content="About the LVFR EMS Operations portal and how Google sign-in is used.">
+  <meta name="description" content="About the LVFR EMS Operations portal and account access.">
   <title>About · LVFR EMS Operations</title>
   <style>
     :root{color-scheme:dark;font:16px/1.65 system-ui,sans-serif;background:#0b1017;color:#e6edf3}
@@ -18,9 +18,9 @@
     <h1>LVFR EMS Operations</h1>
     <p>This portal supports authorized LVFR EMS personnel with roster administration, training and examination records, activity status, and watch-command logs. Access is limited to accounts linked to an LVFR roster entry and approved by an LVFR Commander.</p>
     <section>
-      <h2>Google sign-in and permissions</h2>
-      <p>Google sign-in verifies your Google account. For approved operational accounts, the portal also checks whether that account can edit the LVFR roster spreadsheet. This check requests read-only Drive file metadata; it does not use your Google token to read or edit spreadsheet contents. Spreadsheet operations are performed by the LVFR Apps Script service under its owner's authorization.</p>
-      <p>New account requests ask for your name and LVFR callsign so a Commander can match and approve the request. The portal never asks you to enter your Google password on this site; Google handles the sign-in screen.</p>
+      <h2>Username and password access</h2>
+      <p>Sign in with the username and password you set for your LVFR account. Passwords are sent over HTTPS and stored as salted password hashes. Approved roster and spreadsheet operations are performed by the LVFR Apps Script service under its owner's authorization.</p>
+      <p>New account requests ask for your name, LVFR callsign, username and password. A Commander must approve the request before the account can access the portal. Owners of existing Google-linked accounts can verify with Google once to set new credentials.</p>
     </section>
     <details>
       <summary>العربية</summary>

@@ -9,9 +9,6 @@
   <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
   <title>Account access · LVFR EMS</title>
   <link rel="stylesheet" href="/static/style.css?v=local-accounts-2">
-  <link rel="preconnect" href="https://accounts.google.com" crossorigin>
-  <link rel="preconnect" href="https://openidconnect.googleapis.com" crossorigin>
-  <link rel="preconnect" href="https://www.googleapis.com" crossorigin>
   <style>
     body{min-height:100vh;display:grid;place-items:center;padding:18px;background:#0b1017}
     .auth-card{width:min(430px,100%);padding:28px;background:#111720;border:1px solid #303945;border-radius:14px}
@@ -29,26 +26,37 @@
     <h1>LVFR EMS Operations</h1>
     <p>Sign in or request an account.</p>
     <button type="button" id="installAppButton" hidden>Install app</button>
-    <div class="auth-form">
-      <button type="button" id="googleSignInButton" class="primary">Continue with Google</button>
-      <p class="auth-note">Use the Google account linked to your approved LVFR account. New account linking is managed by an administrator.</p>
-      <p class="auth-note">Google verifies your account. For approved operational accounts, we check read-only Drive file metadata to confirm roster edit access. We do not ask for your Google password on this site. <a href="/about.html">About the portal</a> · <a href="/privacy.html">Privacy policy</a></p>
-    </div>
+    <form id="loginForm" class="auth-form">
+      <label>Username<input name="username" minlength="3" maxlength="32" autocomplete="username" required></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit" class="primary">Sign in</button>
+      <p class="auth-note">Use the username and password created for your LVFR account. <a href="/about.html">About the portal</a> · <a href="/privacy.html">Privacy policy</a></p>
+    </form>
     <details class="auth-note" style="margin-top:18px">
       <summary>Request a new LVFR account</summary>
       <form id="signupForm" class="auth-form" style="margin-top:12px">
         <label>Name<input name="name" minlength="2" maxlength="48" autocomplete="name" required></label>
         <label>Callsign<input name="callsign" maxlength="48" autocomplete="off" autocapitalize="characters" required></label>
-        <button type="submit">Continue with Google and request access</button>
+        <label>Username<input name="username" minlength="3" maxlength="32" autocomplete="username" pattern="[A-Za-z0-9._-]{3,32}" required></label>
+        <label>Password<input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" required></label>
+        <button type="submit">Create account and request access</button>
+      </form>
+    </details>
+    <details class="auth-note" style="margin-top:18px">
+      <summary>Set a password for an existing Google-linked account</summary>
+      <form id="claimForm" class="auth-form" style="margin-top:12px">
+        <label>New username<input name="username" minlength="3" maxlength="32" autocomplete="username" pattern="[A-Za-z0-9._-]{3,32}" required></label>
+        <label>New password<input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" required></label>
+        <button type="submit">Verify old account and set password</button>
       </form>
     </details>
     <p class="auth-note" dir="rtl"><a href="/about.html">عن البوابة</a> · <a href="/privacy.html">سياسة الخصوصية</a></p>
     <div id="authMessage" class="auth-message" role="status"></div>
   </main>
+  <script src="/static/google-auth.js?v=password-session-1"></script>
   <script src="/static/public-config.js"></script>
   <script src="https://accounts.google.com/gsi/client" async></script>
-  <script src="/static/google-auth.js?v=fast-login-2"></script>
-  <script src="/static/login.js?v=google-oauth-1"></script>
+  <script src="/static/login.js?v=password-login-1"></script>
   <script src="/static/pwa.js"></script>
 </body>
 </html>

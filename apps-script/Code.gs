@@ -1,7 +1,7 @@
 /**
  * LVFR EMS Google Apps Script API.
  * Deploy as a web app that executes as the spreadsheet owner. Requests must
- * include a Google OAuth access token in the JSON body; no token is persisted.
+ * use a short-lived session token in the JSON body; passwords are salted and hashed.
  * Spreadsheet IDs and role records stay in Script Properties / the private
  * Accounts sheet and are never sent to the public PWA bundle.
  * Roster mutations write directly to Sheets; the PWA applies the immediate
@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-09-30-fast-cache-6',
+  apiVersion: '2026-09-30-password-auth-1',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -35,8 +35,11 @@ function doPost(e) {
       return output_({ ok: true, data: { ok: true, backend: 'Google Apps Script', version: LVFR.apiVersion } });
     }
     if (route === '/auth/signup' && String(input.method || 'GET') === 'POST') {
-      return output_({ ok: true, data: signupWithGoogle_(input.accessToken, input.data || {}) });
+      return output_({ ok: true, data: signupWithPassword_(input.data || {}) });
     }
+    if (route === '/auth/login' && String(input.method || 'GET') === 'POST') return output_({ ok: true, data: loginWithPassword_(input.data || {}) });
+    if (route === '/auth/claim' && String(input.method || 'GET') === 'POST') return output_({ ok: true, data: claimLegacyAccount_(input.accessToken, input.data || {}) });
+    if (route === '/auth/logout' && String(input.method || 'GET') === 'POST') { logoutSession_(input.accessToken); return output_({ ok: true, data: { ok: true } }); }
     const method = String(input.method || 'GET');
     const user = requireUser_(input.accessToken);
     const data = dispatch_(route, method, params, input.data || {}, user);
@@ -136,17 +139,88 @@ function dispatch_(route, method, params, data, user) {
 }
 
 function requireUser_(accessToken) {
-  const identity = googleIdentity_(accessToken);
-  const account = findAccountByEmail_(identity.email);
-  if (!account) throw new Error('This Google account is not linked to an LVFR account.');
-  if (account.googleSub && account.googleSub !== identity.sub) throw new Error('This Google account does not match the account link. Contact a Commander.');
-  if (!account.googleSub) bindGoogleSub_(account.accountId, identity.sub);
-  if (account.status === 'approved' && account.role !== 'member') verifyRosterEditor_(accessToken, identity.sub);
-  return Object.assign({}, account, {
-    email: identity.email,
-    googleSub: identity.sub,
-    displayName: identity.name || account.name
-  });
+  if (!accessToken) throw new Error('Sign in with your username and password.');
+  const cache = CacheService.getScriptCache();
+  const key = sessionCacheKey_(accessToken);
+  const accountId = cache.get(key);
+  if (!accountId) throw new Error('Your session expired. Sign in again.');
+  const account = findAccountById_(accountId);
+  if (!account) { cache.remove(key); throw new Error('Account not found.'); }
+  return account;
+}
+
+function loginWithPassword_(data) {
+  const username = normalizeUsername_(data.username), password = String(data.password || '');
+  const cache = CacheService.getScriptCache();
+  const throttleKey = 'login-attempts:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, username)).replace(/=+$/, '');
+  const attempts = Number(cache.get(throttleKey) || 0);
+  if (attempts >= 8) throw new Error('Too many sign-in attempts. Wait 10 minutes and try again.');
+  const account = findAccountByUsername_(username);
+  if (!account || !account.passwordSalt || !account.passwordHash || !constantTimeEquals_(passwordHash_(password, account.passwordSalt), account.passwordHash)) {
+    cache.put(throttleKey, String(attempts + 1), 600);
+    throw new Error('Incorrect username or password.');
+  }
+  cache.remove(throttleKey);
+  if (['denied', 'removed', 'deactivated'].includes(account.status)) throw new Error('This account is inactive. Contact a Commander.');
+  const token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
+  CacheService.getScriptCache().put(sessionCacheKey_(token), account.accountId, 21600);
+  return { token: token, user: publicUser_(account) };
+}
+
+function signupWithPassword_(data) {
+  const name = String(data.name || '').trim().replace(/\s+/g, ' '), callsign = String(data.callsign || '').trim().toUpperCase();
+  const username = normalizeUsername_(data.username), password = String(data.password || '');
+  if (name.length < 2 || name.length > 48) throw new Error('Name must be between 2 and 48 characters.');
+  if (!callsign || callsign.length > 48 || LVFR.ignoredCallsigns.has(callsign)) throw new Error('Enter a valid LVFR Callsign.');
+  if (!/^[a-z0-9._-]{3,32}$/.test(username)) throw new Error('Username must be 3–32 characters: letters, numbers, dot, underscore or hyphen.');
+  if (password.length < 10 || password.length > 128) throw new Error('Password must be between 10 and 128 characters.');
+  if (!rosterMember_(callsign)) throw new Error('Callsign was not found on the LVFR roster.');
+  const { sheet, rows } = accountRows_();
+  if (rows.some(row => String(row[14] || '').trim().toLowerCase() === username)) throw new Error('That username is already in use.');
+  if (rows.some(row => String(row[2] || '').trim().toUpperCase() === callsign && !['removed', 'denied'].includes(String(row[5] || '').toLowerCase()))) throw new Error('An account is already linked to that Callsign.');
+  const id = Utilities.getUuid(), now = new Date().toISOString(), salt = Utilities.getUuid().replace(/-/g, '');
+  sheet.appendRow([id, name, callsign, '', '', 'pending', 'member', now, '', '', '', '', '', '', username, salt, passwordHash_(password, salt)]);
+  recordAccountAudit_(id, name, callsign, 'Account Requested', username);
+  return { ok: true, status: 'pending', request_id: id };
+}
+
+function claimLegacyAccount_(accessToken, data) {
+  const identity = googleIdentity_(accessToken), username = normalizeUsername_(data.username), password = String(data.password || '');
+  if (!/^[a-z0-9._-]{3,32}$/.test(username)) throw new Error('Username must be 3–32 characters: letters, numbers, dot, underscore or hyphen.');
+  if (password.length < 10 || password.length > 128) throw new Error('Password must be between 10 and 128 characters.');
+  const { sheet, rows } = accountRows_();
+  const index = rows.findIndex(row => String(row[12] || '').trim().toLowerCase() === identity.email && (!String(row[13] || '') || String(row[13] || '') === identity.sub));
+  if (index < 0) throw new Error('No existing account is linked to this Google account. Submit a new account request instead.');
+  if (rows.some((row, i) => i !== index && String(row[14] || '').trim().toLowerCase() === username)) throw new Error('That username is already in use.');
+  if (String(rows[index][15] || '') && String(rows[index][16] || '')) throw new Error('This account already has a username and password. Sign in with them.');
+  const salt = Utilities.getUuid().replace(/-/g, '');
+  sheet.getRange(index + 2, 15, 1, 3).setValues([[username, salt, passwordHash_(password, salt)]]);
+  if (!String(rows[index][13] || '')) sheet.getRange(index + 2, 14).setValue(identity.sub);
+  invalidateAccountCache_(identity.email);
+  const accountId = String(rows[index][0] || '');
+  const token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
+  CacheService.getScriptCache().put(sessionCacheKey_(token), accountId, 21600);
+  return { token: token };
+}
+
+function normalizeUsername_(value) { return String(value || '').trim().toLowerCase(); }
+function sessionCacheKey_(token) { return 'session:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token))).replace(/=+$/, ''); }
+function passwordHash_(password, salt) {
+  let value = String(salt) + ':' + String(password);
+  for (let i = 0; i < 30000; i++) value = Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value));
+  return value;
+}
+function constantTimeEquals_(a, b) {
+  a = String(a); b = String(b); let diff = a.length ^ b.length;
+  for (let i = 0, n = Math.max(a.length, b.length); i < n; i++) diff |= (a.charCodeAt(i % (a.length || 1)) || 0) ^ (b.charCodeAt(i % (b.length || 1)) || 0);
+  return diff === 0;
+}
+function logoutSession_(token) { if (token) CacheService.getScriptCache().remove(sessionCacheKey_(token)); }
+function findAccountById_(id) { return accountRows_().rows.map(accountObject_).find(a => a.accountId === String(id)) || null; }
+function findAccountByUsername_(username) {
+  const row = accountRows_().rows.find(r => String(r[14] || '').trim().toLowerCase() === username);
+  if (!row) return null;
+  return { accountId: String(row[0] || ''), name: String(row[1] || ''), callsign: String(row[2] || ''), status: String(row[5] || '').toLowerCase(), role: String(row[6] || 'member').toLowerCase(), username: String(row[14] || ''), passwordSalt: String(row[15] || ''), passwordHash: String(row[16] || '') };
 }
 
 function googleIdentity_(accessToken) {
@@ -263,7 +337,7 @@ function findAccountByEmail_(email) {
   const id = requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID');
   const sheet = SpreadsheetApp.openById(id).getSheetByName(LVFR.accountsTab);
   if (!sheet || sheet.getLastRow() < 2) throw new Error('Account directory is not configured.');
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(14, sheet.getLastColumn())).getDisplayValues();
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(17, sheet.getLastColumn())).getDisplayValues();
   const target = normalizedEmail;
   for (const row of rows) {
     // Column M is reserved for the linked Google email; N stores the stable sub.
@@ -284,8 +358,8 @@ function findAccountByEmail_(email) {
 
 function publicUser_(user) {
   return {
-    account_id: user.accountId,
-    id: user.accountId,
+    account_id: user.accountId || user.account_id,
+    id: user.accountId || user.account_id,
     name: user.name,
     callsign: user.callsign,
     email: user.email,
@@ -973,8 +1047,9 @@ function accountRows_() {
 function accountObject_(row) {
   const isAdmin = ['admin', 'commander'].includes(String(row[6] || '').toLowerCase());
   return {
+    accountId: String(row[0] || ''),
     account_id: String(row[0] || ''), name: String(row[1] || ''), display_name: String(row[1] || ''),
-    username: String(row[1] || ''), callsign: String(row[2] || ''), status: String(row[5] || '').toLowerCase(),
+    username: String(row[14] || ''), callsign: String(row[2] || ''), status: String(row[5] || '').toLowerCase(),
     role: String(row[6] || 'leader').toLowerCase(), is_admin: isAdmin,
     created_at: String(row[7] || ''), requested_at: String(row[7] || ''), linked_at: String(row[7] || ''),
     activated_at: String(row[8] || ''), approved_at: String(row[8] || ''), approved_by: String(row[9] || ''),
