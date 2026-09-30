@@ -79,9 +79,16 @@ function startBackgroundMutation(url, options) {
     try { payload = JSON.parse(options.body || "{}"); } catch {}
     const callsignMatch = path.match(/^\/api\/member\/([^/]+)\/instructor$/);
     const callsign = String(payload.callsign || (callsignMatch ? decodeURIComponent(callsignMatch[1]) : ""));
+    const previous = memberCache.get(callsign.trim().toUpperCase());
+    const nextRanks = { EMT: "AEMT", AEMT: "Paramedic", Volunteer: "Senior Volunteer", "EMR/Volunteer": "Volunteer" };
+    const optimisticRank = path === "/api/promote" ? (nextRanks[previous?.rank] || previous?.rank) : String(payload.new_rank || "");
+    const rollbackMember = previous ? { ...previous, optimistic_target: config.available_callsigns?.[optimisticRank] || "" } : null;
     apiReadCache.clear();
     try { sessionStorage.removeItem("lvfr.roster.snapshot.v1"); } catch {}
     applyOptimisticMutation(path, payload, callsign);
+    if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(path)) {
+        toast("Updated on this screen. Saving to Google Sheets…");
+    }
     const request = fetch(url, {
         ...options,
         keepalive: true,
@@ -96,11 +103,29 @@ function startBackgroundMutation(url, options) {
         window.dispatchEvent(new CustomEvent("lvfr:background-updated", { detail: { route: path, callsign, result } }));
         return result;
     }).catch(error => {
-        toast(`Save failed: ${error.message || "Network error"}. The page may differ from Google Sheets. Use Sync now to reload the correct data.`);
+        rollbackOptimisticMutation(path, callsign, rollbackMember);
+        toast(`Save failed: ${error.message || "Network error"}. Local change was reverted. Please run Sync now to reload the correct data.`);
     });
     // Let the click handler stop waiting while fetch continues independently.
     void request;
     throw new Error(BACKGROUND_PENDING_MESSAGE);
+}
+
+function rollbackOptimisticMutation(route, callsign, previous) {
+    const key = String(callsign || "").trim().toUpperCase();
+    if (!previous || !key) return;
+    // A rank move may have optimistically re-keyed the member to a new callsign.
+    for (const [cachedKey, member] of memberCache) {
+        if (member?.optimistic_from === key) memberCache.delete(cachedKey);
+    }
+    const restored = { ...previous };
+    delete restored.optimistic_target;
+    memberCache.set(key, restored);
+    paintCachedMemberRow({ ...previous, optimistic_from: key }, previous.optimistic_target || key);
+    if (activeProfileMember?.optimistic_from === key || activeProfileMember?.callsign?.toUpperCase() === key) {
+        activeProfileMember = restored;
+        profile(key, true, restored);
+    }
 }
 
 function isBackgroundPending(error) {
@@ -148,6 +173,14 @@ function applyOptimisticMutation(route, payload, callsign) {
     } else if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(route)) {
         const nextRanks = { EMT: "AEMT", AEMT: "Paramedic", Volunteer: "Senior Volunteer", "EMR/Volunteer": "Volunteer" };
         updated.rank = route === "/api/promote" ? (nextRanks[previous.rank] || previous.rank) : String(payload.new_rank || previous.rank);
+        const targetCallsign = config.available_callsigns?.[updated.rank];
+        if (targetCallsign) {
+            updated.optimistic_from = key;
+            updated.callsign = targetCallsign;
+            memberCache.delete(key);
+            memberCache.set(targetCallsign, updated);
+            paintCachedMemberRow(updated, key);
+        }
         updated.days_in_rank = 0;
         updated.eligible = false;
         updated.eligibility_reason = "Promotion is being saved…";
@@ -161,8 +194,10 @@ function applyOptimisticMutation(route, payload, callsign) {
         closeModal();
         return;
     }
-    memberCache.set(key, updated);
-    paintCachedMemberRow(updated, key);
+    if (!(updated.optimistic_from && ["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(route))) {
+        memberCache.set(key, updated);
+        paintCachedMemberRow(updated, key);
+    }
     if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(route)) {
         removeEligibleRow(key);
         closeModal();
@@ -217,7 +252,8 @@ function removeEligibleRow(callsign) {
 
 function paintCachedMemberRow(member, oldCallsign) {
     const button = [...document.querySelectorAll('#membersTable [data-action="profile"]')]
-        .find(item => item.dataset.callsign?.toUpperCase() === oldCallsign);
+        .find(item => item.dataset.callsign?.toUpperCase() === String(oldCallsign || "").toUpperCase()
+            || item.dataset.callsign?.toUpperCase() === String(member.optimistic_from || "").toUpperCase());
     const row = button?.closest("tr");
     if (!row) return;
     const cells = row.querySelectorAll("td");
@@ -240,11 +276,15 @@ window.addEventListener("lvfr:background-updated", event => {
     const callsign = String(event.detail?.callsign || "").trim().toUpperCase();
     const newCallsign = String(event.detail?.result?.new_callsign || "").trim().toUpperCase();
     if (callsign && newCallsign && callsign !== newCallsign) {
-        const promoted = memberCache.get(callsign);
+        const promoted = memberCache.get(callsign) || [...memberCache.values()].find(member => member?.optimistic_from === callsign);
         if (promoted) {
-            memberCache.delete(callsign);
+            for (const [cachedKey, member] of memberCache) {
+                if (cachedKey === callsign || member?.optimistic_from === callsign) memberCache.delete(cachedKey);
+            }
             promoted.callsign = newCallsign;
             promoted.rank = event.detail?.result?.new_rank || promoted.rank;
+            delete promoted.optimistic_from;
+            delete promoted.optimistic_target;
             memberCache.set(newCallsign, promoted);
             const button = [...document.querySelectorAll('#membersTable [data-action="profile"]')]
                 .find(item => item.dataset.callsign?.toUpperCase() === callsign);
@@ -260,6 +300,7 @@ window.addEventListener("lvfr:background-updated", event => {
         }
     }
     loadMembers(true);
+    void loadConfig();
     syncStatus();
     const activeTab = $(".tab.active")?.dataset.tab;
     if (activeTab === "eligible") loadEligible();
@@ -567,11 +608,18 @@ function empty(t = "No records found.") {
 // ============================================================
 
 async function loadConfig() {
+    try {
+        const cached = JSON.parse(sessionStorage.getItem("lvfr.config.v1") || "null");
+        if (cached && Array.isArray(cached.ranks)) config = cached;
+    } catch {}
+    if (config.ranks) renderRankFilter();
+    const fresh = await api("/api/config");
+    config = fresh;
+    try { sessionStorage.setItem("lvfr.config.v1", JSON.stringify(fresh)); } catch {}
+    renderRankFilter();
+}
 
-    config = await api(
-        "/api/config"
-    );
-
+function renderRankFilter() {
     const rankFilter = $("#filterRank");
     if (rankFilter) {
         rankFilter.innerHTML = [

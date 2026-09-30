@@ -64,6 +64,7 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/health') return { ok: true, backend: 'Google Apps Script' };
   if (route === '/api/config') return {
     ranks: LVFR.ranks,
+    available_callsigns: availableCallsigns_(),
     trainings: ['Basic Firefighting', 'Advanced Firefighting', 'Hert'],
     activities: ['Active', 'Semi Active', 'Inactive', 'Can Be Terminated'],
     exams: ['Supervisor Exam']
@@ -464,6 +465,7 @@ function invalidateRosterCache_() {
   const cache = CacheService.getScriptCache();
   const cacheKey = 'roster:members:v2';
   cache.remove('roster:name-index:v1');
+  cache.remove('roster:available-callsigns:v1');
   cache.remove('leader-overview:v1');
   cache.remove('leader-overview:v2');
   const index = cache.get(cacheKey);
@@ -1037,6 +1039,33 @@ function accountRows_(spreadsheet) {
   if (!sheet || sheet.getLastRow() < 2) return { sheet, rows: [] };
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(17, sheet.getLastColumn())).getDisplayValues();
   return { sheet, rows };
+}
+
+function availableCallsigns_() {
+  const cache = CacheService.getScriptCache(), key = 'roster:available-callsigns:v1';
+  const cached = cache.get(key);
+  if (cached) { try { return JSON.parse(cached); } catch (ignored) {} }
+  const sheet = rosterSheet_(), count = Math.max(0, sheet.getLastRow() - 1);
+  const rows = count ? sheet.getRange(2, 2, count, 2).getDisplayValues() : [];
+  const prefixes = {
+    'Commissioners': 'COM', 'Chief': 'CHIEF', 'County Command': 'B', 'Division Commander': 'DIV',
+    'Captain': 'C', 'Lieutenant': 'E', 'Lead Paramedic': 'L', 'Paramedic': 'M',
+    'AEMT': 'A', 'EMT': 'R', 'Probationary': 'P', 'EMR': 'P',
+    'Senior Volunteer': 'S', 'Volunteer': 'V', 'Probationary Volunteer': 'V', 'EMR/Volunteer': 'P'
+  };
+  const result = {};
+  Object.keys(prefixes).forEach(rank => {
+    const prefix = prefixes[rank];
+    const candidates = rows.map((row, index) => ({
+      callsign: String(row[0] || '').trim().toUpperCase(),
+      name: String(row[1] || '').trim(), row: index + 2
+    })).filter(item => item.callsign.startsWith(prefix + '-') && !item.name && rankFromCallsign_(item.callsign) === rank)
+      .map(item => ({ ...item, number: Number(item.callsign.slice(prefix.length + 1)) }))
+      .filter(item => Number.isFinite(item.number)).sort((a, b) => a.number - b.number);
+    if (candidates.length) result[rank] = candidates[0].callsign;
+  });
+  try { cache.put(key, JSON.stringify(result), 300); } catch (ignored) {}
+  return result;
 }
 
 function accountsSheet_(spreadsheet) {
