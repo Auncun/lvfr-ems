@@ -8,6 +8,7 @@ let config = {};
 // ============================================================
 
 async function api(url, options = {}) {
+    if (isBackgroundMutationRequest(url, options)) return startBackgroundMutation(url, options);
     const r = await fetch(url, {
         ...options,
 
@@ -38,76 +39,161 @@ async function api(url, options = {}) {
         throw error;
     }
 
-    if (d && d.queued === true && d.job_id) {
-        monitorBackgroundJob(d.job_id);
-        const queued = new Error("Accepted for background saving.");
-        queued.backgroundQueued = true;
-        throw queued;
-    }
     return d;
 }
 
-const activeBackgroundJobs = new Set();
-const backgroundJobStorageKey = "lvfr.background.jobs";
-function persistBackgroundJobs() {
-    try { sessionStorage.setItem(backgroundJobStorageKey, JSON.stringify([...activeBackgroundJobs])); } catch {}
+function isBackgroundMutationRequest(url, options) {
+    if (String(options.method || "GET").toUpperCase() !== "POST") return false;
+    const path = new URL(url, location.href).pathname;
+    return new Set([
+        "/api/activity", "/api/note", "/api/date", "/api/training", "/api/exam",
+        "/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank",
+        "/api/change-callsign", "/api/terminate"
+    ]).has(path) || /^\/api\/member\/[^/]+\/instructor$/.test(path);
 }
-function monitorBackgroundJob(jobId) {
-    if (activeBackgroundJobs.has(jobId)) return;
-    activeBackgroundJobs.add(jobId);
-    persistBackgroundJobs();
-    const forget = () => { activeBackgroundJobs.delete(jobId); persistBackgroundJobs(); };
-    let checks = 0;
-    const poll = async () => {
-        if (++checks > 25) {
-            forget();
-            toast("Save is still queued. It will continue in the background.");
-            return;
+
+function startBackgroundMutation(url, options) {
+    const path = new URL(url, location.href).pathname;
+    let payload = {};
+    try { payload = JSON.parse(options.body || "{}"); } catch {}
+    const callsignMatch = path.match(/^\/api\/member\/([^/]+)\/instructor$/);
+    const callsign = String(payload.callsign || (callsignMatch ? decodeURIComponent(callsignMatch[1]) : ""));
+    const rollback = applyOptimisticMutation(path, payload, callsign);
+    const request = fetch(url, {
+        ...options,
+        keepalive: true,
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) }
+    }).then(async response => {
+        const result = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+            location.assign("/login");
+            throw new Error("Your session expired. Please sign in again.");
         }
-        try {
-            const job = await api(`/api/jobs/${encodeURIComponent(jobId)}`);
-            if (job.status === "completed") {
-                forget();
-                toast("Background save completed.");
-                window.dispatchEvent(new CustomEvent("lvfr:background-updated", { detail: job }));
-                return;
-            }
-            if (job.status === "failed") {
-                forget();
-                toast(`Background save failed: ${job.error || "Unknown error"}`);
-                return;
-            }
-        } catch (error) {
-            if (error.message.includes("session expired")) {
-                forget();
-                return;
-            }
-        }
-        setTimeout(poll, 12000);
+        if (!response.ok) throw new Error(result.detail || result.error || "Save failed.");
+        toast("Saved to Google Sheets.");
+        window.dispatchEvent(new CustomEvent("lvfr:background-updated", { detail: { route: path, callsign, result } }));
+        return result;
+    }).catch(error => {
+        rollback();
+        toast(`Save failed: ${error.message || "Network error"}`);
+    });
+    // Let the click handler stop waiting while fetch continues independently.
+    void request;
+    throw new Error("Saving to Google Sheets in the background…");
+}
+
+function rankForCallsign(callsign) {
+    const prefix = String(callsign || "").toUpperCase().match(/^[A-Z]+/);
+    const map = { COM: "Commissioners", CHIEF: "Chief", B: "County Command", DIV: "Division Commander", C: "Captain", E: "Lieutenant", L: "Lead Paramedic", M: "Paramedic", A: "AEMT", R: "EMT", P: "Probationary", S: "Senior Volunteer", V: "Volunteer" };
+    return prefix ? map[prefix[0]] || "" : "";
+}
+
+function applyOptimisticMutation(route, payload, callsign) {
+    const key = String(callsign || "").trim().toUpperCase();
+    const previous = memberCache.get(key);
+    if (!previous) return () => {};
+    const before = { ...previous };
+    const updated = { ...previous };
+    if (route === "/api/activity") updated.activity = payload.activity;
+    else if (route === "/api/note") {
+        updated.notes = payload.action === "Delete" ? "" : String(payload.note || "");
+    } else if (route === "/api/training") {
+        if (String(payload.training || "").toLowerCase() === "hert") updated.has_hert = !payload.remove;
+        else if (payload.training === "Basic Firefighting") updated.has_basic_firefighting = !payload.remove;
+        else if (payload.training === "Advanced Firefighting") updated.has_advanced_firefighting = !payload.remove;
+    } else if (route === "/api/exam") updated.has_supervisor_exam = !payload.remove;
+    else if (route === "/api/date") updated.date = updated.rank_assigned_date = payload.date_str;
+    else if (/^\/api\/member\/[^/]+\/instructor$/.test(route)) {
+        const types = String(updated.instructor_type || "").split(/\s*\/\s*/).filter(Boolean);
+        const type = String(payload.instructor_type || "").toUpperCase();
+        const next = payload.assigned ? [...new Set([...types, type])] : types.filter(value => value !== type);
+        updated.instructor_type = next.join(" / ");
+    } else if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(route)) {
+        const nextRanks = { EMT: "AEMT", AEMT: "Paramedic", Volunteer: "Senior Volunteer", "EMR/Volunteer": "Volunteer" };
+        updated.rank = route === "/api/promote" ? (nextRanks[previous.rank] || previous.rank) : String(payload.new_rank || previous.rank);
+        updated.days_in_rank = 0;
+        updated.eligible = false;
+        updated.eligibility_reason = "Promotion is being saved…";
+        updated.next_rank = "";
+    } else if (route === "/api/change-callsign") {
+        updated.callsign = String(payload.new_callsign || previous.callsign).toUpperCase();
+        updated.rank = rankForCallsign(updated.callsign) || previous.rank;
+    } else if (route === "/api/terminate") {
+        memberCache.delete(key);
+        removeCachedMemberRow(key);
+        return () => { memberCache.set(key, before); paintCachedMemberRow(before, key); };
+    }
+    memberCache.set(key, updated);
+    paintCachedMemberRow(updated, key);
+    if (activeProfileMember?.callsign?.toUpperCase() === key && route !== "/api/change-callsign") profile(key, true);
+    return () => {
+        memberCache.set(key, before);
+        paintCachedMemberRow(before, key);
+        if (activeProfileMember?.callsign?.toUpperCase() === key) profile(key, true);
     };
-    setTimeout(poll, 12000);
+}
+
+function removeCachedMemberRow(callsign) {
+    const button = [...document.querySelectorAll('#membersTable [data-action="profile"]')]
+        .find(item => item.dataset.callsign?.toUpperCase() === callsign);
+    button?.closest("tr")?.remove();
+}
+
+function paintCachedMemberRow(member, oldCallsign) {
+    const button = [...document.querySelectorAll('#membersTable [data-action="profile"]')]
+        .find(item => item.dataset.callsign?.toUpperCase() === oldCallsign);
+    const row = button?.closest("tr");
+    if (!row) return;
+    const cells = row.querySelectorAll("td");
+    if (cells.length >= 5) {
+        cells[0].innerHTML = `<b>${esc(member.callsign)}</b>`;
+        cells[2].textContent = member.rank || "";
+        cells[3].textContent = String(member.days_in_rank ?? "");
+        cells[4].innerHTML = status(member.activity);
+    }
+    button.dataset.callsign = oldCallsign;
 }
 
 window.addEventListener("lvfr:background-updated", event => {
+    const callsign = String(event.detail?.callsign || "").trim().toUpperCase();
+    const newCallsign = String(event.detail?.result?.new_callsign || "").trim().toUpperCase();
+    if (callsign && newCallsign && callsign !== newCallsign) {
+        const promoted = memberCache.get(callsign);
+        if (promoted) {
+            memberCache.delete(callsign);
+            promoted.callsign = newCallsign;
+            promoted.rank = event.detail?.result?.new_rank || promoted.rank;
+            memberCache.set(newCallsign, promoted);
+            const button = [...document.querySelectorAll('#membersTable [data-action="profile"]')]
+                .find(item => item.dataset.callsign?.toUpperCase() === callsign);
+            if (button) {
+                button.dataset.callsign = newCallsign;
+                const cell = button.closest("tr")?.querySelector("td");
+                if (cell) cell.innerHTML = `<b>${esc(newCallsign)}</b>`;
+            }
+            if (activeProfileMember?.callsign?.toUpperCase() === callsign) {
+                activeProfileMember.callsign = newCallsign;
+                profile(newCallsign, true);
+            }
+        }
+    }
     loadMembers(true);
     setTimeout(() => loadMembers(true), 1500);
     syncStatus();
-    const callsign = String(event.detail?.callsign || "");
-    if (callsign && activeProfileMember?.callsign === callsign) profile(callsign, true);
+    const activeTab = $(".tab.active")?.dataset.tab;
+    if (activeTab === "eligible") loadEligible();
+    if (activeTab === "inactive") loadInactive();
+    if (callsign && activeProfileMember?.callsign?.toUpperCase() === callsign.toUpperCase()) profile(callsign, true);
     const logType = {
         "/api/training": "training", "/api/exam": "exam", "/api/note": "note",
-        "/api/activity": "activity", "/api/terminate": "termination",
-        "/api/member/{callsign}/instructor": "instructor",
+        "/api/activity": "activity", "/api/terminate": "termination", 
         "/api/promote": "promotion", "/api/force-promote": "promotion",
         "/api/demote": "promotion", "/api/change-rank": "promotion",
         "/api/change-callsign": "callsign"
-    }[event.detail?.route === "/api/member/" + callsign + "/instructor" ? "/api/member/{callsign}/instructor" : event.detail?.route];
+    }[event.detail?.route];
+    if (/^\/api\/member\/[^/]+\/instructor$/.test(event.detail?.route || "")) loadMembersLog("instructor");
     if (logType) loadMembersLog(logType);
 });
-
-try {
-    JSON.parse(sessionStorage.getItem(backgroundJobStorageKey) || "[]").forEach(monitorBackgroundJob);
-} catch {}
 
 function toggleLeaderActions(event, menu) {
     event.preventDefault();
@@ -524,6 +610,7 @@ async function syncStatus() {
 
 let memberListRequestInFlight = false;
 let memberListRenderKey = "";
+const memberCache = new Map();
 
 async function loadMembers(silent = false) {
     if (memberListRequestInFlight) return;
@@ -545,6 +632,7 @@ async function loadMembers(silent = false) {
             await api(
                 "/api/members?search=" + q
             );
+        loadedRows.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
 
         const hertFilter = $("#filterHert")?.value || "all";
         const fortInstructorFilter = $("#filterFortInstructor")?.value || "all";
@@ -699,12 +787,38 @@ document.addEventListener("visibilitychange", () => {
 async function loadEligible() {
 
     try {
+        const cachedRows = [...memberCache.values()];
+        if (cachedRows.length) {
+            renderEligibleRows(calculateEligibleFromCache(cachedRows));
+            api("/api/eligible").then(renderEligibleRows).catch(() => {});
+            return;
+        }
+        renderEligibleRows(await api("/api/eligible"));
+    } catch (e) {
+        toast(e.message);
+    }
+}
 
-        const loadedRows =
-            await api(
-                "/api/eligible"
-            );
+function calculateEligibleFromCache(members) {
+    const rules = {
+        "EMR": ["EMT", 7, false, false, false],
+        "EMT": ["AEMT", 14, true, false, false],
+        "AEMT": ["Paramedic", 21, true, true, true],
+        "Advanced EMT": ["Paramedic", 21, true, true, true],
+        "EMR/Volunteer": ["Volunteer", 7, false, false, false],
+        "Volunteer": ["Senior Volunteer", 14, false, false, false]
+    };
+    return members.flatMap(member => {
+        const rule = rules[member.rank];
+        if (!rule || Number(member.days_in_rank || 0) < rule[1]) return [];
+        if (rule[2] && !member.has_basic_firefighting) return [];
+        if (rule[3] && !member.has_advanced_firefighting) return [];
+        if (rule[4] && !member.has_supervisor_exam) return [];
+        return [{ ...member, next_rank: rule[0] }];
+    });
+}
 
+function renderEligibleRows(loadedRows) {
         const rankFilter = $("#eligibleRankFilter")?.value || "all";
         const rows = loadedRows.filter(m => {
             const rank = String(m.rank || "").trim().toLowerCase();
@@ -789,12 +903,6 @@ async function loadEligible() {
                     "Nobody is currently eligible."
                 );
 
-    } catch (e) {
-
-        toast(
-            e.message
-        );
-    }
 }
 
 
@@ -808,12 +916,14 @@ let inactiveRows = [];
 async function loadInactive() {
 
     try {
-
-        inactiveRows =
-            await api(
-                "/api/inactive"
-            );
-
+        const cachedRows = [...memberCache.values()];
+        if (cachedRows.length) {
+            inactiveRows = cachedRows.filter(member => member.activity === "Can Be Terminated");
+            renderInactive();
+            api("/api/inactive").then(rows => { inactiveRows = rows; renderInactive(); }).catch(() => {});
+            return;
+        }
+        inactiveRows = await api("/api/inactive");
         renderInactive();
 
     } catch (e) {
@@ -1960,7 +2070,8 @@ let currentUserIsCommand = false;
 
 async function profile(
     cs,
-    force = false
+    force = false,
+    providedMember = null
 ) {
 
     if (
@@ -1973,12 +2084,33 @@ async function profile(
     profileLoading = true;
 
     try {
-
-        const m =
-            await api(
-                "/api/member/" +
-                encodeURIComponent(cs)
-            );
+        const normalizedCallsign = String(cs || "").trim().toUpperCase();
+        const cachedMember = providedMember || memberCache.get(normalizedCallsign);
+        let m;
+        if (cachedMember) {
+            m = providedMember || Object.assign({}, cachedMember, {
+                trainings: [
+                    ...(cachedMember.has_basic_firefighting ? ["basic_firefighting"] : []),
+                    ...(cachedMember.has_advanced_firefighting ? ["advanced_firefighting"] : [])
+                ],
+                exams: cachedMember.has_supervisor_exam ? ["supervisor_exam"] : [],
+                hert: Boolean(cachedMember.has_hert),
+                eligible: false,
+                next_rank: "",
+                eligibility_reason: "Loading eligibility details…"
+            });
+            if (!providedMember) {
+                api("/api/member/" + encodeURIComponent(cs))
+                    .then(fresh => {
+                        memberCache.set(normalizedCallsign, fresh);
+                        profile(cs, true, fresh);
+                    })
+                    .catch(error => console.warn("Could not refresh member profile:", error));
+            }
+        } else {
+            m = await api("/api/member/" + encodeURIComponent(cs));
+            memberCache.set(normalizedCallsign, m);
+        }
 
         activeProfileMember = m;
 

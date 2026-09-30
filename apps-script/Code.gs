@@ -4,10 +4,12 @@
  * include a Google OAuth access token in the JSON body; no token is persisted.
  * Spreadsheet IDs and role records stay in Script Properties / the private
  * Accounts sheet and are never sent to the public PWA bundle.
+ * Roster mutations write directly to Sheets; the PWA applies the immediate
+ * optimistic display while this request completes. No delayed job queue runs.
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-09-30-roster-performance-2',
+  apiVersion: '2026-09-30-optimistic-save-4',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -37,11 +39,6 @@ function doPost(e) {
     }
     const method = String(input.method || 'GET');
     const user = requireUser_(input.accessToken);
-    const jobRoute = route.match(/^\/api\/jobs\/([^/]+)$/);
-    if (jobRoute && method === 'GET') return output_({ ok: true, data: getBackgroundJob_(decodeURIComponent(jobRoute[1]), user) });
-    if (method === 'POST' && isBackgroundMutation_(route)) {
-      return output_({ ok: true, data: enqueueBackgroundMutation_(route, input.data || {}, user) });
-    }
     const data = dispatch_(route, method, params, input.data || {}, user);
     if (method === 'POST' && [
       '/api/activity', '/api/note', '/api/date', '/api/training', '/api/exam',
@@ -57,104 +54,6 @@ function doPost(e) {
       error: error && error.message ? error.message : 'Request failed'
     });
   }
-}
-
-const BACKGROUND_MUTATION_ROUTES = new Set([
-  '/api/activity', '/api/note', '/api/date', '/api/training', '/api/exam',
-  '/api/promote', '/api/force-promote', '/api/demote', '/api/change-rank',
-  '/api/change-callsign', '/api/terminate'
-]);
-function isBackgroundMutation_(route) {
-  return BACKGROUND_MUTATION_ROUTES.has(route) || /^\/api\/member\/[^/]+\/instructor$/.test(route);
-}
-
-const JOB_TAB = 'PWA Background Jobs';
-const JOB_HEADERS = ['job_id', 'route', 'payload', 'actor_id', 'created_at', 'updated_at', 'status', 'result', 'error'];
-function jobsSheet_() {
-  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
-  let sheet = spreadsheet.getSheetByName(JOB_TAB);
-  if (!sheet) sheet = spreadsheet.insertSheet(JOB_TAB);
-  if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, JOB_HEADERS.length).setValues([JOB_HEADERS]);
-  return sheet;
-}
-
-function enqueueBackgroundMutation_(route, payload, user) {
-  requireApproved_(user);
-  if (route === '/api/activity' || route === '/api/date' || route === '/api/terminate' ||
-      route === '/api/force-promote' || route === '/api/demote' || route === '/api/change-rank' ||
-      /^\/api\/member\/[^/]+\/instructor$/.test(route)) requireAdmin_(user);
-  else if (route === '/api/exam') requireCommand_(user);
-  else if (route === '/api/training') requireTrainingPermission_(payload.training, user);
-  else requireLeader_(user);
-
-  const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
-  try {
-    const sheet = jobsSheet_();
-    const now = new Date().toISOString(), id = Utilities.getUuid();
-    sheet.appendRow([id, route, JSON.stringify(payload), user.accountId, now, now, 'queued', '', '']);
-    return { queued: true, job_id: id, status: 'queued', message: 'Accepted for background saving.' };
-  } finally { lock.releaseLock(); }
-}
-
-function getBackgroundJob_(jobId, user) {
-  requireApproved_(user);
-  const sheet = jobsSheet_();
-  if (sheet.getLastRow() < 2) throw new Error('Background job was not found.');
-  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, JOB_HEADERS.length).getDisplayValues();
-  const row = rows.find(item => item[0] === jobId);
-  if (!row) throw new Error('Background job was not found.');
-  if (row[3] !== user.accountId && !isAdmin_(user)) throw new Error('You cannot view another user’s background job.');
-  let result = null;
-  try { result = row[7] ? JSON.parse(row[7]) : null; } catch (ignored) {}
-  let payload = {};
-  try { payload = JSON.parse(row[2] || '{}'); } catch (ignored) {}
-  const routeCallsign = String(row[1] || '').match(/^\/api\/member\/([^/]+)\/instructor$/);
-  return { job_id: row[0], route: row[1], status: row[6], result, error: row[8] || null, updated_at: row[5], callsign: payload.callsign || (routeCallsign ? decodeURIComponent(routeCallsign[1]) : '') };
-}
-
-// Run once from the Apps Script editor to install the durable background worker.
-function installBackgroundWorker() {
-  const exists = ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === 'processBackgroundJobs');
-  if (!exists) ScriptApp.newTrigger('processBackgroundJobs').timeBased().everyMinutes(1).create();
-}
-
-function processBackgroundJobs() {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(1000)) return;
-  try {
-    const sheet = jobsSheet_();
-    if (sheet.getLastRow() < 2) return;
-    const count = sheet.getLastRow() - 1;
-    const rows = sheet.getRange(2, 1, count, JOB_HEADERS.length).getDisplayValues();
-    const accounts = accountRows_().rows;
-    let handled = 0;
-    for (let i = 0; i < rows.length && handled < 5; i++) {
-      const row = rows[i];
-      if (row[6] === 'running' && Date.now() - Date.parse(row[5]) > 10 * 60 * 1000) {
-        sheet.getRange(i + 2, 6, 1, 4).setValues([[new Date().toISOString(), 'failed', '', 'Worker stopped unexpectedly. Check the roster before retrying this operation.']]);
-        continue;
-      }
-      if (row[6] !== 'queued') continue;
-      handled++;
-      const sheetRow = i + 2, now = new Date().toISOString();
-      sheet.getRange(sheetRow, 6, 1, 2).setValues([[now, 'running']]);
-      try {
-        const accountRow = accounts.find(item => String(item[0]) === row[3]);
-        if (!accountRow || String(accountRow[5] || '').toLowerCase() !== 'approved') throw new Error('The account is no longer active; operation cancelled.');
-        const user = {
-          accountId: String(accountRow[0]), name: String(accountRow[1] || ''), callsign: String(accountRow[2] || ''),
-          status: String(accountRow[5] || '').toLowerCase(), role: String(accountRow[6] || 'leader').toLowerCase(),
-          email: String(accountRow[12] || '')
-        };
-        const result = dispatch_(row[1], 'POST', {}, JSON.parse(row[2] || '{}'), user);
-        invalidateRosterCache_();
-        sheet.getRange(sheetRow, 6, 1, 4).setValues([[new Date().toISOString(), 'completed', JSON.stringify(result), '']]);
-      } catch (error) {
-        sheet.getRange(sheetRow, 6, 1, 4).setValues([[new Date().toISOString(), 'failed', '', String(error && error.message || error)]]);
-      }
-    }
-  } finally { lock.releaseLock(); }
 }
 
 function dispatch_(route, method, params, data, user) {
