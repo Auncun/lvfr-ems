@@ -99,6 +99,10 @@ function startBackgroundMutation(url, options) {
     throw new Error(BACKGROUND_PENDING_MESSAGE);
 }
 
+function isBackgroundPending(error) {
+    return String(error?.message || error || "") === BACKGROUND_PENDING_MESSAGE;
+}
+
 function rankForCallsign(callsign) {
     const prefix = String(callsign || "").toUpperCase().match(/^[A-Z]+/);
     const map = { COM: "Commissioners", CHIEF: "Chief", B: "County Command", DIV: "Division Commander", C: "Captain", E: "Lieutenant", L: "Lead Paramedic", M: "Paramedic", A: "AEMT", R: "EMT", P: "Probationary", S: "Senior Volunteer", V: "Volunteer" };
@@ -121,8 +125,8 @@ function applyOptimisticMutation(route, payload, callsign) {
     const key = String(callsign || "").trim().toUpperCase();
     const previous = memberCache.get(key);
     if (!previous) return;
-    const before = { ...previous };
-    const updated = { ...previous };
+    const profileState = activeProfileMember?.callsign?.toUpperCase() === key ? activeProfileMember : {};
+    const updated = { ...profileState, ...previous };
     if (route === "/api/activity") updated.activity = payload.activity;
     else if (route === "/api/note") {
         updated.notes = payload.action === "Delete" ? "" : String(payload.note || "");
@@ -150,11 +154,17 @@ function applyOptimisticMutation(route, payload, callsign) {
     } else if (route === "/api/terminate") {
         memberCache.delete(key);
         removeCachedMemberRow(key);
+        closeModal();
         return;
     }
     memberCache.set(key, updated);
     paintCachedMemberRow(updated, key);
-    if (activeProfileMember?.callsign?.toUpperCase() === key && route !== "/api/change-callsign") profile(key, true);
+    if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(route)) {
+        removeEligibleRow(key);
+        closeModal();
+    } else if (activeProfileMember?.callsign?.toUpperCase() === key && route !== "/api/change-callsign") {
+        profile(key, true, updated);
+    }
 }
 
 function applyOptimisticAccountMutation(route) {
@@ -187,7 +197,16 @@ function applyOptimisticAccountMutation(route) {
 }
 
 function removeCachedMemberRow(callsign) {
-    const button = [...document.querySelectorAll('#membersTable [data-action="profile"]')]
+    ["#membersTable", "#inactiveTable"].forEach(selector => {
+        const button = [...document.querySelectorAll(`${selector} [data-callsign]`)]
+            .find(item => item.dataset.callsign?.toUpperCase() === callsign);
+        button?.closest("tr")?.remove();
+    });
+    inactiveRows = inactiveRows.filter(member => String(member.callsign || "").toUpperCase() !== callsign);
+}
+
+function removeEligibleRow(callsign) {
+    const button = [...document.querySelectorAll('#eligibleTable [data-callsign]')]
         .find(item => item.dataset.callsign?.toUpperCase() === callsign);
     button?.closest("tr")?.remove();
 }
@@ -204,10 +223,16 @@ function paintCachedMemberRow(member, oldCallsign) {
         cells[3].textContent = String(member.days_in_rank ?? "");
         cells[4].innerHTML = status(member.activity);
     }
-    button.dataset.callsign = oldCallsign;
+    button.dataset.callsign = member.callsign;
 }
 
 window.addEventListener("lvfr:background-updated", event => {
+    const route = String(event.detail?.route || "");
+    const result = event.detail?.result || {};
+    if (route === "/api/promote") toast(`Promoted to ${result.new_rank} — ${result.new_callsign}`);
+    else if (["/api/force-promote", "/api/change-rank"].includes(route)) toast(`Changed to ${result.new_rank} — ${result.new_callsign}`);
+    else if (route === "/api/demote") toast(`Demoted to ${result.new_rank} — ${result.new_callsign}`);
+    else if (route === "/api/terminate") toast("Member terminated");
     const callsign = String(event.detail?.callsign || "").trim().toUpperCase();
     const newCallsign = String(event.detail?.result?.new_callsign || "").trim().toUpperCase();
     if (callsign && newCallsign && callsign !== newCallsign) {
@@ -231,13 +256,11 @@ window.addEventListener("lvfr:background-updated", event => {
         }
     }
     loadMembers(true);
-    setTimeout(() => loadMembers(true), 1500);
     syncStatus();
     const activeTab = $(".tab.active")?.dataset.tab;
     if (activeTab === "eligible") loadEligible();
     if (activeTab === "inactive") loadInactive();
     if (String(event.detail?.route || "").startsWith("/api/leaders/")) loadLeaders();
-    if (callsign && activeProfileMember?.callsign?.toUpperCase() === callsign.toUpperCase()) profile(callsign, true);
     const logType = {
         "/api/training": "training", "/api/exam": "exam", "/api/note": "note",
         "/api/activity": "activity", "/api/terminate": "termination", 
@@ -872,6 +895,34 @@ function calculateEligibleFromCache(members) {
     });
 }
 
+function calculateMemberEligibility(member) {
+    const rules = {
+        "EMR": { next_rank: "EMT", days: 7 },
+        "Probationary": { next_rank: "EMT", days: 7 },
+        "EMT": { next_rank: "AEMT", days: 14, basic: true },
+        "AEMT": { next_rank: "Paramedic", days: 21, basic: true, advanced: true, exam: true },
+        "Advanced EMT": { next_rank: "Paramedic", days: 21, basic: true, advanced: true, exam: true },
+        "EMR/Volunteer": { next_rank: "Volunteer", days: 7 },
+        "Probationary Volunteer": { next_rank: "Volunteer", days: 7 },
+        "Volunteer": { next_rank: "Senior Volunteer", days: 14 }
+    };
+    const rule = rules[member.rank];
+    if (!rule || ["Probationary", "Probationary Volunteer"].includes(member.rank)) {
+        return { eligible: false, eligibility_reason: "No automatic promotion available", next_rank: "" };
+    }
+    const missing = [];
+    const days = Number(member.days_in_rank || 0);
+    if (days < rule.days) missing.push(`${rule.days - days} more day(s)`);
+    if (rule.basic && !member.has_basic_firefighting) missing.push("basic_firefighting");
+    if (rule.advanced && !member.has_advanced_firefighting) missing.push("advanced_firefighting");
+    if (rule.exam && !member.has_supervisor_exam) missing.push("supervisor_exam");
+    return {
+        eligible: missing.length === 0,
+        eligibility_reason: missing.length ? missing.join(", ") : "Eligible for Promotion",
+        next_rank: rule.next_rank
+    };
+}
+
 function renderEligibleRows(loadedRows) {
         const rankFilter = $("#eligibleRankFilter")?.value || "all";
         const rows = loadedRows.filter(m => {
@@ -981,7 +1032,6 @@ async function loadInactive() {
         renderInactive();
 
     } catch (e) {
-
         toast(
             e.message
         );
@@ -2116,6 +2166,7 @@ async function loadPromotions() {
 
 let profileLoading = false;
 let activeProfileMember = null;
+let profileRenderToken = 0;
 let currentUserIsAdmin = false;
 let currentUserAccountId = "";
 let currentInstructorTypes = [];
@@ -2127,6 +2178,8 @@ async function profile(
     force = false,
     providedMember = null
 ) {
+
+    const renderToken = ++profileRenderToken;
 
     if (
         profileLoading &&
@@ -2142,27 +2195,27 @@ async function profile(
         const cachedMember = providedMember || memberCache.get(normalizedCallsign);
         let m;
         if (cachedMember) {
-            m = providedMember || Object.assign({}, cachedMember, {
+            m = providedMember && Array.isArray(providedMember.trainings)
+                ? Object.assign({}, providedMember, {
+                    trainings: [
+                        ...(providedMember.has_basic_firefighting ? ["basic_firefighting"] : []),
+                        ...(providedMember.has_advanced_firefighting ? ["advanced_firefighting"] : [])
+                    ],
+                    exams: providedMember.has_supervisor_exam ? ["supervisor_exam"] : [],
+                    hert: Boolean(providedMember.has_hert)
+                })
+                : Object.assign({}, cachedMember, {
                 trainings: [
                     ...(cachedMember.has_basic_firefighting ? ["basic_firefighting"] : []),
                     ...(cachedMember.has_advanced_firefighting ? ["advanced_firefighting"] : [])
                 ],
                 exams: cachedMember.has_supervisor_exam ? ["supervisor_exam"] : [],
                 hert: Boolean(cachedMember.has_hert),
-                eligible: false,
-                next_rank: "",
-                eligibility_reason: "Loading eligibility details…"
+                ...calculateMemberEligibility(cachedMember)
             });
-            if (!providedMember) {
-                api("/api/member/" + encodeURIComponent(cs))
-                    .then(fresh => {
-                        memberCache.set(normalizedCallsign, fresh);
-                        profile(cs, true, fresh);
-                    })
-                    .catch(error => console.warn("Could not refresh member profile:", error));
-            }
         } else {
             m = await api("/api/member/" + encodeURIComponent(cs));
+            if (renderToken !== profileRenderToken) return;
             memberCache.set(normalizedCallsign, m);
         }
 
@@ -2410,7 +2463,6 @@ async function profile(
         }
 
     } catch (e) {
-
         toast(
             e.message
         );
@@ -2424,6 +2476,9 @@ async function profile(
 
 
 function closeModal() {
+
+    profileRenderToken++;
+    activeProfileMember = null;
 
     const modal =
         $("#modal");
@@ -2441,6 +2496,8 @@ function closeModal() {
 // ============================================================
 
 function openManage(cs) {
+
+    profileRenderToken++;
 
     if (!currentUserIsAdmin) {
         $("#modalContent").innerHTML = `
@@ -2914,7 +2971,6 @@ async function training(
 
 
     } catch (e) {
-
         toast(
             e.message
         );
@@ -3020,7 +3076,6 @@ async function examChange(
 
 
     } catch (e) {
-
         toast(
             e.message
         );
@@ -3299,7 +3354,7 @@ async function promote(cs) {
 
 
     } catch (e) {
-
+        if (isBackgroundPending(e)) return;
         toast(
             e.message
         );
@@ -3371,7 +3426,7 @@ async function terminate(cs) {
 
 
     } catch (e) {
-
+        if (isBackgroundPending(e)) return;
         toast(
             e.message
         );
@@ -3605,7 +3660,7 @@ async function forcePromote(cs) {
 
 
     } catch (e) {
-
+        if (isBackgroundPending(e)) return;
         toast(
             e.message
         );
@@ -3664,7 +3719,7 @@ async function demote(cs) {
 
 
     } catch (e) {
-
+        if (isBackgroundPending(e)) return;
         toast(
             e.message
         );
@@ -3723,7 +3778,7 @@ async function changeRank(cs) {
 
 
     } catch (e) {
-
+        if (isBackgroundPending(e)) return;
         toast(
             e.message
         );

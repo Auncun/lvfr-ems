@@ -6,6 +6,8 @@ Roster snapshots are cached in Apps Script in small pieces so rosters larger tha
 
 The open EMS session also keeps successful `/api/*` reads in memory for 15 seconds. Any write or manual Sync clears this client cache. Reopening tabs and profiles during that window reuses the latest response instead of waiting for another network round trip.
 
+Promotion, rank change, and termination update or remove the visible roster row immediately and close the old profile/manage view. The later success response refreshes server data without reopening that view. Profile refreshes are cancelled when the modal is closed or changed to another view, preventing stale responses from restoring old content.
+
 Roster edits and account changes update the local view immediately and are sent directly to Apps Script and Google Sheets. The page does not show a background success message. If a write fails, it keeps the optimistic view, reports that it may differ from the Sheet, and asks the user to run **Sync now** to reload authoritative data. Google Sheets write latency still applies, but it does not block the interface.
 
 ## Deployment
