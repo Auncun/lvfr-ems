@@ -6,9 +6,10 @@ function showAvailableApps(user) {
 }
 
 document.querySelector('[data-action="logout"]')?.addEventListener('click', () => window.lvfrLogout?.());
-showAvailableApps(window.lvfrCachedUser?.());
+const cachedPortalUser = window.lvfrCachedUser?.();
+showAvailableApps(cachedPortalUser);
 
-fetch('/auth/me')
+if (!cachedPortalUser) fetch('/auth/me')
   .then(response => response.ok ? response.json() : null)
   .then(user => {
     window.lvfrCacheUser?.(user);

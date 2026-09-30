@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-09-30-member-name-auth-3',
+  apiVersion: '2026-10-01-account-password-4',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -61,6 +61,11 @@ function doPost(e) {
 function dispatch_(route, method, params, data, user) {
   if (route === '/auth/logout') return { ok: true };
   if (route === '/auth/me') return publicUser_(user);
+  if (route === '/api/account/profile' && method === 'GET') {
+    requireApproved_(user);
+    return memberProfile_(user.callsign, user);
+  }
+  if (route === '/api/account/password' && method === 'POST') return changeOwnPassword_(data, user);
   if (route === '/api/health') return { ok: true, backend: 'Google Apps Script' };
   if (route === '/api/config') return {
     ranks: LVFR.ranks,
@@ -187,6 +192,29 @@ function loginWithPassword_(data) {
   CacheService.getScriptCache().put(sessionCacheKey_(token), account.accountId, 21600);
   if (String(data.remember_me || '').toLowerCase() === 'on' || data.remember_me === true) saveRememberedSession_(token, account.accountId);
   return { token: token, user: publicUser_(account) };
+}
+
+function changeOwnPassword_(data, user) {
+  requireApproved_(user);
+  const currentPassword = String(data.current_password || '');
+  const newPassword = String(data.new_password || '');
+  if (!/^[A-Za-z0-9]{4,20}$/.test(newPassword)) throw new Error('New password must be 4–20 letters or numbers.');
+  const { sheet, rows } = accountRows_();
+  const index = rows.findIndex(row => String(row[0] || '') === String(user.accountId || ''));
+  if (index < 0) throw new Error('Account not found.');
+  const row = rows[index], salt = String(row[15] || ''), storedHash = String(row[16] || '');
+  const isV3 = storedHash.indexOf('v3$') === 0, isV2 = storedHash.indexOf('v2$') === 0;
+  const candidate = isV3 ? passwordHash_(currentPassword, salt)
+    : isV2 ? passwordHashV2_(currentPassword, salt)
+    : legacyPasswordHash_(currentPassword, salt);
+  if (!salt || !storedHash || !constantTimeEquals_(candidate, isV3 || isV2 ? storedHash.slice(3) : storedHash)) {
+    throw new Error('Current password is incorrect.');
+  }
+  const nextSalt = Utilities.getUuid().replace(/-/g, '');
+  sheet.getRange(index + 2, 16, 1, 2).setValues([[nextSalt, 'v3$' + passwordHash_(newPassword, nextSalt)]]);
+  invalidateAccountRowsCache_();
+  CacheService.getScriptCache().remove(accountCacheKey_(user.accountId));
+  return { ok: true, status: 'changed', message: 'Password changed.' };
 }
 
 function signupWithPassword_(data) {
@@ -885,8 +913,8 @@ function changeMemberRank_(data, user, operation) {
   if (operation === 'FORCE' && !(newLevel > oldLevel)) throw new Error('You can only promote to a higher rank.');
   if (operation === 'DEMOTION' && !(newLevel < oldLevel)) throw new Error('You can only demote to a lower rank.');
   if (operation === 'CHANGE_RANK' && ![
-    'AEMT|Senior Volunteer', 'EMT|Volunteer', 'Senior Volunteer|AEMT', 'Volunteer|EMT'
-  ].includes(old.rank + '|' + rank)) throw new Error('This rank change is not supported. Use Force Promote or Demote for rank changes within the same career track; Change Rank is only for EMT/Volunteer and AEMT/Senior Volunteer transitions.');
+    'EMT|AEMT', 'AEMT|Senior Volunteer', 'EMT|Volunteer', 'Senior Volunteer|AEMT', 'Volunteer|EMT'
+  ].includes(old.rank + '|' + rank)) throw new Error('This rank change is not supported. Use Force Promote or Demote for other rank changes. Change Rank supports EMT to AEMT, EMT to Volunteer, AEMT to Senior Volunteer, and the reverse transitions.');
   const target = nextEmptyCallsign_(rank);
   moveMember_(old, target, rank, user, operation);
   return { ok: true, new_callsign: target.callsign, new_rank: rank };

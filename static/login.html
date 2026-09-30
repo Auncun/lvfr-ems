@@ -27,12 +27,11 @@
     <p>Sign in or request an account.</p>
     <button type="button" id="installAppButton" hidden>Install app</button>
     <form id="loginForm" class="auth-form">
-      <label>Member name or username<input name="name" minlength="2" maxlength="48" autocomplete="username" placeholder="Roster name or ADMIN" required></label>
+      <label>Name<input name="name" minlength="2" maxlength="48" autocomplete="username" required></label>
       <label>Password<input name="password" type="password" minlength="4" maxlength="20" pattern="[A-Za-z0-9]{4,20}" autocomplete="current-password" required></label>
       <label class="check"><input type="checkbox" data-show-password> Show password</label>
       <label class="check"><input type="checkbox" name="remember_me"> Remember me on this device</label>
       <button type="submit" class="primary">Sign in</button>
-      <p class="auth-note">Use the name shown on the LVFR roster. The bootstrap administrator signs in as ADMIN. <a href="/about.html">About the portal</a> · <a href="/privacy.html">Privacy policy</a></p>
     </form>
     <details class="auth-note" style="margin-top:18px">
       <summary>Request a new LVFR account</summary>
@@ -43,11 +42,10 @@
         <button type="submit">Create account and request access</button>
       </form>
     </details>
-    <p class="auth-note" dir="rtl"><a href="/about.html">عن البوابة</a> · <a href="/privacy.html">سياسة الخصوصية</a></p>
     <div id="authMessage" class="auth-message" role="status"></div>
   </main>
-  <script src="/static/session-auth.js?v=name-login-4"></script>
-  <script src="/static/login.js?v=name-login-4"></script>
+  <script src="/static/session-auth.js?v=name-login-5"></script>
+  <script src="/static/login.js?v=name-login-5"></script>
   <script src="/static/pwa.js"></script>
 </body>
 </html>

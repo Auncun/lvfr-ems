@@ -1556,7 +1556,6 @@ document.querySelector('#chooseOnDutyCallsign').addEventListener('click', () => 
   onDutyPicker.hidden = !onDutyPicker.hidden;
   if (!onDutyPicker.hidden) onDutyPicker.focus();
 });
-document.querySelector('#setWatchCommander').addEventListener('click', () => transferWatchCommand());
 const transitionCallsignInput = document.querySelector('#transitionCallsign');
 transitionCallsignInput.addEventListener('input', () => {
   const normalized = addCallsignHyphen(transitionCallsignInput.value);
@@ -1672,6 +1671,8 @@ function refreshDnrFields() {
   const diveRescue = callTypeSelect.value === 'Dive Rescue';
   const fireCall = callTypeSelect.value === 'Fire dealt with by Engine-1';
   document.querySelector('#divePerformedByWrap').hidden = !diveRescue;
+  document.querySelector('#diveSuccessCountWrap').hidden = !diveRescue;
+  document.querySelector('#diveFailureCountWrap').hidden = !diveRescue;
   document.querySelector('#callDetailsWrap').hidden = diveRescue;
   const dnrType = dnrTypeSelect.value;
   document.querySelector('#callDetailsLabel').textContent = mascas ? 'MASCAS number' : fireCall ? 'Fire details' : 'Call / details';
@@ -1737,6 +1738,8 @@ function addCall(isDnr = false) {
   const location = document.querySelector('#callLocation').value.trim();
   const callMessage = document.querySelector(isDnr ? '#dnrMessage' : '#callMessage');
   const diveUnit = document.querySelector('#divePerformedBy').value;
+  const diveSuccessCount = Math.max(0, Number.parseInt(document.querySelector('#diveSuccessCount').value, 10) || 0);
+  const diveFailureCount = Math.max(0, Number.parseInt(document.querySelector('#diveFailureCount').value, 10) || 0);
   const dnr = type === 'DNR';
   const dnrType = dnrTypeSelect.value;
   const dnrSubject = document.querySelector('#dnrSubject').value.trim();
@@ -1744,7 +1747,7 @@ function addCall(isDnr = false) {
   const dnrIssuer = document.querySelector('#dnrIssuer').value;
   const dnrDuration = document.querySelector('#dnrDuration').value;
   const dnrDurationUnit = document.querySelector('#dnrDurationUnit').value;
-  if (dnr ? (!dnrSubject || !dnrReason || !dnrIssuer || (dnrDuration && Number(dnrDuration) < 1)) : (type === 'Dive Rescue' ? !diveUnit : (!details || (type === 'MASCAS' && (!Number.isInteger(Number(details)) || Number(details) < 1))))) {
+  if (dnr ? (!dnrSubject || !dnrReason || !dnrIssuer || (dnrDuration && Number(dnrDuration) < 1)) : (type === 'Dive Rescue' ? (!diveUnit || !Number.isInteger(diveSuccessCount) || !Number.isInteger(diveFailureCount)) : (type !== 'Fire dealt with by Engine-1' && !details || (type === 'MASCAS' && (!Number.isInteger(Number(details)) || Number(details) < 1))))) {
     setMessage(callMessage, 'Enter the call details first.', 'error');
     (dnr ? document.querySelector(!dnrSubject ? '#dnrSubject' : !dnrReason ? '#dnrReason' : !dnrIssuer ? '#dnrIssuer' : '#dnrDuration') : type === 'Dive Rescue' ? document.querySelector('#divePerformedBy') : document.querySelector('#callDetails')).focus();
     return;
@@ -1754,7 +1757,7 @@ function addCall(isDnr = false) {
     : type === 'MASCAS'
     ? `MASCAS X${details}${location ? ` ${location}` : ''}`
     : type === 'Dive Rescue'
-    ? `Dive Rescue performed by ${diveUnit}`
+    ? `Dive Rescue performed by ${diveUnit}${diveSuccessCount ? ` · Successful: ${diveSuccessCount}` : ''}${diveFailureCount ? ` · Failed: ${diveFailureCount}` : ''}`
     : type === 'Fire dealt with by Engine-1'
     ? `${type}${details ? `: ${details}` : ''}${location ? ` ${location}` : ''}`
     : `${type}: ${details}${location ? ` ${location}` : ''}`;
@@ -1762,6 +1765,8 @@ function addCall(isDnr = false) {
   appendText(dnr ? 'notes' : 'significant_call', line);
   document.querySelector('#callDetails').value = '';
   document.querySelector('#callLocation').value = '';
+  document.querySelector('#diveSuccessCount').value = '0';
+  document.querySelector('#diveFailureCount').value = '0';
   if (dnr) {
     document.querySelector('#dnrSubject').value = '';
     document.querySelector('#dnrReason').value = '';

@@ -725,9 +725,21 @@
     <div class="modal-box">
         <button type="button" class="close" id="closeAccountDialog">&times;</button>
         <h2>Manage account</h2>
-        <p id="accountNameDisplay"></p>
-        <p id="accountCallsignDisplay"></p>
-        <p class="small-muted">Sign in with your LVFR name and password.</p>
+        <dl class="account-details">
+            <dt>Name</dt><dd id="accountNameDisplay"></dd>
+            <dt>Callsign</dt><dd id="accountCallsignDisplay"></dd>
+            <dt>Rank</dt><dd id="accountRankDisplay"></dd>
+            <dt>Rank assigned</dt><dd id="accountDateDisplay"></dd>
+            <dt>Activity</dt><dd id="accountActivityDisplay"></dd>
+            <dt>Training</dt><dd id="accountTrainingDisplay"></dd>
+            <dt>Supervisor exam</dt><dd id="accountExamDisplay"></dd>
+        </dl>
+        <h3>Change password</h3>
+        <form id="changePasswordForm" class="form-grid">
+            <label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label>
+            <label>New password<input name="new_password" type="password" minlength="4" maxlength="20" pattern="[A-Za-z0-9]{4,20}" autocomplete="new-password" required></label>
+            <button type="submit" class="primary">Change password</button>
+        </form>
     </div>
 </div>
 
@@ -775,7 +787,7 @@
      ========================================================= -->
 
 <script src="/static/session-auth.js?v=password-session-4"></script>
-<script src="/static/app.js?v=instant-view-12"></script>
+<script src="/static/app.js?v=instant-promotion-14"></script>
 <script src="/static/pwa.js"></script>
 
 

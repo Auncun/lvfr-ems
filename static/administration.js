@@ -83,11 +83,25 @@ function renderAudit() {
     : '<tr><td colspan="4">No account history yet.</td></tr>';
 }
 async function loadAccounts() {
-  setMessage('Loading accounts…');
+  const cachedUser = window.lvfrCachedUser?.();
+  const cacheKey = `lvfr.admin.accounts.${cachedUser?.account_id || cachedUser?.id || 'current'}.v1`;
+  let hadCached = false;
   try {
-    const [data, user] = await Promise.all([api('/api/leaders'), api('/auth/me')]);
+    const cached = JSON.parse(sessionStorage.getItem(cacheKey) || 'null');
+    if (cached?.overview) {
+      overview = cached.overview;
+      currentUser = cached.user || cachedUser;
+      renderAccounts();
+      renderAudit();
+      hadCached = true;
+    }
+  } catch {}
+  if (!hadCached) setMessage('Loading accounts...');
+  try {
+    const [data, user] = await Promise.all([api('/api/leaders'), Promise.resolve(cachedUser || null)]);
     overview = data;
     currentUser = user;
+    try { sessionStorage.setItem(cacheKey, JSON.stringify({ overview, user, savedAt: Date.now() })); } catch {}
     renderAccounts();
     renderAudit();
     setMessage('Account list is up to date.', 'success');
@@ -150,6 +164,8 @@ async function performAction(button) {
   };
   const method = action === 'delete' ? 'DELETE' : 'POST';
   applyOptimisticAccountAction(account, action);
+  const success = { allow: 'Account approved.', deny: 'Account request denied.', promote: 'Commander access granted.', demote: 'Commander access removed.', member: 'Account set to Member.', leader: 'Account set to Leader.', deactivate: 'Account deactivated.', reactivate: 'Account reactivated.', delete: 'Account deleted.' };
+  setMessage(success[action] || 'Account updated.', 'success');
   button.disabled = true;
   void api(paths[action], { method }).catch(error => {
     setMessage(`Save failed: ${error.message}. The account view may differ from Google Sheets. Use Refresh Accounts to reload the correct data.`, 'error');

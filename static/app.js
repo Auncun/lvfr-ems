@@ -105,9 +105,9 @@ function startBackgroundMutation(url, options) {
     try { sessionStorage.removeItem("lvfr.roster.snapshot.v1"); } catch {}
     applyOptimisticMutation(path, payload, callsign);
     const pendingRank = path === "/api/promote" ? optimisticRank : String(payload.new_rank || optimisticRank);
-    if (path === "/api/promote") toast(`Promoted to ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
-    else if (path === "/api/force-promote" || path === "/api/change-rank") toast(`Changed to ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
-    else if (path === "/api/demote") toast(`Demoted to ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
+    if (path === "/api/promote") toast(`PROMOTED TO ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
+    else if (path === "/api/force-promote" || path === "/api/change-rank") toast(`RANK CHANGED TO ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
+    else if (path === "/api/demote") toast(`DEMOTED TO ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
     else if (path === "/api/change-callsign") toast(`Callsign changed to ${optimisticTarget}`);
     else if (path === "/api/activity") toast(`Activity changed to ${payload.activity}.`);
     else if (path === "/api/training") toast(`${payload.training} ${payload.remove ? "removed" : "added"}.`);
@@ -4464,7 +4464,21 @@ accountDialog?.querySelectorAll("[data-toggle-passwords]").forEach(toggle => tog
         input.toggleAttribute("data-password-field", toggle.checked);
     });
 }));
-$("#manageAccountButton")?.addEventListener("click", () => accountDialog?.classList.remove("hidden"));
+$("#manageAccountButton")?.addEventListener("click", async () => {
+    accountDialog?.classList.remove("hidden");
+    try {
+        const user = await api("/auth/me");
+        const profile = await api("/api/account/profile").catch(() => ({}));
+        const set = (id, value) => { const el = $(id); if (el) el.textContent = value || "—"; };
+        set("#accountNameDisplay", user.name);
+        set("#accountCallsignDisplay", user.callsign);
+        set("#accountRankDisplay", profile.rank);
+        set("#accountDateDisplay", profile.rank_assigned_date || profile.date);
+        set("#accountActivityDisplay", profile.activity);
+        set("#accountTrainingDisplay", [profile.has_basic_firefighting && "Basic Firefighting", profile.has_advanced_firefighting && "Advanced Firefighting", profile.has_hert && "HERT"].filter(Boolean).join(", ") || "None");
+        set("#accountExamDisplay", profile.has_supervisor_exam ? "Passed" : "Not completed");
+    } catch (error) { toast(error.message); }
+});
 $("#closeAccountDialog")?.addEventListener("click", () => accountDialog?.classList.add("hidden"));
 accountDialog?.addEventListener("click", event => {
     if (event.target === accountDialog) accountDialog.classList.add("hidden");
@@ -4477,7 +4491,7 @@ $("#changePasswordForm")?.addEventListener("submit", async event => {
         await api("/api/account/password", { method: "POST", body: JSON.stringify(body) });
         form.reset();
         accountDialog?.classList.add("hidden");
-        toast("Password change queued; saving in background.");
+        toast("Password changed successfully.");
     } catch (error) {
         toast(error.message);
     }
