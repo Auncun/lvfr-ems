@@ -460,14 +460,15 @@ def _require_leaders_admin():
 
 def require_role(role):
     user = CURRENT_USER.get() or {}
+    user_role = str(user.get("role") or "").strip().lower()
     allowed = (
-        (role == "admin" and (bool(user.get("is_admin")) or user.get("role") in {"admin", "commander"}))
+        (role == "admin" and (bool(user.get("is_admin")) or user_role in {"admin", "commander"}))
         or (role == "command" and _current_user_is_command())
         or (role == "leader" and bool(user) and (
-            user.get("role") in {"admin", "commander"}
-            or (user.get("role") == "leader" and _callsign_prefix(user.get("callsign")) in LEADER_CALLSIGN_PREFIXES)
+            user_role in {"admin", "commander"}
+            or (user_role == "leader" and _callsign_prefix(user.get("callsign")) in LEADER_CALLSIGN_PREFIXES)
         ))
-        or (role == "watch_command" and user.get("role") in {"leader", "member", "admin", "commander"})
+        or (role == "watch_command" and user_role in {"leader", "member", "admin", "commander"})
     )
     if not allowed:
         raise HTTPException(status_code=403, detail=f"This action requires the {role} role")
@@ -682,8 +683,9 @@ async def account_auth_guard(request: Request, call_next):
 
     callsign = account.get("callsign", "")
     display_name = _member_name_for_callsign(callsign, account["name"])
-    user = {**user, "name": display_name, "callsign": callsign, "role": account["role"], "is_admin": account["role"] in {"admin", "commander"}}
-    if account["role"] == "member":
+    account_role = str(account.get("role") or "leader").strip().lower()
+    user = {**user, "name": display_name, "callsign": callsign, "role": account_role, "is_admin": account_role in {"admin", "commander"}}
+    if account_role == "member":
         member_page_paths = {"/", "/portal", "/watch-command", "/auth/me"}
         is_watch_api = (
             path == "/api/watch-command"

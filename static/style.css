@@ -529,12 +529,13 @@ main {
     font-size: 12px;
 }
 
-#allLeadersTable th:nth-child(1) { width: 24%; }
-#allLeadersTable th:nth-child(2) { width: 13%; }
-#allLeadersTable th:nth-child(3) { width: 22%; }
+#allLeadersTable th:nth-child(1) { width: 22%; }
+#allLeadersTable th:nth-child(2) { width: 12%; }
+#allLeadersTable th:nth-child(3) { width: 18%; }
 #allLeadersTable th:nth-child(4) { width: 10%; }
-#allLeadersTable th:nth-child(5) { width: 21%; }
-#allLeadersTable th:nth-child(6) { width: 10%; }
+#allLeadersTable th:nth-child(5) { width: 10%; }
+#allLeadersTable th:nth-child(6) { width: 14%; }
+#allLeadersTable th:nth-child(7) { width: 14%; }
 
 .leader-account-cell strong,
 .leader-account-cell small,
