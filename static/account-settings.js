@@ -32,40 +32,54 @@
   document.body.append(dialog);
 
   const field = id => dialog.querySelector(`#${id}`);
+  let accountProfile = null;
+  const profileCacheKey = accountId => `lvfr.account.profile.v1:${accountId || ''}`;
+  const readRosterSnapshot = callsign => {
+    try {
+      const members = JSON.parse(sessionStorage.getItem('lvfr.roster.snapshot.v1') || '[]');
+      return members.find(member => String(member.callsign || '').trim().toUpperCase() === String(callsign || '').trim().toUpperCase()) || null;
+    } catch { return null; }
+  };
+  const renderProfile = (user, member) => {
+    field('accountSettingsName').textContent = user?.name || '';
+    field('accountSettingsCallsign').textContent = user?.callsign || member?.callsign || '';
+    field('accountSettingsRank').textContent = member?.rank || '';
+    field('accountSettingsDate').textContent = member?.rank_assigned_date || member?.date || '';
+    field('accountSettingsActivity').textContent = member?.activity || '';
+    field('accountSettingsInstructor').textContent = member?.instructor_type || user?.instructor_type || 'Not an Instructor';
+    field('accountSettingsTraining').textContent = [member?.has_basic_firefighting && 'Basic Firefighting', member?.has_advanced_firefighting && 'Advanced Firefighting', member?.has_hert && 'HERT'].filter(Boolean).join(', ') || 'None';
+    field('accountSettingsExam').textContent = member?.has_supervisor_exam ? 'Passed' : 'Not completed';
+  };
   const close = () => dialog.classList.add('hidden');
   openButton.addEventListener('click', async () => {
     dialog.classList.remove('hidden');
     const user = window.lvfrCachedUser?.();
+    const accountId = user?.account_id || user?.id || '';
+    if (!accountProfile && accountId) {
+      try { accountProfile = JSON.parse(sessionStorage.getItem(profileCacheKey(accountId)) || 'null'); } catch {}
+    }
+    const cachedMember = accountProfile || readRosterSnapshot(user?.callsign);
+    if (cachedMember) {
+      accountProfile = cachedMember;
+      renderProfile(user, cachedMember);
+      return;
+    }
+    if (!user?.callsign) {
+      renderProfile(user, null);
+      return;
+    }
     field('accountSettingsName').textContent = user?.name || 'Loading…';
     field('accountSettingsCallsign').textContent = user?.callsign || '';
-    field('accountSettingsRank').textContent = '';
-    field('accountSettingsDate').textContent = '';
-    field('accountSettingsActivity').textContent = '';
-    field('accountSettingsInstructor').textContent = '';
-    field('accountSettingsTraining').textContent = '';
-    field('accountSettingsExam').textContent = '';
     try {
       const headers = {};
       const token = window.lvfrSessionToken?.();
       if (token) headers.Authorization = `Bearer ${token}`;
-      const response = await fetch('/auth/me', { headers });
-      const profile = await response.json();
-      if (!response.ok) throw new Error(profile.detail || profile.error || 'Could not load account.');
-      field('accountSettingsName').textContent = profile.name || user?.name || '';
-      field('accountSettingsCallsign').textContent = profile.callsign || user?.callsign || '';
-      field('accountSettingsInstructor').textContent = profile.instructor_type || user?.instructor_type || 'Not an Instructor';
-      const memberResponse = profile.callsign
-        ? await fetch('/api/account/profile', { headers })
-        : null;
-      const member = memberResponse ? await memberResponse.json() : {};
-      if (memberResponse?.ok) {
-        field('accountSettingsRank').textContent = member.rank || '';
-        field('accountSettingsDate').textContent = member.rank_assigned_date || member.date || '';
-        field('accountSettingsActivity').textContent = member.activity || '';
-        field('accountSettingsInstructor').textContent = member.instructor_type || profile.instructor_type || user?.instructor_type || 'Not an Instructor';
-        field('accountSettingsTraining').textContent = [member.has_basic_firefighting && 'Basic Firefighting', member.has_advanced_firefighting && 'Advanced Firefighting', member.has_hert && 'HERT'].filter(Boolean).join(', ') || 'None';
-        field('accountSettingsExam').textContent = member.has_supervisor_exam ? 'Passed' : 'Not completed';
-      }
+      const response = await fetch('/api/account/profile', { headers });
+      const member = await response.json();
+      if (!response.ok) throw new Error(member.detail || member.error || 'Could not load account.');
+      accountProfile = member;
+      if (accountId) try { sessionStorage.setItem(profileCacheKey(accountId), JSON.stringify(member)); } catch {}
+      renderProfile(user, member);
     } catch (error) {
       field('accountSettingsName').textContent = error.message;
     }

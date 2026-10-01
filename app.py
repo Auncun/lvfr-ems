@@ -877,6 +877,21 @@ def watch_command_current_user():
     }
 
 
+@app.get("/api/watch-command/members")
+def watch_command_members():
+    require_role("watch_command")
+    return [
+        {
+            "callsign": str(member.get("callsign") or "").strip().upper(),
+            "name": str(member.get("name") or "").strip(),
+            "rank": str(member.get("rank") or "").strip(),
+        }
+        for member in L.list_members("")
+        if str(member.get("callsign") or "").strip()
+        and str(member.get("name") or "").strip()
+    ]
+
+
 @app.get("/api/watch-command/member/{callsign}")
 def watch_command_member(callsign: str):
     require_role("watch_command")
@@ -1153,6 +1168,10 @@ def account_login(data: LoginInput, request: Request):
             raise HTTPException(401, "Name or password is incorrect")
         if row["status"] == "pending": raise HTTPException(403, "Your account is waiting for activation")
         if row["status"] != "approved": raise HTTPException(403, "This account is not active. Contact a Commander.")
+        try:
+            _run_google_sheet_sync("login")
+        except Exception as sync_error:
+            logger.info(f"[LVFR EMS] Google Sheet login sync failed: {sync_error}")
         token = _encode_session({
             "account_id": row["account_id"],
             "callsign": row.get("callsign", ""),
@@ -2998,7 +3017,8 @@ def sync():
         return {
             "ok": True,
             "message": "Google Sheet synchronized",
-            "result": result
+            "result": result,
+            "synced_at": SYNC_STATE["last_success"]
         }
 
     except HTTPException:

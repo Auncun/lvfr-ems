@@ -85,11 +85,8 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/sync-status' && method === 'GET') { requireLeader_(user); return syncStatus_(); }
   if (route === '/api/sync' && method === 'POST') {
     requireLeader_(user);
-    invalidateRosterCache_();
-    const members = listMembers_('');
-    const syncedAt = new Date().toISOString();
-    PropertiesService.getScriptProperties().setProperty('LVFR_LAST_MANUAL_SYNC_AT', syncedAt);
-    return { ok: true, members: members, synced_at: syncedAt, message: 'Roster synchronized' };
+    const result = syncRosterSnapshot_('manual');
+    return { ok: true, members: result.members, synced_at: result.synced_at, message: 'Roster synchronized' };
   }
   if (route === '/api/notifications' && method === 'GET') { requireApproved_(user); return listNotifications_(user); }
   if (route === '/api/notifications/read' && method === 'POST') { requireApproved_(user); return markNotificationsRead_(data, user); }
@@ -127,6 +124,10 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/watch-command/current-user' && method === 'GET') {
     requireApproved_(user);
     return { callsign: user.callsign, name: user.name };
+  }
+  if (route === '/api/watch-command/members' && method === 'GET') {
+    requireApproved_(user);
+    return watchMemberDirectory_();
   }
   if (route.startsWith('/api/watch-command/member/') && method === 'GET') {
     requireApproved_(user);
@@ -183,6 +184,8 @@ function loginWithPassword_(data) {
   }
   cache.remove(throttleKey);
   if (['denied', 'removed', 'deactivated'].includes(account.status)) throw new Error('This account is inactive. Contact a Commander.');
+  try { syncRosterSnapshot_('login'); }
+  catch (syncError) { console.error('Roster sync during login failed: ' + syncError); }
   if (!isV3Hash) {
     const upgradedHash = 'v3$' + passwordHash_(password, account.passwordSalt);
     const sheet = account._sheet || accountsSheet_();
@@ -921,7 +924,7 @@ function syncStatus_() {
   return {
     synced_at: PropertiesService.getScriptProperties().getProperty('LVFR_LAST_MANUAL_SYNC_AT') || null,
     members: listMembers_('').length,
-    sync_running: false, sync_last_source: 'manual', sync_last_success: PropertiesService.getScriptProperties().getProperty('LVFR_LAST_MANUAL_SYNC_AT') || null,
+    sync_running: false, sync_last_source: PropertiesService.getScriptProperties().getProperty('LVFR_LAST_SYNC_SOURCE') || '', sync_last_success: PropertiesService.getScriptProperties().getProperty('LVFR_LAST_MANUAL_SYNC_AT') || null,
     sync_error: null, auto_sync_enabled: false, auto_sync_interval_seconds: 0,
     google_write: { running: false, pending: 0, last_error: null, last_success: new Date().toISOString() },
     archive: { enabled: true, status: 'idle', pending: 0, last_error: null, last_success: new Date().toISOString() }
@@ -1518,6 +1521,15 @@ function rosterMember_(callsign) {
   return member ? { callsign: member.callsign, name: member.name, rank: member.rank } : null;
 }
 
+function syncRosterSnapshot_(source) {
+  invalidateRosterCache_();
+  const members = listMembers_('');
+  const syncedAt = new Date().toISOString();
+  PropertiesService.getScriptProperties().setProperty('LVFR_LAST_MANUAL_SYNC_AT', syncedAt);
+  PropertiesService.getScriptProperties().setProperty('LVFR_LAST_SYNC_SOURCE', source || 'manual');
+  return { members, synced_at: syncedAt };
+}
+
 // Watch Command only needs to resolve a callsign to its displayed name. Read
 // those two roster columns directly instead of building the operations roster
 // snapshot with training, status colors, rank and eligibility data.
@@ -1532,6 +1544,21 @@ function watchMemberNameByCallsign_(callsign) {
     .find(values => String(values[0] || '').trim().toUpperCase() === normalized);
   const name = row ? String(row[1] || '').trim() : '';
   return name ? { callsign: normalized, name: name, rank: rankFromCallsign_(normalized) } : null;
+}
+
+function watchMemberDirectory_() {
+  const sheet = rosterSheet_();
+  if (!sheet) throw new Error('Roster sheet was not found.');
+  const count = Math.max(0, sheet.getLastRow() - 1);
+  if (!count) return [];
+  return sheet.getRange(2, 2, count, 2).getDisplayValues().reduce((members, row) => {
+    const callsign = String(row[0] || '').trim().toUpperCase();
+    const name = String(row[1] || '').trim();
+    if (name && /^[A-Z]+-\d+$/.test(callsign) && !LVFR.ignoredCallsigns.has(callsign)) {
+      members.push({ callsign, name, rank: rankFromCallsign_(callsign) });
+    }
+    return members;
+  }, []);
 }
 
 const WATCH_FIELDS = [

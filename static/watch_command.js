@@ -796,14 +796,25 @@ function refreshOnDutyCallsignChoices() {
   placeholder.value = '';
   placeholder.textContent = displayNames.size ? 'Choose a callsign' : 'No members in the watch log yet';
   onDutyPicker.append(placeholder);
+  const suggestions = new Set();
+  for (const [callsign, member] of memberNameCache.entries()) {
+    const suggestion = document.createElement('option');
+    suggestion.value = callsign;
+    suggestion.label = member.name;
+    onDutyCallsignList.append(suggestion);
+    suggestions.add(callsign);
+  }
   for (const [callsign, name] of [...displayNames.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const option = document.createElement('option');
     option.value = callsign;
     option.textContent = name ? `${callsign} ${name}` : callsign;
     onDutyPicker.append(option);
-    const suggestion = document.createElement('option');
-    suggestion.value = callsign;
-    onDutyCallsignList.append(suggestion);
+    if (!suggestions.has(callsign)) {
+      const suggestion = document.createElement('option');
+      suggestion.value = callsign;
+      suggestion.label = name;
+      onDutyCallsignList.append(suggestion);
+    }
   }
   if ([...onDutyPicker.options].some(option => option.value === previous)) onDutyPicker.value = previous;
   const issuerPicker = document.querySelector('#dnrIssuer');
@@ -1452,6 +1463,9 @@ async function transferWatchCommand(input = null, trigger = null) {
 }
 
 async function lookupMember(callsign) {
+  callsign = String(callsign || '').trim().toUpperCase();
+  if (memberNameCache.has(callsign)) return memberNameCache.get(callsign);
+  if (memberDirectoryPromise) await memberDirectoryPromise;
   if (memberNameCache.has(callsign)) return memberNameCache.get(callsign);
   const member = await request(`/api/watch-command/member/${encodeURIComponent(callsign)}`);
   const name = String(member.name || '').trim();
@@ -1459,6 +1473,23 @@ async function lookupMember(callsign) {
   const result = { name, rank: String(member.rank || '').trim() };
   memberNameCache.set(callsign, result);
   return result;
+}
+
+let memberDirectoryPromise = null;
+function loadMemberDirectory() {
+  if (memberDirectoryPromise) return memberDirectoryPromise;
+  memberDirectoryPromise = request('/api/watch-command/members').then(members => {
+    for (const member of members || []) {
+      const callsign = String(member.callsign || '').trim().toUpperCase();
+      const name = String(member.name || '').trim();
+      if (callsign && name) memberNameCache.set(callsign, { name, rank: String(member.rank || '').trim() });
+    }
+    refreshOnDutyCallsignChoices();
+  }).catch(error => {
+    memberDirectoryPromise = null;
+    console.warn('Could not preload the Watch Command member directory:', error);
+  });
+  return memberDirectoryPromise;
 }
 
 callsignInput.addEventListener('input', () => {
@@ -1471,6 +1502,12 @@ callsignInput.addEventListener('input', () => {
   updateAvailableChoices();
   if (!callsign) {
     memberLookup.textContent = 'Enter a callsign to look up the member name.';
+    return;
+  }
+  const cachedMember = memberNameCache.get(callsign);
+  if (cachedMember) {
+    memberLookup.textContent = `${callsign} ${cachedMember.name}`;
+    updateAvailableChoices(cachedMember);
     return;
   }
   memberLookup.textContent = 'Looking up member…';
@@ -1489,7 +1526,7 @@ callsignInput.addEventListener('input', () => {
           : error.message;
       }
     }
-  }, 250);
+  }, 0);
 });
 
 let restoredDraft = false;
@@ -1622,6 +1659,11 @@ initialCallsignInput.addEventListener('input', () => {
     initialMemberLookup.textContent = 'Enter a callsign to look up the member name.';
     return;
   }
+  const cachedMember = memberNameCache.get(callsign);
+  if (cachedMember) {
+    initialMemberLookup.textContent = `${callsign} ${cachedMember.name}`;
+    return;
+  }
   initialMemberLookup.textContent = 'Looking up member…';
   initialMemberLookupTimer = setTimeout(async () => {
     try {
@@ -1636,7 +1678,7 @@ initialCallsignInput.addEventListener('input', () => {
           : error.message;
       }
     }
-  }, 250);
+  }, 0);
 });
 initialIsTraining.addEventListener('change', () => {
   document.querySelector('#initialUnitLabel').textContent = initialIsTraining.checked
@@ -1858,4 +1900,5 @@ request('/api/watch-command/current-user')
   })
   .catch(error => setMessage(quickMessage, `Could not load account name: ${error.message}`, 'error'));
 
+loadMemberDirectory();
 loadHistory();

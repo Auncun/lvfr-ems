@@ -17,6 +17,7 @@
     .portal-heading{text-align:center;margin-bottom:30px}
     .portal-brand{display:flex;justify-content:center;align-items:center;gap:12px;margin-bottom:12px}
     .portal-header-actions{display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:24px}
+    #portalSyncStatus{flex-basis:100%;margin:0;color:#9aa4b2;text-align:center}
     .portal-heading p{color:#9aa4b2;margin:8px 0}
     .portal-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
     .portal-card{display:flex;min-height:190px;flex-direction:column;justify-content:space-between;padding:24px;border:1px solid #303945;border-radius:16px;background:#111720;text-decoration:none;color:inherit;transition:border-color .15s,transform .15s}
@@ -41,7 +42,7 @@
       <div class="portal-brand"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"><h1>Choose an application</h1></div>
       <p>Select where you want to continue.</p>
     </header>
-    <div class="portal-header-actions"><span id="accountName" class="status-dot account-user-name"></span><button type="button" id="installAppButton" hidden>Install app</button><button type="button" id="portalNotificationsButton" aria-expanded="false" aria-controls="portalNotificationPanel">Notifications <span id="portalNotificationBadge"></span></button><button type="button" id="manageAccountButton">Account settings</button><button type="button" data-action="logout">Log out</button></div>
+    <div class="portal-header-actions"><span id="accountName" class="status-dot account-user-name"></span><button type="button" id="installAppButton" hidden>Install app</button><button type="button" id="portalNotificationsButton" aria-expanded="false" aria-controls="portalNotificationPanel">Notifications <span id="portalNotificationBadge"></span></button><button type="button" id="manageAccountButton">Account settings</button><button type="button" id="portalSyncButton" hidden>Sync roster</button><span id="portalSyncStatus" role="status" aria-live="polite" hidden></span><button type="button" data-action="logout">Log out</button></div>
     <section class="portal-notifications" id="portalNotificationPanel" aria-labelledby="portalNotificationsTitle" hidden>
       <h2 id="portalNotificationsTitle">Notifications</h2>
       <div id="portalNotificationList" class="portal-notification-list" aria-live="polite"><p>Loading notifications…</p></div>
@@ -62,8 +63,8 @@
     </section>
   </main>
   <script src="/static/session-auth.js?v=auth-latency-1"></script>
-  <script src="/static/account-settings.js?v=account-settings-4"></script>
-  <script src="/static/portal.js?v=notifications-5"></script>
+  <script src="/static/account-settings.js?v=account-settings-5"></script>
+  <script src="/static/portal.js?v=sync-6"></script>
   <script src="/static/pwa.js"></script>
 </body>
 </html>

@@ -814,6 +814,7 @@ async function loadMembers(silent = false) {
             allMembersCache = loadedRows;
             allMembersCacheAt = Date.now();
         }
+        try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(loadedRows)); } catch {}
         loadedRows.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
 
         const hertFilter = $("#filterHert")?.value || "all";
@@ -4129,6 +4130,7 @@ if (syncButton) {
                     : await api("/api/members");
                 allMembersCache = sourceMembers;
                 allMembersCacheAt = Date.now();
+                try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(sourceMembers)); } catch {}
                 memberCache.clear();
                 sourceMembers.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
                 memberListRenderKey = "";

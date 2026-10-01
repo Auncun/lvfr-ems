@@ -3,6 +3,9 @@ function showAvailableApps(user) {
   const isCommander = Boolean(user.is_admin) || ['admin', 'commander'].includes(String(user.role || '').toLowerCase());
   if (isCommander) document.querySelector('#administrationCard')?.removeAttribute('hidden');
   if (user.status === 'approved' && user.role !== 'member') document.querySelector('#emsCard')?.removeAttribute('hidden');
+  const canSync = Boolean(user.is_command || isCommander);
+  document.querySelector('#portalSyncButton')?.toggleAttribute('hidden', !canSync);
+  document.querySelector('#portalSyncStatus')?.toggleAttribute('hidden', !canSync);
 }
 
 document.querySelector('[data-action="logout"]')?.addEventListener('click', () => window.lvfrLogout?.());
@@ -114,5 +117,41 @@ if (!cachedPortalUser) fetch('/auth/me')
     window.lvfrCacheUser?.(user);
     document.querySelector('#administrationCard')?.toggleAttribute('hidden', !user || !(Boolean(user.is_admin) || ['admin', 'commander'].includes(String(user.role || '').toLowerCase())));
     document.querySelector('#emsCard')?.toggleAttribute('hidden', !user || user.status !== 'approved' || user.role === 'member');
+    showAvailableApps(user);
+    void loadPortalSyncStatus();
   })
   .catch(() => {});
+
+const portalSyncButton = document.querySelector('#portalSyncButton');
+const portalSyncStatus = document.querySelector('#portalSyncStatus');
+function showPortalSyncTime(value) {
+  if (!portalSyncStatus) return;
+  portalSyncStatus.textContent = value ? `Last sync: ${value}` : 'Roster has not been synced yet.';
+}
+async function loadPortalSyncStatus() {
+  if (!portalSyncButton || portalSyncButton.hidden) return;
+  try {
+    const response = await fetch('/api/sync-status');
+    const result = await response.json();
+    if (response.ok) showPortalSyncTime(result.synced_at || result.sync_last_success);
+  } catch {}
+}
+portalSyncButton?.addEventListener('click', async () => {
+  portalSyncButton.disabled = true;
+  portalSyncButton.textContent = 'Syncing…';
+  if (portalSyncStatus) portalSyncStatus.textContent = 'Updating roster…';
+  try {
+    const response = await fetch('/api/sync', { method: 'POST' });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.detail || result.error || 'Roster sync failed.');
+    showPortalSyncTime(result.synced_at || new Date().toISOString());
+    portalSyncButton.textContent = 'Sync complete';
+    setTimeout(() => { portalSyncButton.textContent = 'Sync roster'; }, 1800);
+  } catch (error) {
+    if (portalSyncStatus) portalSyncStatus.textContent = error.message;
+    portalSyncButton.textContent = 'Sync roster';
+  } finally {
+    portalSyncButton.disabled = false;
+  }
+});
+void loadPortalSyncStatus();
