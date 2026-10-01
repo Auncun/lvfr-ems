@@ -2789,13 +2789,13 @@ def _sync_eligibility_notifications():
                 if existing.get(callsign) != data["next_rank"]:
                     con.execute(
                         """INSERT INTO Notifications(
-                               notification_key,kind,title,message,callsign,created_at
-                           ) VALUES(?,?,?,?,?,?)""",
+                               notification_key,kind,title,message,callsign,target_rank,created_at
+                           ) VALUES(?,?,?,?,?,?,?)""",
                         (
                             f"eligible:{callsign}:{uuid.uuid4()}", "eligible",
                             "New eligible promotion",
                             f"{data['name']} ({callsign}) is eligible for {data['next_rank']}.",
-                            callsign, now,
+                            callsign, data["next_rank"], now,
                         ),
                     )
                 con.execute(
@@ -2834,15 +2834,56 @@ def _sync_pending_request_notifications():
             name = str(row.get("name") or "New account")
             con.execute(
                 """INSERT OR IGNORE INTO Notifications(
-                       notification_key,kind,title,message,callsign,created_at
-                   ) VALUES(?,?,?,?,?,?)""",
+                       notification_key,kind,title,message,callsign,target_rank,created_at
+                   ) VALUES(?,?,?,?,?,?,?)""",
                 (
                     f"request:{account_id}:{request_time}", "request",
                     "New account request", f"{name} requested an account.", "",
-                    request_time or now,
+                    "", request_time or now,
                 ),
             )
         con.commit()
+    finally:
+        con.close()
+
+
+def _sync_inactive_notifications():
+    """Notify Command when a member newly enters Can Be Terminated."""
+    current = {
+        normalize_callsign(callsign): str(name or callsign)
+        for callsign, name in L.get_inactive_members()
+        if normalize_callsign(callsign) and normalize_callsign(callsign) not in IGNORED_CALLSIGNS
+    }
+    con = L.db()
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        seeded = con.execute(
+            "SELECT 1 FROM NotificationMeta WHERE meta_key='inactive_seeded'"
+        ).fetchone()
+        existing = {row["callsign"] for row in con.execute("SELECT callsign FROM InactiveNotificationState")}
+        now = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+        if not seeded:
+            con.executemany(
+                "INSERT OR IGNORE INTO InactiveNotificationState(callsign) VALUES(?)",
+                [(callsign,) for callsign in current],
+            )
+            con.execute("INSERT INTO NotificationMeta(meta_key,meta_value) VALUES('inactive_seeded','1')")
+        else:
+            for callsign in set(current) - existing:
+                con.execute(
+                    """INSERT INTO Notifications(notification_key,kind,title,message,callsign,target_rank,created_at)
+                       VALUES(?,?,?,?,?,?,?)""",
+                    (f"inactive:{callsign}:{uuid.uuid4()}", "inactive", "Can Be Terminated",
+                     f"{current[callsign]} ({callsign}) is marked Can Be Terminated.", callsign, "", now),
+                )
+                con.execute("INSERT OR IGNORE INTO InactiveNotificationState(callsign) VALUES(?)", (callsign,))
+            stale = existing - set(current)
+            if stale:
+                con.executemany("DELETE FROM InactiveNotificationState WHERE callsign=?", [(cs,) for cs in stale])
+        con.commit()
+    except Exception:
+        con.rollback()
+        raise
     finally:
         con.close()
 
@@ -2852,16 +2893,27 @@ def get_notifications():
     user = CURRENT_USER.get() or {}
     account_id = str(user.get("account_id") or "")
     is_admin = bool(user.get("is_admin"))
+    is_command = is_admin or _current_user_is_command()
     try:
         _sync_eligibility_notifications()
     except Exception as e:
         logger.info(f"[LVFR EMS] Eligibility notifications unavailable: {e}")
     if is_admin:
         _sync_pending_request_notifications()
+    if is_command:
+        try:
+            _sync_inactive_notifications()
+        except Exception as e:
+            logger.info(f"[LVFR EMS] Inactive notifications unavailable: {e}")
 
     con = L.db()
     try:
-        kind_filter = "n.kind IN ('eligible','request')" if is_admin else "n.kind='eligible'"
+        if is_admin:
+            kind_filter = "n.kind IN ('eligible','inactive','request')"
+        elif is_command:
+            kind_filter = "n.kind IN ('eligible','inactive')"
+        else:
+            kind_filter = "n.kind='eligible' AND n.target_rank IN ('AEMT','Senior Volunteer')"
         rows = [dict(row) for row in con.execute(
             f"""SELECT n.id,n.kind,n.title,n.message,n.callsign,n.created_at,
                        EXISTS(SELECT 1 FROM NotificationReads r
@@ -2886,12 +2938,21 @@ def mark_notifications_read(data: NotificationReadInput):
     user = CURRENT_USER.get() or {}
     account_id = str(user.get("account_id") or "")
     is_admin = bool(user.get("is_admin"))
-    kinds = "('eligible','request')" if is_admin else "('eligible')"
+    is_command = is_admin or _current_user_is_command()
+    if is_admin:
+        kinds = "('eligible','inactive','request')"
+        eligibility_filter = ""
+    elif is_command:
+        kinds = "('eligible','inactive')"
+        eligibility_filter = ""
+    else:
+        kinds = "('eligible')"
+        eligibility_filter = " AND target_rank IN ('AEMT','Senior Volunteer')"
     con = L.db()
     try:
         con.execute(
             f"""INSERT OR IGNORE INTO NotificationReads(account_id,notification_id,read_at)
-                SELECT ?,id,? FROM Notifications WHERE kind IN {kinds}
+                SELECT ?,id,? FROM Notifications WHERE kind IN {kinds}{eligibility_filter}
                 AND (?=0 OR id IN ({','.join('?' for _ in data.ids) or 'NULL'}))""",
             (account_id, datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
              1 if data.ids else 0, *data.ids),
@@ -2909,9 +2970,7 @@ def mark_notifications_read(data: NotificationReadInput):
 @app.get("/api/inactive")
 def inactive():
 
-    user = CURRENT_USER.get() or {}
-    if not user.get("is_admin"):
-        raise HTTPException(status_code=403, detail="Only Commanders can view the Can Be Terminated list.")
+    require_role("command")
 
     result = L.get_inactive_members()
 

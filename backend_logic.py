@@ -426,6 +426,7 @@ def init_db():
             title TEXT NOT NULL,
             message TEXT NOT NULL,
             callsign TEXT NOT NULL DEFAULT '',
+            target_rank TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL
         );
 
@@ -440,6 +441,10 @@ def init_db():
         CREATE TABLE IF NOT EXISTS EligibilityNotificationState(
             callsign TEXT PRIMARY KEY,
             next_rank TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS InactiveNotificationState(
+            callsign TEXT PRIMARY KEY
         );
 
         CREATE TABLE IF NOT EXISTS NotificationMeta(
@@ -493,6 +498,10 @@ def init_db():
         con.execute("ALTER TABLE DiscordLeaders ADD COLUMN approved_at TEXT")
     if "is_admin" not in leader_columns:
         con.execute("ALTER TABLE DiscordLeaders ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+    notification_columns = {row["name"] for row in con.execute("PRAGMA table_info(Notifications)")}
+    if "target_rank" not in notification_columns:
+        con.execute("ALTER TABLE Notifications ADD COLUMN target_rank TEXT NOT NULL DEFAULT ''")
+
     if "approved_by" not in leader_columns:
         con.execute("ALTER TABLE DiscordLeaders ADD COLUMN approved_by TEXT")
     if "admin_changed_at" not in leader_columns:
