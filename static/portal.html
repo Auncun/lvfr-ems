@@ -26,6 +26,13 @@
     .portal-card h2{margin:0 0 10px}.portal-card p{color:#9aa4b2;line-height:1.5;margin:0}
     .portal-card span{align-self:flex-start;margin-top:22px;color:#8bbcff;font-weight:700}
     .portal-footer{text-align:center;margin-top:22px}.portal-footer button{background:transparent}
+    .portal-notifications{margin:0 0 24px;padding:16px;border:1px solid #303945;border-radius:14px;background:#111720}
+    .portal-notifications h2{margin:0 0 10px;font-size:18px}
+    .portal-notification-list{display:grid;gap:8px}
+    .portal-notification{width:100%;padding:11px;text-align:left;border:1px solid #27303b;border-radius:9px;background:#0d1219;color:#e6edf3}
+    .portal-notification.unread{border-color:#356da8;background:#142235}
+    .portal-notification strong,.portal-notification small{display:block}
+    .portal-notification small{margin-top:4px;color:#9aa4b2}
   </style>
 </head>
 <body>
@@ -35,6 +42,10 @@
       <p>Select where you want to continue.</p>
     </header>
     <div class="portal-header-actions"><span id="accountName" class="status-dot account-user-name"></span><button type="button" id="installAppButton" hidden>Install app</button><button type="button" id="manageAccountButton">Account settings</button><button type="button" data-action="logout">Log out</button></div>
+    <section class="portal-notifications" aria-labelledby="portalNotificationsTitle">
+      <h2 id="portalNotificationsTitle">Notifications <span id="portalNotificationBadge"></span></h2>
+      <div id="portalNotificationList" class="portal-notification-list" aria-live="polite"><p>Loading notifications…</p></div>
+    </section>
     <section class="portal-options" aria-label="Available applications">
       <a class="portal-card" id="emsCard" href="/" hidden>
         <div><h2>LVFR EMS Operations</h2><p>Open the member directory, training, ranks, and operations tools.</p></div>
@@ -52,7 +63,7 @@
   </main>
   <script src="/static/session-auth.js?v=auth-latency-1"></script>
   <script src="/static/account-settings.js?v=account-settings-2"></script>
-  <script src="/static/portal.js?v=account-fast-3"></script>
+  <script src="/static/portal.js?v=notifications-1"></script>
   <script src="/static/pwa.js"></script>
 </body>
 </html>

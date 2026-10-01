@@ -23,7 +23,10 @@ async function api(url, options = {}) {
         }
     } else if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
         apiReadCache.clear();
-        try { sessionStorage.removeItem("lvfr.roster.snapshot.v1"); } catch {}
+        // Keep the last roster visible while Sync refreshes the server copy.
+        if (new URL(url, location.href).pathname !== "/api/sync") {
+            try { sessionStorage.removeItem("lvfr.roster.snapshot.v1"); } catch {}
+        }
     }
     const r = await fetch(url, {
         ...options,
@@ -532,11 +535,13 @@ async function markNotificationsRead(ids = []) {
 async function openNotification(id) {
     const item = notificationItems.find(row => Number(row.id) === Number(id));
     if (!item) return;
-    await markNotificationsRead([id]);
     const panel = $("#notificationPanel");
     const button = $("#notificationButton");
     if (panel) panel.hidden = true;
     if (button) button.setAttribute("aria-expanded", "false");
+    // Persist the read receipt in parallel; opening the destination profile
+    // should not wait for an unrelated spreadsheet write.
+    void markNotificationsRead([id]);
 
     if (["eligible", "inactive"].includes(item.kind) && item.callsign) {
         await profile(item.callsign, true);
@@ -4583,12 +4588,20 @@ $("#changePasswordForm")?.addEventListener("submit", async event => {
         if ($("#instructorLogTab")) $("#instructorLogTab").style.display = cachedUser.is_admin ? "" : "none";
     }
     const rosterLoad = loadMembers();
+    const notificationsLoad = loadNotifications();
+    void notificationsLoad.then(() => {
+        let pendingNotificationId = 0;
+        try {
+            pendingNotificationId = Number(sessionStorage.getItem("lvfr.portal.pending-notification") || 0);
+            sessionStorage.removeItem("lvfr.portal.pending-notification");
+        } catch {}
+        if (pendingNotificationId) void openNotification(pendingNotificationId);
+    });
     try {
         // Keep authentication and the independent page data requests in flight
         // together so roster rendering does not wait for /auth/me.
         await Promise.all([
             loadAccount(),
-            loadNotifications(),
             loadConfig(),
             rosterLoad,
             loadMembersLog("promotion"),

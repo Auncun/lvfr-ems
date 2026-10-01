@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-01-account-presence-10-performance',
+  apiVersion: '2026-10-01-account-presence-11-performance',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -202,7 +202,10 @@ function loginWithPassword_(data) {
       status: account.status, role: account.role
     }), 120);
   } catch (ignored) {}
-  if (String(data.remember_me || '').toLowerCase() === 'on' || data.remember_me === true) saveRememberedSession_(token, account.accountId);
+  const rememberMe = String(data.remember_me || '').toLowerCase() === 'on' || data.remember_me === true;
+  // CacheService may evict entries before their TTL. Keep a hashed recovery
+  // record for every session so a refresh after Sync does not sign the user out.
+  saveRememberedSession_(token, account.accountId, rememberMe);
   // Keep login response lean: instructor status is available from /auth/me
   // and need not delay authentication on a cold instructor-directory cache.
   return { token: token, user: publicUser_(account, false) };
@@ -306,7 +309,7 @@ function rememberedSessionsSheet_(create) {
   }
   return sheet;
 }
-function saveRememberedSession_(token, accountId) {
+function saveRememberedSession_(token, accountId, rememberMe) {
   const sheet = rememberedSessionsSheet_(true), now = Date.now();
   const lastRow = sheet.getLastRow();
   if (lastRow > 1) {
@@ -315,16 +318,20 @@ function saveRememberedSession_(token, accountId) {
       if (!rows[i][2] || Date.parse(rows[i][2]) <= now) sheet.deleteRow(i + 2);
     }
   }
-  sheet.appendRow([sessionTokenHash_(token), accountId, new Date(now + 30 * 86400000).toISOString(), new Date(now).toISOString()]);
+  const lifetime = rememberMe ? 30 * 86400000 : 6 * 60 * 60 * 1000;
+  sheet.appendRow([sessionTokenHash_(token), accountId, new Date(now + lifetime).toISOString(), new Date(now).toISOString()]);
 }
 function findRememberedSession_(token) {
   const sheet = rememberedSessionsSheet_(false);
   if (!sheet || sheet.getLastRow() < 2) return null;
-  const hash = sessionTokenHash_(token), rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getDisplayValues();
-  const row = rows.find(item => item[0] === hash);
-  const expiresAt = row ? Date.parse(row[2]) : NaN;
-  if (!row || !row[1] || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
-  return row[1];
+  const hash = sessionTokenHash_(token);
+  const match = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1)
+    .createTextFinder(hash).matchEntireCell(true).findNext();
+  if (!match) return null;
+  const row = sheet.getRange(match.getRow(), 2, 1, 2).getDisplayValues()[0];
+  const expiresAt = Date.parse(row[1]);
+  if (!row[0] || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
+  return row[0];
 }
 function findAccountById_(id) {
   const cache = CacheService.getScriptCache(), key = accountCacheKey_(id), cached = cache.get(key);
