@@ -114,7 +114,19 @@
     const requestInit = { ...init, headers, credentials: 'same-origin' };
     if (input instanceof Request && init.body === undefined && !['GET', 'HEAD'].includes(input.method)) requestInit.body = input.clone().body;
     return nativeFetch(input, requestInit).then(async response => {
-      if (response.status === 401) window.lvfrForgetSession();
+      if (response.status === 401) {
+        if (url.pathname !== '/auth/login') {
+          try {
+            const payload = await response.clone().json();
+            localStorage.setItem('lvfr.auth.last-error', JSON.stringify({
+              path: url.pathname,
+              detail: String(payload.detail || 'The API rejected the session.'),
+              saved_at: Date.now()
+            }));
+          } catch {}
+        }
+        window.lvfrForgetSession();
+      }
       if (url.pathname === '/auth/logout') window.lvfrForgetSession();
       if (canCache && response.ok) {
         try {

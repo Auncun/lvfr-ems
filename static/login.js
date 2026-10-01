@@ -2,6 +2,15 @@ const message = document.querySelector('#authMessage');
 const loginForm = document.querySelector('#loginForm');
 const signupForm = document.querySelector('#signupForm');
 
+try {
+  const diagnostic = JSON.parse(localStorage.getItem('lvfr.auth.last-error') || 'null');
+  if (diagnostic && Date.now() - Number(diagnostic.saved_at || 0) < 10 * 60 * 1000) {
+    message.textContent = `Session rejected on ${diagnostic.path}: ${diagnostic.detail}`;
+    message.className = 'auth-message error';
+    localStorage.removeItem('lvfr.auth.last-error');
+  }
+} catch {}
+
 async function checkAccount() {
   const response = await fetch('/auth/me');
   const payload = await response.json().catch(() => ({}));
@@ -35,6 +44,7 @@ async function submitAuth(form, route) {
     const response = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.detail || 'Could not complete the request.');
+    localStorage.removeItem('lvfr.auth.last-error');
     if (route === '/auth/signup') {
       form.reset();
       if (result.status === 'saving' && result.request_id) {
