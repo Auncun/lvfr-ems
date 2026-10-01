@@ -4172,24 +4172,30 @@ if (syncButton) {
                     );
 
 
-                toast(
-                    `Google Sheet synchronized - ${r.result?.members ?? 0} members`
-                );
+                toast("Refresh started. Current roster stays visible while updated data loads.");
+                void (async () => {
+                    try {
+                        const sourceMembers = Array.isArray(r.result?.members)
+                            ? r.result.members
+                            : await api("/api/members");
+                        allMembersCache = sourceMembers;
+                        allMembersCacheAt = Date.now();
+                        memberCache.clear();
+                        sourceMembers.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
+                        memberListRenderKey = "";
 
-                const sourceMembers = await api("/api/members");
-                memberCache.clear();
-                sourceMembers.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
-                memberListRenderKey = "";
-
-                const activeTab = $(".tab.active")?.dataset.tab;
-                await Promise.all([
-                    loadMembers(),
-                    syncStatus(),
-                    ...(activeTab === "eligible" ? [loadEligible()] : []),
-                    ...(activeTab === "inactive" && (currentUserIsAdmin || currentUserIsCommand) ? [loadInactive()] : [])
-                ]);
-
-                if (activeProfileMember?.callsign) profile(activeProfileMember.callsign, true);
+                        const activeTab = $(".tab.active")?.dataset.tab;
+                        await Promise.all([
+                            loadMembers(),
+                            ...(activeTab === "eligible" ? [loadEligible()] : []),
+                            ...(activeTab === "inactive" && (currentUserIsAdmin || currentUserIsCommand) ? [loadInactive()] : [])
+                        ]);
+                        if (activeProfileMember?.callsign) profile(activeProfileMember.callsign, true);
+                        toast(`Roster updated - ${sourceMembers.length} members`);
+                    } catch (refreshError) {
+                        toast(`Refresh could not finish: ${refreshError.message}`);
+                    }
+                })();
 
 
             } catch (e) {

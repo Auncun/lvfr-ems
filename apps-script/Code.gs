@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-01-account-presence-11-performance',
+  apiVersion: '2026-10-01-account-presence-12-performance',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -86,7 +86,7 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/sync' && method === 'POST') {
     requireLeader_(user);
     invalidateRosterCache_();
-    return { ok: true, message: 'Google Sheet synchronized', result: { members: listMembers_('').length } };
+    return { ok: true, message: 'Roster refresh started' };
   }
   if (route === '/api/sync/auto' && method === 'POST') { requireCommand_(user); return { ok: true, auto_enabled: Boolean(data.enabled), interval_seconds: 15 }; }
   if (route === '/api/notifications' && method === 'GET') { requireApproved_(user); return listNotifications_(user); }
