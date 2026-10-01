@@ -7,6 +7,18 @@ const API_READ_CACHE_MS = 5000;
 const apiReadCache = new Map();
 const BACKGROUND_PENDING_MESSAGE = "BACKGROUND_SAVE_PENDING";
 
+// Backends and cached responses may wrap collection payloads differently.
+// Normalize known member-list envelopes before the roster UI treats them as rows.
+function memberRowsFromResponse(value) {
+    if (Array.isArray(value)) return value;
+    if (Array.isArray(value?.members)) return value.members;
+    if (Array.isArray(value?.data)) return value.data;
+    if (Array.isArray(value?.data?.members)) return value.data.members;
+    if (Array.isArray(value?.result)) return value.result;
+    if (Array.isArray(value?.result?.members)) return value.result.members;
+    return null;
+}
+
 
 // ============================================================
 // API
@@ -810,7 +822,14 @@ async function loadMembers(silent = false) {
         if (!silent && allMembersCache && Date.now() - allMembersCacheAt < 15000) {
             loadedRows = allMembersCache;
         } else {
-            loadedRows = await api("/api/members");
+            loadedRows = memberRowsFromResponse(await api("/api/members"));
+            // If a stale browser/API cache contains an unexpected payload,
+            // bypass both cache layers once and recover from the live endpoint.
+            if (!loadedRows) {
+                apiReadCache.delete("/api/members");
+                loadedRows = memberRowsFromResponse(await api(`/api/members?_fresh=${Date.now()}`));
+            }
+            if (!loadedRows) throw new Error("The roster response was invalid. Refresh the page and try again.");
             allMembersCache = loadedRows;
             allMembersCacheAt = Date.now();
         }
@@ -4123,11 +4142,9 @@ if (syncButton) {
                     );
 
 
-                const sourceMembers = Array.isArray(r.members)
-                    ? r.members
-                    : Array.isArray(r.result?.members)
-                    ? r.result.members
-                    : await api("/api/members");
+                let sourceMembers = memberRowsFromResponse(r);
+                if (!sourceMembers) sourceMembers = memberRowsFromResponse(await api("/api/members"));
+                if (!sourceMembers) throw new Error("The roster response was invalid. Refresh the page and try again.");
                 allMembersCache = sourceMembers;
                 allMembersCacheAt = Date.now();
                 try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(sourceMembers)); } catch {}
