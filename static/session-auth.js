@@ -48,9 +48,11 @@
     localStorage.removeItem(USER_KEY);
     sessionStorage.removeItem(USER_KEY);
     sessionStorage.removeItem('lvfr.roster.snapshot.v1');
-    const store = remember ? localStorage : sessionStorage;
-    if (token) store.setItem(TOKEN_KEY, token);
-    if (user) store.setItem(USER_KEY, JSON.stringify(user));
+    // Keep the short-lived token available to other same-origin tabs too.
+    // The server enforces the actual lifetime (6 hours by default, 30 days
+    // when remember-me is selected); browser storage never extends it.
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
   };
   window.lvfrForgetSession = () => {
     clearApiCache();
