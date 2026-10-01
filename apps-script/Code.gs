@@ -37,9 +37,8 @@ function doPost(e) {
     if (route === '/auth/signup' && String(input.method || 'GET') === 'POST') {
       return output_({ ok: true, data: signupWithPassword_(input.data || {}) });
     }
-    const signupStatusRoute = route.match(/^\/auth\/signup-status\/([^/]+)$/);
-    if (signupStatusRoute && String(input.method || 'GET') === 'GET') {
-      return output_({ ok: true, data: signupStatus_(decodeURIComponent(signupStatusRoute[1])) });
+    if (route === '/auth/signup-status' && String(input.method || 'GET') === 'GET') {
+      return output_({ ok: true, data: signupStatus_(params.request_id) });
     }
     if (route === '/auth/login' && String(input.method || 'GET') === 'POST') return output_({ ok: true, data: loginWithPassword_(input.data || {}) });
     if (route === '/auth/logout' && String(input.method || 'GET') === 'POST') { logoutSession_(input.sessionToken); return output_({ ok: true, data: { ok: true } }); }
@@ -245,21 +244,10 @@ function signupWithPassword_(data) {
     properties.setProperty('LVFR_SIGNUP_JOB:' + requestId, JSON.stringify({
       name, callsign, memberName, salt, hash
     }));
-    properties.setProperty('LVFR_SIGNUP_STATUS:' + requestId, JSON.stringify({ status: 'saving', error: '', created_at: Date.now() }));
+    properties.setProperty('LVFR_SIGNUP_STATUS:' + requestId, JSON.stringify({ status: 'saving', error: '' }));
     queue.push(requestId);
     properties.setProperty(queueKey, JSON.stringify(queue));
-    try {
-      scheduleSignupWorker_();
-    } catch (error) {
-      properties.deleteProperty('LVFR_SIGNUP_JOB:' + requestId);
-      properties.setProperty(queueKey, JSON.stringify(queue.filter(id => id !== requestId)));
-      properties.setProperty('LVFR_SIGNUP_STATUS:' + requestId, JSON.stringify({
-        status: 'failed',
-        error: 'Background signup saving is not authorized. Ask the Apps Script owner to authorize the updated deployment.',
-        created_at: Date.now()
-      }));
-      throw error;
-    }
+    scheduleSignupWorker_();
   } finally { lock.releaseLock(); }
   return { ok: true, status: 'saving', request_id: requestId, callsign };
 }
@@ -297,11 +285,11 @@ function processSignupQueue_() {
     if (!requestId || !job) continue;
     try {
       persistSignupRequest_(job);
-      properties.setProperty('LVFR_SIGNUP_STATUS:' + requestId, JSON.stringify({ status: 'saved', error: '', created_at: Date.now() }));
+      properties.setProperty('LVFR_SIGNUP_STATUS:' + requestId, JSON.stringify({ status: 'saved', error: '' }));
     } catch (error) {
       console.error('Signup request failed: ' + (error && error.stack ? error.stack : error));
       properties.setProperty('LVFR_SIGNUP_STATUS:' + requestId, JSON.stringify({
-        status: 'failed', error: error && error.message ? error.message : 'The request could not be saved.', created_at: Date.now()
+        status: 'failed', error: error && error.message ? error.message : 'The request could not be saved.'
       }));
     } finally {
       properties.deleteProperty('LVFR_SIGNUP_JOB:' + requestId);

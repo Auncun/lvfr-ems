@@ -534,8 +534,9 @@ main {
 #allLeadersTable th:nth-child(3) { width: 18%; }
 #allLeadersTable th:nth-child(4) { width: 10%; }
 #allLeadersTable th:nth-child(5) { width: 10%; }
-#allLeadersTable th:nth-child(6) { width: 14%; }
-#allLeadersTable th:nth-child(7) { width: 14%; }
+#allLeadersTable th:nth-child(6),
+#allLeadersTable td:nth-child(6) { width: 8%; }
+#allLeadersTable th:nth-child(7) { width: 20%; }
 
 .leader-account-cell strong,
 .leader-account-cell small,
