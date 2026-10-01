@@ -25,10 +25,10 @@ function renderPortalNotifications(items = []) {
       <small>${escapePortalText(item.created_at || '')}</small>
     </button>`).join('') : '<p>No notifications.</p>';
   notificationList.querySelectorAll('[data-notification-id]').forEach(button => {
-    button.addEventListener('click', () => {
-      const item = items.find(row => Number(row.id) === Number(button.dataset.notificationId));
+    button.addEventListener('click', async () => {
+      const item = (cachedNotifications || items).find(row => Number(row.id) === Number(button.dataset.notificationId));
       if (!item) return;
-      fetch('/api/notifications/read', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [item.id] }) }).catch(() => {});
+      await markPortalNotificationsRead([item.id]);
       if (item.kind === 'request' && cachedPortalUser?.is_admin) {
         location.assign('/administration');
         return;
@@ -43,10 +43,30 @@ function escapePortalText(value) {
   element.textContent = String(value);
   return element.innerHTML;
 }
+
+async function markPortalNotificationsRead(ids = []) {
+  const current = cachedNotifications || [];
+  const selected = new Set(ids.map(Number));
+  const next = current.map(item => !ids.length || selected.has(Number(item.id)) ? { ...item, is_read: 1 } : item);
+  try {
+    const response = await fetch('/api/notifications/read', {
+      method: 'POST', keepalive: true,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids })
+    });
+    if (!response.ok) throw new Error('Could not save notification read status');
+    cachedNotifications = next;
+    try { localStorage.setItem(notificationStorageKey, JSON.stringify(next)); } catch {}
+    renderPortalNotifications(next);
+  } catch {}
+}
 notificationsButton?.addEventListener('click', () => {
   const opening = Boolean(notificationPanel?.hidden);
   if (notificationPanel) notificationPanel.hidden = !opening;
   notificationsButton.setAttribute('aria-expanded', String(opening));
+  if (opening && cachedNotifications?.some(item => !Number(item.is_read))) {
+    void markPortalNotificationsRead();
+  }
 });
 
 let cachedNotifications = null;
@@ -55,6 +75,16 @@ try {
   if (Array.isArray(stored)) cachedNotifications = stored;
 } catch {}
 if (cachedNotifications) renderPortalNotifications(cachedNotifications);
+window.addEventListener('storage', event => {
+  if (event.key !== notificationStorageKey || !event.newValue) return;
+  try {
+    const updated = JSON.parse(event.newValue);
+    if (Array.isArray(updated)) {
+      cachedNotifications = updated;
+      renderPortalNotifications(updated);
+    }
+  } catch {}
+});
 
 function loadPortalNotifications() {
   return fetch('/api/notifications')
@@ -63,6 +93,9 @@ function loadPortalNotifications() {
     cachedNotifications = Array.isArray(result.items) ? result.items : [];
     try { localStorage.setItem(notificationStorageKey, JSON.stringify(cachedNotifications)); } catch {}
     renderPortalNotifications(cachedNotifications);
+    if (!notificationPanel?.hidden && cachedNotifications.some(item => !Number(item.is_read))) {
+      void markPortalNotificationsRead();
+    }
   })
   .catch(() => {
     if (notificationList && !cachedNotifications) notificationList.innerHTML = '<p>Could not load notifications. Try again.</p>';

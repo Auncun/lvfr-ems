@@ -520,6 +520,14 @@ async function markNotificationsRead(ids = []) {
         notificationItems = notificationItems.map(item =>
             !ids.length || selected.has(Number(item.id)) ? { ...item, is_read: 1 } : item
         );
+        try {
+            if (currentUserAccountId) {
+                localStorage.setItem(
+                    `lvfr.portal.notifications.v1:${currentUserAccountId}`,
+                    JSON.stringify(notificationItems)
+                );
+            }
+        } catch {}
         renderNotifications();
     } catch (error) {
         if (!isBackgroundPending(error)) toast(`Could not update notifications: ${error.message}`);
