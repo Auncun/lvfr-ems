@@ -470,6 +470,7 @@ function toast(msg) {
 
 
 let notificationItems = [];
+let notificationLoadPromise = null;
 
 function renderNotifications() {
     const list = $("#notificationList");
@@ -495,13 +496,19 @@ function renderNotifications() {
 
 
 async function loadNotifications(silent = true) {
-    try {
-        const result = await api("/api/notifications");
-        notificationItems = Array.isArray(result.items) ? result.items : [];
-        renderNotifications();
-    } catch (error) {
-        if (!silent) toast(`Could not load notifications: ${error.message}`);
-    }
+    if (notificationLoadPromise) return notificationLoadPromise;
+    notificationLoadPromise = (async () => {
+        try {
+            const result = await api("/api/notifications");
+            notificationItems = Array.isArray(result.items) ? result.items : [];
+            renderNotifications();
+        } catch (error) {
+            if (!silent) toast(`Could not load notifications: ${error.message}`);
+        } finally {
+            notificationLoadPromise = null;
+        }
+    })();
+    return notificationLoadPromise;
 }
 
 
@@ -4599,7 +4606,10 @@ setInterval(refreshOnlineCount, 30000);
 setInterval(() => { if (!document.hidden) syncStatus(); }, 60000);
 setInterval(() => {
     if (!document.hidden) loadNotifications();
-}, 120000);
+}, 15000);
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) void loadNotifications();
+});
 setInterval(() => {
     if (!document.hidden && currentUserIsAdmin && $("#allLeadersTable")) void loadLeaders();
 }, 30000);

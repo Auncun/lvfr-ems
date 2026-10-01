@@ -237,4 +237,5 @@ document.querySelector('#logoutButton').addEventListener('click', () => {
 });
 loadAccounts();
 loadNotifications();
-window.setInterval(loadNotifications, 60000);
+window.setInterval(() => { if (!document.hidden) void loadNotifications(); }, 15000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) void loadNotifications(); });

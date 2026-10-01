@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-01-account-presence-9-performance',
+  apiVersion: '2026-10-01-account-presence-10-performance',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -768,8 +768,10 @@ function readRosterMembers_() {
   if (!sheet) throw new Error('Roster sheet was not found.');
   const count = Math.max(0, sheet.getLastRow() - 1);
   if (!count) return [];
-  const values = sheet.getRange(2, 1, count, 13).getDisplayValues();
-  const colors = sheet.getRange(2, 1, count, 13).getBackgrounds();
+  const values = sheet.getRange(2, 1, count, 11).getDisplayValues();
+  // Only columns F:I contain roster status colors used by the PWA. Reading
+  // 4 color columns instead of all 13 cuts the largest response in this path.
+  const colors = sheet.getRange(2, 6, count, 4).getBackgrounds();
   const hertByName = hertDirectory_(spreadsheet);
   const instructorsByName = new Map(instructorDirectory_(spreadsheet).map(item => [item.name.toLowerCase(), item]));
   const rankByCallsign = Object.create(null);
@@ -797,11 +799,11 @@ function readRosterMembers_() {
       discord_id: String(row[0] || ''),
       notes: String(row[10] || ''),
       row: index + 2,
-      has_basic_firefighting: hasColor_(colors[index][6]),
-      has_advanced_firefighting: hasColor_(colors[index][7]),
-      has_supervisor_exam: hasColor_(colors[index][5]),
+      has_basic_firefighting: hasColor_(colors[index][1]),
+      has_advanced_firefighting: hasColor_(colors[index][2]),
+      has_supervisor_exam: hasColor_(colors[index][0]),
       has_hert: Boolean(hertByName.get(name.toLowerCase())),
-      activity: activityFromColor_(colors[index][8]),
+      activity: activityFromColor_(colors[index][3]),
       instructor_type: (instructorsByName.get(name.toLowerCase()) || {}).type || ''
     };
     records.push(item);
