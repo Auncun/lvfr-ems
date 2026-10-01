@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-01-account-presence-7',
+  apiVersion: '2026-10-01-account-presence-8-notifications',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -89,8 +89,8 @@ function dispatch_(route, method, params, data, user) {
     return { ok: true, message: 'Google Sheet synchronized', result: { members: listMembers_('').length } };
   }
   if (route === '/api/sync/auto' && method === 'POST') { requireCommand_(user); return { ok: true, auto_enabled: Boolean(data.enabled), interval_seconds: 15 }; }
-  if (route === '/api/notifications' && method === 'GET') { requireApproved_(user); return { items: [], unread_count: 0 }; }
-  if (route === '/api/notifications/read' && method === 'POST') { requireApproved_(user); return { ok: true }; }
+  if (route === '/api/notifications' && method === 'GET') { requireApproved_(user); return listNotifications_(user); }
+  if (route === '/api/notifications/read' && method === 'POST') { requireApproved_(user); return markNotificationsRead_(data, user); }
   if (route === '/api/leaders' && method === 'GET') { requireAdmin_(user); return leaderOverview_(); }
   if (route === '/api/leaders/audit' && method === 'GET') { requireAdmin_(user); return accountAudit_(); }
   const accountAction = route.match(/^\/api\/leaders\/([^/]+)\/(allow|deny|admin|demote|member|leader|deactivate|reactivate)$/);
@@ -395,6 +395,146 @@ function publicUser_(user, includeInstructor = true) {
     is_command: isCommand_(user),
     instructor_type: instructor ? instructor.type : ''
   };
+}
+
+// Notifications are stored in the private spreadsheet so they survive Apps
+// Script cache eviction and are shared consistently between devices.
+const NOTIFICATION_HEADERS = ['id', 'kind', 'title', 'message', 'callsign', 'target_rank', 'created_at'];
+const NOTIFICATION_STATE_HEADERS = ['key', 'value'];
+const NOTIFICATION_READ_HEADERS = ['account_id', 'notification_id', 'read_at'];
+
+function notificationSheets_() {
+  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+  const ensure = (name, headers) => {
+    let sheet = spreadsheet.getSheetByName(name);
+    if (!sheet) sheet = spreadsheet.insertSheet(name);
+    if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    return sheet;
+  };
+  return {
+    notifications: ensure('Notifications', NOTIFICATION_HEADERS),
+    state: ensure('Notification State', NOTIFICATION_STATE_HEADERS),
+    reads: ensure('Notification Reads', NOTIFICATION_READ_HEADERS)
+  };
+}
+
+function notificationStateMap_(sheet) {
+  const state = new Map();
+  if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, 2).getDisplayValues()
+    .forEach(row => { if (row[0]) state.set(row[0], row[1]); });
+  return state;
+}
+
+function saveNotificationState_(sheet, state) {
+  const last = sheet.getLastRow();
+  if (last > 1) sheet.getRange(2, 1, last - 1, 2).clearContent();
+  const rows = Array.from(state.entries());
+  if (rows.length) sheet.getRange(2, 1, rows.length, 2).setValues(rows);
+}
+
+function appendNotification_(sheet, kind, title, message, callsign, targetRank, createdAt) {
+  const id = Math.max(0, sheet.getLastRow() - 1) + 1;
+  sheet.appendRow([id, kind, title, message, callsign || '', targetRank || '', createdAt || new Date().toISOString()]);
+}
+
+function syncNotifications_(user, sheets) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const state = notificationStateMap_(sheets.state);
+    const now = new Date().toISOString();
+    const eligible = new Map();
+    listMembers_('').forEach(member => {
+      const callsign = String(member.callsign || '').trim().toUpperCase();
+      if (!callsign || LVFR.ignoredCallsigns.has(callsign)) return;
+      const result = eligibility_(member);
+      if (result.eligible && result.next_rank) eligible.set(callsign, { name: member.name, rank: result.next_rank });
+    });
+    const eligibilitySeeded = state.has('eligibility_seeded');
+    eligible.forEach((member, callsign) => {
+      const key = 'eligible:' + callsign;
+      if (eligibilitySeeded && state.get(key) !== member.rank) {
+        appendNotification_(sheets.notifications, 'eligible', 'New eligible promotion',
+          member.name + ' (' + callsign + ') is eligible for ' + member.rank + '.', callsign, member.rank, now);
+      }
+      state.set(key, member.rank);
+    });
+    Array.from(state.keys()).filter(key => key.indexOf('eligible:') === 0 && !eligible.has(key.slice(9)))
+      .forEach(key => state.delete(key));
+    state.set('eligibility_seeded', '1');
+
+    const command = isCommand_(user);
+    if (command) {
+      const inactive = new Map(inactiveMembers_().map(member => [String(member.callsign).toUpperCase(), member.name]));
+      const inactiveSeeded = state.has('inactive_seeded');
+      inactive.forEach((name, callsign) => {
+        const key = 'inactive:' + callsign;
+        if (inactiveSeeded && !state.has(key)) appendNotification_(sheets.notifications, 'inactive', 'Can Be Terminated',
+          name + ' (' + callsign + ') is marked Can Be Terminated.', callsign, '', now);
+        state.set(key, '1');
+      });
+      Array.from(state.keys()).filter(key => key.indexOf('inactive:') === 0 && !inactive.has(key.slice(9)))
+        .forEach(key => state.delete(key));
+      state.set('inactive_seeded', '1');
+    }
+
+    if (isAdmin_(user) && sheets.accounts && sheets.accounts.getLastRow() > 1) {
+      const rows = sheets.accounts.getRange(2, 1, sheets.accounts.getLastRow() - 1, 8).getDisplayValues();
+      rows.forEach(row => {
+        if (String(row[5] || '').toLowerCase() !== 'pending') return;
+        const key = 'request:' + row[0];
+        if (!state.has(key)) appendNotification_(sheets.notifications, 'request', 'New account request',
+          (row[1] || 'New account') + ' requested an account.', row[2], '', row[7] || now);
+        state.set(key, '1');
+      });
+    }
+    saveNotificationState_(sheets.state, state);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function notificationVisibleTo_(row, user) {
+  const kind = String(row[1] || '');
+  if (kind === 'request') return isAdmin_(user);
+  if (kind === 'inactive') return isCommand_(user);
+  if (kind !== 'eligible') return false;
+  return isAdmin_(user) || isCommand_(user) || ['AEMT', 'Senior Volunteer'].includes(String(row[5] || ''));
+}
+
+function listNotifications_(user) {
+  const sheets = notificationSheets_();
+  sheets.accounts = accountsSheet_();
+  syncNotifications_(user, sheets);
+  const reads = new Set();
+  if (sheets.reads.getLastRow() > 1) sheets.reads.getRange(2, 1, sheets.reads.getLastRow() - 1, 2).getDisplayValues()
+    .forEach(row => { if (row[0] === user.accountId) reads.add(String(row[1])); });
+  if (sheets.notifications.getLastRow() < 2) return { items: [], unread_count: 0 };
+  const rows = sheets.notifications.getRange(2, 1, sheets.notifications.getLastRow() - 1, NOTIFICATION_HEADERS.length).getDisplayValues()
+    .filter(row => notificationVisibleTo_(row, user)).slice(-100).reverse();
+  const items = rows.map(row => ({
+    id: Number(row[0]), kind: row[1], title: row[2], message: row[3], callsign: row[4],
+    created_at: row[6], is_read: reads.has(String(row[0])) ? 1 : 0
+  }));
+  return { items, unread_count: items.filter(item => !item.is_read).length };
+}
+
+function markNotificationsRead_(data, user) {
+  const sheets = notificationSheets_();
+  const requested = new Set((Array.isArray(data.ids) ? data.ids : []).map(value => String(Number(value))).filter(value => value !== 'NaN'));
+  const rows = sheets.notifications.getLastRow() > 1
+    ? sheets.notifications.getRange(2, 1, sheets.notifications.getLastRow() - 1, NOTIFICATION_HEADERS.length).getDisplayValues() : [];
+  const already = new Set();
+  if (sheets.reads.getLastRow() > 1) sheets.reads.getRange(2, 1, sheets.reads.getLastRow() - 1, 2).getDisplayValues()
+    .forEach(row => { if (row[0] === user.accountId) already.add(String(row[1])); });
+  const now = new Date().toISOString(), additions = [];
+  rows.forEach(row => {
+    const id = String(row[0]);
+    if (!notificationVisibleTo_(row, user) || already.has(id) || (requested.size && !requested.has(id))) return;
+    additions.push([user.accountId, id, now]);
+  });
+  if (additions.length) sheets.reads.getRange(sheets.reads.getLastRow() + 1, 1, additions.length, 3).setValues(additions);
+  return { ok: true };
 }
 
 function presenceKey_(accountId) { return 'presence:' + String(accountId || ''); }
