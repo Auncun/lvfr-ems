@@ -10,6 +10,8 @@ const cachedPortalUser = window.lvfrCachedUser?.();
 showAvailableApps(cachedPortalUser);
 
 const notificationList = document.querySelector('#portalNotificationList');
+const notificationsButton = document.querySelector('#portalNotificationsButton');
+const notificationPanel = document.querySelector('#portalNotificationPanel');
 const notificationStorageKey = `lvfr.portal.notifications.v1:${cachedPortalUser?.account_id || cachedPortalUser?.id || 'user'}`;
 function renderPortalNotifications(items = []) {
   if (!notificationList) return;
@@ -41,20 +43,37 @@ function escapePortalText(value) {
   element.textContent = String(value);
   return element.innerHTML;
 }
+notificationsButton?.addEventListener('click', () => {
+  const opening = Boolean(notificationPanel?.hidden);
+  if (notificationPanel) notificationPanel.hidden = !opening;
+  notificationsButton.setAttribute('aria-expanded', String(opening));
+});
+
+let cachedNotifications = null;
 try {
-  const cachedNotifications = JSON.parse(localStorage.getItem(notificationStorageKey) || 'null');
-  if (Array.isArray(cachedNotifications)) renderPortalNotifications(cachedNotifications);
+  const stored = JSON.parse(localStorage.getItem(notificationStorageKey) || 'null');
+  if (Array.isArray(stored)) cachedNotifications = stored;
 } catch {}
-fetch('/api/notifications')
+if (cachedNotifications) renderPortalNotifications(cachedNotifications);
+
+function loadPortalNotifications() {
+  return fetch('/api/notifications')
   .then(response => response.ok ? response.json() : Promise.reject(new Error('Unable to load notifications')))
   .then(result => {
-    const items = Array.isArray(result.items) ? result.items : [];
-    try { localStorage.setItem(notificationStorageKey, JSON.stringify(items)); } catch {}
-    renderPortalNotifications(items);
+    cachedNotifications = Array.isArray(result.items) ? result.items : [];
+    try { localStorage.setItem(notificationStorageKey, JSON.stringify(cachedNotifications)); } catch {}
+    renderPortalNotifications(cachedNotifications);
   })
   .catch(() => {
-    if (notificationList && !notificationList.querySelector('.portal-notification')) notificationList.innerHTML = '<p>Notifications will appear here when available.</p>';
+    if (notificationList && !cachedNotifications) notificationList.innerHTML = '<p>Could not load notifications. Try again.</p>';
   });
+}
+
+// Fetch immediately so the badge and hidden list are ready before the user opens them.
+void loadPortalNotifications();
+setInterval(() => {
+  if (!document.hidden) void loadPortalNotifications();
+}, 15000);
 
 if (!cachedPortalUser) fetch('/auth/me')
   .then(response => response.ok ? response.json() : null)

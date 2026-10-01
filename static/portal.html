@@ -41,9 +41,9 @@
       <div class="portal-brand"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"><h1>Choose an application</h1></div>
       <p>Select where you want to continue.</p>
     </header>
-    <div class="portal-header-actions"><span id="accountName" class="status-dot account-user-name"></span><button type="button" id="installAppButton" hidden>Install app</button><button type="button" id="manageAccountButton">Account settings</button><button type="button" data-action="logout">Log out</button></div>
-    <section class="portal-notifications" aria-labelledby="portalNotificationsTitle">
-      <h2 id="portalNotificationsTitle">Notifications <span id="portalNotificationBadge"></span></h2>
+    <div class="portal-header-actions"><span id="accountName" class="status-dot account-user-name"></span><button type="button" id="installAppButton" hidden>Install app</button><button type="button" id="portalNotificationsButton" aria-expanded="false" aria-controls="portalNotificationPanel">Notifications <span id="portalNotificationBadge"></span></button><button type="button" id="manageAccountButton">Account settings</button><button type="button" data-action="logout">Log out</button></div>
+    <section class="portal-notifications" id="portalNotificationPanel" aria-labelledby="portalNotificationsTitle" hidden>
+      <h2 id="portalNotificationsTitle">Notifications</h2>
       <div id="portalNotificationList" class="portal-notification-list" aria-live="polite"><p>Loading notifications…</p></div>
     </section>
     <section class="portal-options" aria-label="Available applications">
@@ -63,7 +63,7 @@
   </main>
   <script src="/static/session-auth.js?v=auth-latency-1"></script>
   <script src="/static/account-settings.js?v=account-settings-2"></script>
-  <script src="/static/portal.js?v=notifications-1"></script>
+  <script src="/static/portal.js?v=notifications-4"></script>
   <script src="/static/pwa.js"></script>
 </body>
 </html>
