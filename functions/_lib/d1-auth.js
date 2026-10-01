@@ -1,5 +1,5 @@
 const enc = new TextEncoder();
-const json = (body, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
+const json = (body, status = 200, headers = {}) => Response.json(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 const nameKey = value => String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
 const b64url = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -21,7 +21,12 @@ async function signedClaims(account, secret) {
 }
 function bearer(request) {
   const header = request.headers.get("Authorization") || "";
-  return header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  if (header.startsWith("Bearer ")) return header.slice(7).trim();
+  // Same-origin HttpOnly cookie is the fallback for full-page navigations,
+  // separate tabs, and clients that do not attach Authorization headers.
+  const cookies = request.headers.get("Cookie") || "";
+  const pair = cookies.split(";").map(value => value.trim()).find(value => value.startsWith("lvfr_d1_session="));
+  return pair ? decodeURIComponent(pair.slice("lvfr_d1_session=".length)) : "";
 }
 async function accountForToken(db, token) {
   if (!token) return null;
@@ -71,7 +76,7 @@ async function login(db, data) {
   const lifetime = data.remember_me === true || String(data.remember_me || "").toLowerCase() === "on" ? 30 * 86400 : 6 * 3600;
   await db.prepare("INSERT INTO auth_sessions(token_hash,account_id,expires_at,created_at,remember_me) VALUES(?,?,?,?,?)")
     .bind(await sha256(token), account.account_id, now + lifetime, now, lifetime > 21600 ? 1 : 0).run();
-  return { token, user: await publicUser(account) };
+  return { token, user: await publicUser(account), max_age: lifetime };
 }
 async function signup(db, env, data) {
   const setup = await db.prepare("SELECT value FROM account_migration_state WHERE migration_key='initial_commander_created'").first();
@@ -165,8 +170,14 @@ export async function handleD1(context) {
     const token=bearer(request), authRoute=route.startsWith("/auth/");
     if (route==="/api/health" && method==="GET") return json({ok:true,backend:"Cloudflare D1",auth_store:"D1"});
     if (route==="/auth/signup" && method==="POST") return json(await signup(db,env,data));
-    if (route==="/auth/login" && method==="POST") return json(await login(db,data));
-    if (route==="/auth/logout" && method==="POST") { if(token) await db.prepare("DELETE FROM auth_sessions WHERE token_hash=?").bind(await sha256(token)).run(); return json({ok:true}); }
+    if (route==="/auth/login" && method==="POST") {
+      const result = await login(db,data);
+      return json({ token:result.token, user:result.user },200,{ "Set-Cookie":`lvfr_d1_session=${encodeURIComponent(result.token)}; Path=/; Max-Age=${result.max_age}; HttpOnly; Secure; SameSite=Lax` });
+    }
+    if (route==="/auth/logout" && method==="POST") {
+      if(token) await db.prepare("DELETE FROM auth_sessions WHERE token_hash=?").bind(await sha256(token)).run();
+      return json({ok:true},200,{ "Set-Cookie":"lvfr_d1_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax" });
+    }
     if (route==="/auth/me" && method==="GET") { const a=await accountForToken(db,token); if(!a) return json({detail:"Your session expired. Sign in again."},401); return json(await publicUser(a)); }
     if (route==="/auth/bootstrap-commander" && method==="POST") return json(await bootstrapCommander(db,env,request,data));
     const user=await accountForToken(db,token);
