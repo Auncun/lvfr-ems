@@ -506,6 +506,15 @@ main {
 
 #allLeadersTable { overflow-x: hidden; }
 
+#allLeadersTable thead tr { height: 36px; }
+#allLeadersTable thead th {
+    height: 36px;
+    padding: 6px 7px;
+    line-height: 1.2;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
 #allLeadersTable th,
 #allLeadersTable td {
     padding: 8px 7px;
