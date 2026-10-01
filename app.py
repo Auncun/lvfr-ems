@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 import backend_logic as L
 
 from pathlib import Path
-from threading import Thread, Lock, Timer, Event
+from threading import Thread, Lock, Timer
 
 logger = logging.getLogger("lvfr_ems")
 
@@ -197,11 +197,10 @@ SIGNUP_JOB_LOCK = Lock()
 @asynccontextmanager
 async def lifespan(application):
     await run_in_threadpool(_startup)
-    _start_automatic_sync()
     try:
         yield
     finally:
-        AUTO_SYNC_STOP.set()
+        pass
 
 
 app = FastAPI(title="LVFR EMS Operations", lifespan=lifespan)
@@ -1582,11 +1581,8 @@ SYNC_STATE = {
     "last_error": None,
     "last_success": None,
     "last_source": "",
-    "auto_enabled": os.getenv("GOOGLE_SHEET_AUTO_SYNC", "true").strip().lower() not in {"0", "false", "no", "off"},
+    "auto_enabled": False,
 }
-AUTO_SYNC_INTERVAL_SECONDS = max(60, int(os.getenv("GOOGLE_SHEET_AUTO_SYNC_INTERVAL", "300")))
-AUTO_SYNC_STOP = Event()
-AUTO_SYNC_THREAD = None
 
 
 def _queue_google_job(
@@ -2467,24 +2463,6 @@ def _startup():
         logger.info(f"[LVFR EMS] Account overview cache warm-up skipped: {e}")
 
     try:
-
-        result = L.import_google_sheet_data()
-        with SYNC_LOCK:
-            SYNC_STATE["last_success"] = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
-            SYNC_STATE["last_source"] = "automatic"
-            SYNC_STATE["last_error"] = None
-
-        logger.info(
-            f"[LVFR EMS] Google Sheet loaded: {result}"
-        )
-
-    except Exception as e:
-
-        logger.info(
-            f"[LVFR EMS] Google Sheet startup sync skipped: {e}"
-        )
-
-    try:
         _cached_instructor_directory()
         logger.info("[LVFR EMS] Instructor directory cache warmed.")
     except Exception as e:
@@ -3009,26 +2987,6 @@ def _run_google_sheet_sync(source):
             SYNC_STATE["running"] = False
 
 
-def _automatic_sync_worker():
-    while not AUTO_SYNC_STOP.wait(AUTO_SYNC_INTERVAL_SECONDS):
-        with SYNC_LOCK:
-            enabled = SYNC_STATE["auto_enabled"]
-        if not enabled:
-            continue
-        try:
-            _run_google_sheet_sync("automatic")
-        except Exception as e:
-            logger.info(f"[LVFR EMS] Automatic Google Sheet sync failed: {e}")
-
-
-def _start_automatic_sync():
-    global AUTO_SYNC_THREAD
-    if AUTO_SYNC_THREAD and AUTO_SYNC_THREAD.is_alive():
-        return
-    AUTO_SYNC_STOP.clear()
-    AUTO_SYNC_THREAD = Thread(target=_automatic_sync_worker, name="google-sheet-auto-sync", daemon=True)
-    AUTO_SYNC_THREAD.start()
-
 @app.post("/api/sync")
 def sync():
     require_role("command")
@@ -3060,8 +3018,8 @@ class AutoSyncInput(BaseModel):
 def set_auto_sync(data: AutoSyncInput):
     require_role("command")
     with SYNC_LOCK:
-        SYNC_STATE["auto_enabled"] = bool(data.enabled)
-    return {"ok": True, "auto_enabled": bool(data.enabled), "interval_seconds": AUTO_SYNC_INTERVAL_SECONDS}
+        SYNC_STATE["auto_enabled"] = False
+    return {"ok": True, "auto_enabled": False, "interval_seconds": 0}
 
 
 # ============================================================
@@ -3136,7 +3094,7 @@ def sync_status():
             "sync_last_success": SYNC_STATE["last_success"],
             "sync_last_source": SYNC_STATE["last_source"],
             "auto_sync_enabled": SYNC_STATE["auto_enabled"],
-            "auto_sync_interval_seconds": AUTO_SYNC_INTERVAL_SECONDS,
+            "auto_sync_interval_seconds": 0,
 
             "google_write":
                 google_write_state,

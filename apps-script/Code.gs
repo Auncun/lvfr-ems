@@ -86,9 +86,11 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/sync' && method === 'POST') {
     requireLeader_(user);
     invalidateRosterCache_();
-    return { ok: true, message: 'Roster refresh started' };
+    const members = listMembers_('');
+    const syncedAt = new Date().toISOString();
+    PropertiesService.getScriptProperties().setProperty('LVFR_LAST_MANUAL_SYNC_AT', syncedAt);
+    return { ok: true, members: members, synced_at: syncedAt, message: 'Roster synchronized' };
   }
-  if (route === '/api/sync/auto' && method === 'POST') { requireCommand_(user); return { ok: true, auto_enabled: Boolean(data.enabled), interval_seconds: 15 }; }
   if (route === '/api/notifications' && method === 'GET') { requireApproved_(user); return listNotifications_(user); }
   if (route === '/api/notifications/read' && method === 'POST') { requireApproved_(user); return markNotificationsRead_(data, user); }
   if (route === '/api/leaders' && method === 'GET') { requireAdmin_(user); return leaderOverview_(); }
@@ -917,9 +919,10 @@ function inactiveMembers_() {
 
 function syncStatus_() {
   return {
-    synced_at: new Date().toISOString(), members: listMembers_('').length,
-    sync_running: false, sync_last_source: 'automatic', sync_last_success: new Date().toISOString(),
-    sync_error: null, auto_sync_enabled: true, auto_sync_interval_seconds: 15,
+    synced_at: PropertiesService.getScriptProperties().getProperty('LVFR_LAST_MANUAL_SYNC_AT') || null,
+    members: listMembers_('').length,
+    sync_running: false, sync_last_source: 'manual', sync_last_success: PropertiesService.getScriptProperties().getProperty('LVFR_LAST_MANUAL_SYNC_AT') || null,
+    sync_error: null, auto_sync_enabled: false, auto_sync_interval_seconds: 0,
     google_write: { running: false, pending: 0, last_error: null, last_success: new Date().toISOString() },
     archive: { enabled: true, status: 'idle', pending: 0, last_error: null, last_success: new Date().toISOString() }
   };

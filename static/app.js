@@ -750,8 +750,8 @@ async function syncStatus() {
 
         syncStatusElement.textContent =
             s.synced_at
-                ? `Google Sheets live: ${s.members} members | checked ${s.synced_at}`
-                : "Google Sheets: waiting for connection";
+                ? `Last manual sync: ${s.synced_at} | ${s.members} members`
+                : `Roster ready: ${s.members} members | no manual sync yet`;
 
         syncStatusElement.style.color =
             s.synced_at
@@ -760,15 +760,8 @@ async function syncStatus() {
 
         const syncActivityElement = $("#syncActivityStatus");
         if (syncActivityElement) {
-            syncActivityElement.textContent = "Refreshes this page every 15 seconds";
-            syncActivityElement.style.color = "#56d364";
-        }
-
-        const autoSyncButton = $("#autoSyncBtn");
-        if (autoSyncButton) {
-            autoSyncButton.textContent = "Auto refresh: 15s";
-            autoSyncButton.disabled = true;
-            autoSyncButton.title = "The visible roster refreshes from Google Sheets every 15 seconds.";
+            syncActivityElement.textContent = "Roster updates only when you press Sync now";
+            syncActivityElement.style.color = "#d29922";
         }
         const manualSyncButton = $("#syncBtn");
         if (manualSyncButton && !manualSyncButton.dataset.syncing) {
@@ -964,16 +957,6 @@ async function loadMembers(silent = false) {
         }
     }
 }
-
-// Apps Script does not hold an SSE connection open. Refresh the visible roster
-// periodically instead; every device reads the shared Google Sheet.
-setInterval(() => {
-    if (!document.hidden && $(".tab.active")?.dataset.tab === "members") loadMembers(true);
-}, 15000);
-document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && $(".tab.active")?.dataset.tab === "members") loadMembers(true);
-});
-
 
 // ============================================================
 // ELIGIBLE
@@ -4139,7 +4122,9 @@ if (syncButton) {
                     );
 
 
-                const sourceMembers = Array.isArray(r.result?.members)
+                const sourceMembers = Array.isArray(r.members)
+                    ? r.members
+                    : Array.isArray(r.result?.members)
                     ? r.result.members
                     : await api("/api/members");
                 allMembersCache = sourceMembers;
@@ -4155,6 +4140,7 @@ if (syncButton) {
                     ...(activeTab === "inactive" && (currentUserIsAdmin || currentUserIsCommand) ? [loadInactive()] : [])
                 ]);
                 if (activeProfileMember?.callsign) profile(activeProfileMember.callsign, true);
+                await syncStatus();
                 toast(`Roster updated - ${sourceMembers.length} members`);
 
 
@@ -4176,27 +4162,6 @@ if (syncButton) {
     );
 
 }
-
-const autoSyncButton = $("#autoSyncBtn");
-if (autoSyncButton) {
-    autoSyncButton.addEventListener("click", async () => {
-        autoSyncButton.disabled = true;
-        try {
-            const status = await api("/api/sync-status");
-            const result = await api("/api/sync/auto", {
-                method: "POST",
-                body: JSON.stringify({ enabled: !status.auto_sync_enabled }),
-            });
-            toast(`Automatic sync ${result.auto_enabled ? "enabled" : "disabled"}`);
-            await syncStatus();
-        } catch (error) {
-            toast(error.message);
-        } finally {
-            autoSyncButton.disabled = false;
-        }
-    });
-}
-
 
 // ============================================================
 // SEARCH
@@ -4451,8 +4416,6 @@ function applyAccountUser(user) {
     currentUserIsCommand = Boolean(user.is_command);
     const commandSyncPanel = $("#commandSyncPanel");
     if (commandSyncPanel) commandSyncPanel.hidden = user.role === "member";
-    const autoSyncControl = $("#autoSyncBtn");
-    if (autoSyncControl) autoSyncControl.hidden = !(currentUserIsCommand || currentUserIsAdmin);
     currentInstructorTypes = String(user.instructor_type || "")
         .split("/").map(value => value.trim().toUpperCase()).filter(Boolean);
     const account = $("#accountName");

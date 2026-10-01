@@ -1437,7 +1437,7 @@ async function transferWatchCommand(input = null, trigger = null) {
       newDraftId();
       await save();
     }
-    setMessage(input ? message : quickMessage, `Transition added for ${callsign} ${member.name}.`, 'success');
+    setMessage(input ? message : quickMessage, `Incoming Watch Commander added to transition: ${callsign} ${member.name}.`, 'success');
     if (input) input.value = '';
     await loadHistory();
   } catch (error) {
