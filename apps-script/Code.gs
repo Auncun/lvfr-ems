@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-01-account-password-4',
+  apiVersion: '2026-10-01-account-presence-7',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -66,6 +66,7 @@ function dispatch_(route, method, params, data, user) {
     return memberProfile_(user.callsign, user);
   }
   if (route === '/api/account/password' && method === 'POST') return changeOwnPassword_(data, user);
+  if (route === '/api/presence' && method === 'POST') { requireApproved_(user); touchPresence_(user); return { ok: true }; }
   if (route === '/api/health') return { ok: true, backend: 'Google Apps Script' };
   if (route === '/api/config') return {
     ranks: LVFR.ranks,
@@ -376,6 +377,9 @@ function applyCurrentRosterIdentity_(account) {
 }
 
 function publicUser_(user) {
+  const instructor = instructorDirectory_().find(item =>
+    normalizeMemberName_(item.name) === normalizeMemberName_(user.name)
+  );
   return {
     account_id: user.accountId || user.account_id,
     id: user.accountId || user.account_id,
@@ -384,8 +388,28 @@ function publicUser_(user) {
     role: user.role,
     status: user.status,
     is_admin: user.role === 'admin' || user.role === 'commander',
-    is_command: isCommand_(user)
+    is_command: isCommand_(user),
+    instructor_type: instructor ? instructor.type : ''
   };
+}
+
+function presenceKey_(accountId) { return 'presence:' + String(accountId || ''); }
+function touchPresence_(user) {
+  CacheService.getScriptCache().put(presenceKey_(user.accountId), String(Date.now()), 90);
+}
+function addPresenceToOverview_(overview) {
+  const cache = CacheService.getScriptCache();
+  const now = Date.now(), accounts = [...(overview.approved || []), ...(overview.deactivated || [])];
+  const keys = accounts.map(row => presenceKey_(row.account_id));
+  const values = keys.length ? cache.getAll(keys) : {};
+  let onlineCount = 0;
+  accounts.forEach(row => {
+    const seen = Number(values[presenceKey_(row.account_id)] || 0);
+    row.online = row.status === 'approved' && seen > 0 && now - seen < 90000;
+    if (row.online) onlineCount++;
+  });
+  overview.online_count = onlineCount;
+  return overview;
 }
 
 function requireApproved_(user) {
@@ -1174,7 +1198,7 @@ function leaderOverview_() {
   const cacheKey = 'leader-overview:v2';
   const cached = cache.get(cacheKey);
   if (cached) {
-    try { return JSON.parse(cached); } catch (ignored) {}
+    try { return addPresenceToOverview_(JSON.parse(cached)); } catch (ignored) {}
   }
   const membersByName = rosterMembersByName_();
   const accounts = accountRows_().rows.map(row => accountObject_(row, membersByName));
@@ -1185,7 +1209,7 @@ function leaderOverview_() {
     audit: accountAudit_()
   };
   try { cache.put(cacheKey, JSON.stringify(result), 30); } catch (ignored) {}
-  return result;
+  return addPresenceToOverview_(result);
 }
 
 function accountAudit_() {

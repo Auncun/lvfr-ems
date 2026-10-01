@@ -65,14 +65,17 @@ function renderAccounts() {
     (selectedStatus === 'all' || account.status === selectedStatus)
     && `${account.display_name || account.name} ${account.callsign}`.toLowerCase().includes(query));
   countEl.textContent = `${rows.length} account${rows.length === 1 ? '' : 's'}`;
+  const onlineCount = document.querySelector('#onlineAccountCount');
+  if (onlineCount) onlineCount.textContent = `Online now: ${Number(overview.online_count || 0)}`;
   if (!rows.length) {
-    accountRows.innerHTML = '<tr><td colspan="6">No accounts match this filter.</td></tr>';
+    accountRows.innerHTML = '<tr><td colspan="7">No accounts match this filter.</td></tr>';
     return;
   }
   accountRows.innerHTML = rows.map(account => `
     <tr><td><strong>${esc(account.display_name || account.name)}</strong>${account.approved_by ? `<br><small class="muted">Approved by ${esc(account.approved_by)}</small>` : ''}</td>
       <td>${esc(account.callsign || '—')}</td><td>${esc(account.status)}</td>
       <td>${account.is_admin ? 'Commander' : account.role === 'member' ? 'Member' : account.status === 'pending' ? '—' : 'Leader'}</td>
+      <td><span class="presence-badge ${account.online ? 'online' : 'offline'}">${account.online ? 'Online' : 'Offline'}</span></td>
       <td>${esc(account.requested_at || '—')}</td><td><div class="admin-actions">${accountActions(account)}</div></td></tr>`).join('');
 }
 function renderAudit() {
@@ -82,7 +85,7 @@ function renderAudit() {
       <td>${esc(String(entry.action || '—').replace(/\bAdmin\b/g, 'Commander'))}</td><td>${esc(String(entry.actor_name || '—').replace(/\bWeb Admin\b/g, 'Web Commander'))}</td></tr>`).join('')
     : '<tr><td colspan="4">No account history yet.</td></tr>';
 }
-async function loadAccounts() {
+async function loadAccounts(silent = false) {
   const cachedUser = window.lvfrCachedUser?.();
   const cacheKey = `lvfr.admin.accounts.${cachedUser?.account_id || cachedUser?.id || 'current'}.v1`;
   let hadCached = false;
@@ -96,7 +99,7 @@ async function loadAccounts() {
       hadCached = true;
     }
   } catch {}
-  if (!hadCached) setMessage('Loading accounts...');
+  if (!hadCached && !silent) setMessage('Loading accounts...');
   try {
     const [data, user] = await Promise.all([api('/api/leaders'), Promise.resolve(cachedUser || null)]);
     overview = data;
@@ -104,10 +107,10 @@ async function loadAccounts() {
     try { sessionStorage.setItem(cacheKey, JSON.stringify({ overview, user, savedAt: Date.now() })); } catch {}
     renderAccounts();
     renderAudit();
-    setMessage('Account list is up to date.', 'success');
+    if (!silent) setMessage('Account list is up to date.', 'success');
   } catch (error) {
-    setMessage(error.message, 'error');
-    accountRows.innerHTML = '<tr><td colspan="6">Could not load accounts.</td></tr>';
+    if (!silent) setMessage(error.message, 'error');
+    accountRows.innerHTML = '<tr><td colspan="7">Could not load accounts.</td></tr>';
   }
 }
 function renderNotifications(unreadCount = null) {
@@ -199,6 +202,7 @@ document.querySelectorAll('.admin-tabs button').forEach(button => button.addEven
 }));
 document.querySelector('#accountSearch').addEventListener('input', renderAccounts);
 document.querySelector('#refreshAccounts').addEventListener('click', loadAccounts);
+window.setInterval(() => { if (!document.hidden) void loadAccounts(true); }, 30000);
 const notificationButton = document.querySelector('#notificationButton');
 notificationButton.addEventListener('click', async () => {
   const panel = document.querySelector('#notificationPanel');

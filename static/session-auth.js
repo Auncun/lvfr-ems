@@ -51,6 +51,19 @@
     window.lvfrLogout();
   });
 
+  const sendPresence = () => {
+    const token = window.lvfrSessionToken();
+    if (!token || document.hidden) return;
+    nativeFetch('/api/presence', {
+      method: 'POST', keepalive: true, credentials: 'omit',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: '{}'
+    }).catch(() => {});
+  };
+  sendPresence();
+  window.setInterval(sendPresence, 30000);
+  document.addEventListener('visibilitychange', sendPresence);
+
   window.fetch = (input, init = {}) => {
     const requestUrl = input instanceof Request ? input.url : String(input);
     const url = new URL(requestUrl, location.href);

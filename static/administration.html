@@ -5,7 +5,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Commander | LVFR EMS</title>
-  <link rel="stylesheet" href="/static/style.css?v=commander-accounts-2">
+  <link rel="stylesheet" href="/static/style.css?v=presence-indicators-5">
   <style>
     body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:24px}
     .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -45,16 +45,17 @@
         <button type="button" data-status="approved" aria-pressed="false">Active</button>
         <button type="button" data-status="deactivated" aria-pressed="false">Deactivated</button>
       </div>
+      <p id="onlineAccountCount" class="online-account-count" aria-live="polite">Online now: —</p>
       <div class="admin-toolbar"><input id="accountSearch" type="search" placeholder="Search name or Callsign"><span id="accountCount" class="muted"></span></div>
-      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Account</th><th>Callsign</th><th>Status</th><th>Role</th><th>Created</th><th>Actions</th></tr></thead><tbody id="accountRows"><tr><td colspan="6">Loading accounts…</td></tr></tbody></table></div>
+      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Account</th><th>Callsign</th><th>Status</th><th>Role</th><th>Presence</th><th>Created</th><th>Actions</th></tr></thead><tbody id="accountRows"><tr><td colspan="7">Loading accounts…</td></tr></tbody></table></div>
     </section>
     <section class="admin-card" aria-labelledby="auditHeading">
       <div class="admin-header"><h2 id="auditHeading">Recent account activity</h2></div>
       <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Date</th><th>Account</th><th>Action</th><th>By</th></tr></thead><tbody id="auditRows"><tr><td colspan="4">Loading history…</td></tr></tbody></table></div>
     </section>
   </main>
-  <script src="/static/session-auth.js?v=password-session-4"></script>
+  <script src="/static/session-auth.js?v=account-presence-6"></script>
   <script src="/static/account-settings.js?v=account-settings-2"></script>
-  <script src="/static/administration.js?v=fast-account-commander-accounts-6"></script>
+  <script src="/static/administration.js?v=account-presence-7"></script>
 </body>
 </html>

@@ -23,7 +23,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=account-layout-4"
+    href="/static/style.css?v=presence-indicators-5"
 >
 
 <style>
@@ -684,6 +684,7 @@
     </div>
 
     <div id="allLeadersView">
+        <p id="onlineAccountCount" class="online-account-count" aria-live="polite">Online now: —</p>
         <div class="log-filters leader-role-filter">
             <label for="leaderRoleFilter">Role</label>
             <select id="leaderRoleFilter" aria-label="Filter Leaders by role">
@@ -731,6 +732,7 @@
             <dt>Rank</dt><dd id="accountRankDisplay"></dd>
             <dt>Rank assigned</dt><dd id="accountDateDisplay"></dd>
             <dt>Activity</dt><dd id="accountActivityDisplay"></dd>
+            <dt>Instructor</dt><dd id="accountInstructorDisplay"></dd>
             <dt>Training</dt><dd id="accountTrainingDisplay"></dd>
             <dt>Supervisor exam</dt><dd id="accountExamDisplay"></dd>
         </dl>
@@ -788,8 +790,8 @@
      APPLICATION JAVASCRIPT
      ========================================================= -->
 
-<script src="/static/session-auth.js?v=logout-feedback-5"></script>
-<script src="/static/app.js?v=account-load-16"></script>
+<script src="/static/session-auth.js?v=account-presence-6"></script>
+<script src="/static/app.js?v=account-presence-search-19"></script>
 <script src="/static/pwa.js"></script>
 
 

@@ -59,6 +59,7 @@ LEADER_OVERVIEW_REFRESHING = False
 INSTRUCTOR_DIRECTORY_CACHE = {"at": 0.0, "data": {}, "loaded": False}
 INSTRUCTOR_DIRECTORY_LOCK = Lock()
 INSTRUCTOR_DIRECTORY_REFRESHING = False
+PRESENCE_ONLINE_SECONDS = 90
 MEMBER_EVENT_SUBSCRIBERS = {}
 MEMBER_EVENT_LOCK = Lock()
 MEMBER_CHANGE_PATHS = {
@@ -688,6 +689,7 @@ async def account_auth_guard(request: Request, call_next):
             path == "/api/watch-command"
             or path.startswith("/api/watch-command/")
             or path == "/api/account/password"
+            or path == "/api/presence"
         )
         if path not in member_page_paths and not is_watch_api:
             if path.startswith("/api/"):
@@ -708,6 +710,7 @@ async def account_auth_guard(request: Request, call_next):
             "/api/notifications/read",
             "/api/sync",
             "/api/sync/auto",
+            "/api/presence",
         }
         and path != "/api/watch-command"
         and not path.startswith("/api/watch-command/")
@@ -728,6 +731,7 @@ async def account_auth_guard(request: Request, call_next):
         if (
             path.startswith("/api/")
             and request.method in {"POST", "PUT", "PATCH", "DELETE"}
+            and path != "/api/presence"
             and response.status_code < 400
         ):
             action = path.removeprefix("/api/").replace("-", " ").replace("/", " ").title()
@@ -1157,6 +1161,47 @@ def account_me():
     }
 
 
+@app.post("/api/presence")
+def update_presence():
+    user = require_role("watch_command")
+    account_id = str(user.get("account_id") or "")
+    if not account_id:
+        raise HTTPException(401, "Sign in again")
+    now = time.time()
+    con = L.db()
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS AccountPresence (account_id TEXT PRIMARY KEY, last_seen REAL NOT NULL)")
+        con.execute("INSERT INTO AccountPresence(account_id,last_seen) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET last_seen=excluded.last_seen", (account_id, now))
+        con.execute("DELETE FROM AccountPresence WHERE last_seen < ?", (now - PRESENCE_ONLINE_SECONDS,))
+        con.commit()
+    finally:
+        con.close()
+    return {"ok": True}
+
+
+def _leader_overview_with_presence(overview):
+    now = time.time()
+    con = L.db()
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS AccountPresence (account_id TEXT PRIMARY KEY, last_seen REAL NOT NULL)")
+        rows = con.execute("SELECT account_id,last_seen FROM AccountPresence WHERE last_seen >= ?", (now - PRESENCE_ONLINE_SECONDS,)).fetchall()
+        last_seen = {str(row["account_id"]): float(row["last_seen"]) for row in rows}
+        con.commit()
+    finally:
+        con.close()
+    online_count = 0
+    result = dict(overview)
+    for group in ("approved", "deactivated"):
+        result[group] = []
+        for row in overview.get(group, []):
+            seen = last_seen.get(str(row.get("account_id") or ""))
+            online = group == "approved" and seen is not None and now - seen < PRESENCE_ONLINE_SECONDS
+            online_count += int(online)
+            result[group].append({**row, "online": online})
+    result["online_count"] = online_count
+    return result
+
+
 def _require_instructor_type(instructor_type):
     user = CURRENT_USER.get() or {}
     if user.get("is_admin"):
@@ -1240,7 +1285,7 @@ def get_accounts_for_admin():
                     args=(baseline,),
                     daemon=True,
                 ).start()
-            return cached
+            return _leader_overview_with_presence(cached)
     try:
         rows, audit = L.get_account_overview()
     except Exception as e:
@@ -1251,7 +1296,7 @@ def get_accounts_for_admin():
     result = _public_leader_overview(rows, audit)
     with LEADER_OVERVIEW_LOCK:
         LEADER_OVERVIEW_CACHE.update(at=time.monotonic(), data=result)
-    return result
+    return _leader_overview_with_presence(result)
 
 
 @app.get("/api/instructors")

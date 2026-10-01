@@ -299,6 +299,29 @@ tr:hover {
     display:grid;
     margin-top:16px
 }
+.online-account-count {
+    margin:8px 0 12px;
+    color:#c9d1d9;
+    font-weight:600
+}
+.presence-badge {
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    border-radius:999px;
+    padding:4px 9px;
+    font-size:12px;
+    font-weight:600
+}
+.presence-badge::before {
+    content:"";
+    width:7px;
+    height:7px;
+    border-radius:50%;
+    background:currentColor
+}
+.presence-badge.online { color:#56d364; background:#173322 }
+.presence-badge.offline { color:#9aa4b2; background:#252d38 }
 .close {
     position:absolute;
     right:14px;

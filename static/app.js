@@ -777,11 +777,14 @@ async function syncStatus() {
 // ============================================================
 
 let memberListRequestInFlight = false;
+let memberListReloadQueued = false;
 let memberListRenderKey = "";
 const memberCache = new Map();
+let allMembersCache = null;
+let allMembersCacheAt = 0;
 
 async function loadMembers(silent = false) {
-    if (memberListRequestInFlight) return;
+    if (memberListRequestInFlight) { memberListReloadQueued = true; return; }
     memberListRequestInFlight = true;
 
     try {
@@ -789,12 +792,7 @@ async function loadMembers(silent = false) {
         const searchElement =
             $("#search");
 
-        const q =
-            encodeURIComponent(
-                searchElement
-                    ? searchElement.value.trim()
-                    : ""
-            );
+        const q = searchElement ? searchElement.value.trim().toLocaleLowerCase() : "";
 
         // Restore this tab's last rendered roster immediately, then continue
         // below with the normal request so newer sheet data replaces it.
@@ -821,10 +819,14 @@ async function loadMembers(silent = false) {
             }
         } catch {}
 
-        const loadedRows =
-            await api(
-                "/api/members?search=" + q
-            );
+        let loadedRows;
+        if (!silent && allMembersCache && Date.now() - allMembersCacheAt < 15000) {
+            loadedRows = allMembersCache;
+        } else {
+            loadedRows = await api("/api/members");
+            allMembersCache = loadedRows;
+            allMembersCacheAt = Date.now();
+        }
         loadedRows.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
 
         const hertFilter = $("#filterHert")?.value || "all";
@@ -837,7 +839,7 @@ async function loadMembers(silent = false) {
         const rankFilter = $("#filterRank")?.value || "all";
 
         const renderKey = JSON.stringify([
-            loadedRows, q, hertFilter, fortInstructorFilter, hertInstructorFilter,
+            allMembersCacheAt, q, hertFilter, fortInstructorFilter, hertInstructorFilter,
             basicFilter, advancedFilter,
             supervisorFilter, activityFilter, rankFilter
         ]);
@@ -845,6 +847,8 @@ async function loadMembers(silent = false) {
         memberListRenderKey = renderKey;
 
         const rows = loadedRows.filter(m => {
+            const searchMatches = !q || [m.callsign, m.name, m.rank]
+                .some(value => String(value || "").toLocaleLowerCase().includes(q));
             const rankMatches = rankFilter === "all"
                 || String(m.rank || "").trim().toLowerCase() === rankFilter.trim().toLowerCase();
             const hertMatches = hertFilter === "all"
@@ -866,7 +870,7 @@ async function loadMembers(silent = false) {
             const activityMatches = activityFilter === "all"
                 || String(m.activity || "Active") === activityFilter;
 
-            return rankMatches && hertMatches && fortInstructorMatches && hertInstructorMatches
+            return searchMatches && rankMatches && hertMatches && fortInstructorMatches && hertInstructorMatches
                 && basicMatches && advancedMatches
                 && supervisorMatches && activityMatches;
         });
@@ -969,6 +973,10 @@ async function loadMembers(silent = false) {
         if (!silent) toast(e.message);
     } finally {
         memberListRequestInFlight = false;
+        if (memberListReloadQueued) {
+            memberListReloadQueued = false;
+            void loadMembers();
+        }
     }
 }
 
@@ -1313,6 +1321,8 @@ async function loadLeaders() {
             api("/api/instructors").catch(() => [])
         ]);
         leaderRows = accounts;
+        const onlineCount = $("#onlineAccountCount");
+        if (onlineCount) onlineCount.textContent = `Online now: ${Number(accounts.online_count || 0)}`;
         instructorRows = Array.isArray(instructorsData) ? instructorsData : [];
         leaderAuditRows = Array.isArray(leaderRows.audit) ? leaderRows.audit : [];
         try { sessionStorage.setItem(`lvfr.leaders.${currentUserAccountId}.v1`, JSON.stringify({ data: leaderRows, instructors: instructorRows, savedAt: Date.now() })); } catch {}
@@ -1400,7 +1410,7 @@ function renderLeaders() {
         all.innerHTML = filteredRows.length ? `
             <table>
                 <thead><tr>
-                    <th>Account</th><th>Linked At</th><th>Approval</th><th>Role</th><th>Role Change</th><th>Actions</th>
+                    <th>Account</th><th>Linked At</th><th>Approval</th><th>Role</th><th>Presence</th><th>Role Change</th><th>Actions</th>
                 </tr></thead>
                 <tbody>${filteredRows.map(row => `
                     <tr>
@@ -1408,6 +1418,7 @@ function renderLeaders() {
                         <td>${esc(row.linked_at || "â€”")}</td>
                         <td class="leader-detail-cell"><span>${esc(row.approved_at || "â€”")}</span><small>By ${esc(row.approved_by || "â€”")}</small></td>
                         <td>${row.is_admin ? "Commander" : row.role === "member" ? "Member" : "Leader"}</td>
+                        <td><span class="presence-badge ${row.online ? "online" : "offline"}">${row.online ? "Online" : "Offline"}</span></td>
                         <td class="leader-detail-cell">${row.admin_changed_at ? `<span>${esc(row.admin_changed_at)}</span><small>By ${esc(row.admin_changed_by || "â€”")}</small>` : "â€”"}</td>
                         <td class="leader-request-actions">${accountActions(row)}</td></tr>
                 `).join("")}</tbody>
@@ -2350,7 +2361,9 @@ async function profile(
 
     try {
         const normalizedCallsign = String(cs || "").trim().toUpperCase();
-        const cachedMember = providedMember || memberCache.get(normalizedCallsign);
+        // A profile opened from the roster must reflect the current server
+        // state; only use caller-provided data for optimistic updates/rollbacks.
+        const cachedMember = providedMember;
         let m;
         if (cachedMember) {
             m = providedMember && Array.isArray(providedMember.trainings)
@@ -4190,13 +4203,12 @@ const memberSearch =
 
 
 if (memberSearch) {
-
+    let searchTimer = 0;
     memberSearch.addEventListener(
         "input",
         () => {
-
-            loadMembers();
-
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => loadMembers(), 90);
         }
     );
 
@@ -4476,6 +4488,7 @@ $("#manageAccountButton")?.addEventListener("click", async () => {
         set("#accountRankDisplay", profile.rank);
         set("#accountDateDisplay", profile.rank_assigned_date || profile.date);
         set("#accountActivityDisplay", profile.activity);
+        set("#accountInstructorDisplay", user.instructor_type || profile.instructor_type || "Not an Instructor");
         set("#accountTrainingDisplay", [profile.has_basic_firefighting && "Basic Firefighting", profile.has_advanced_firefighting && "Advanced Firefighting", profile.has_hert && "HERT"].filter(Boolean).join(", ") || "None");
         set("#accountExamDisplay", profile.has_supervisor_exam ? "Passed" : "Not completed");
     } catch (error) { toast(error.message); }
@@ -4538,3 +4551,6 @@ setInterval(() => { if (!document.hidden) syncStatus(); }, 60000);
 setInterval(() => {
     if (!document.hidden) loadNotifications();
 }, 120000);
+setInterval(() => {
+    if (!document.hidden && currentUserIsAdmin && $("#allLeadersTable")) void loadLeaders();
+}, 30000);
