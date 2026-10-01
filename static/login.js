@@ -37,8 +37,14 @@ async function submitAuth(form, route) {
     if (!response.ok) throw new Error(result.detail || 'Could not complete the request.');
     if (route === '/auth/signup') {
       form.reset();
-      message.textContent = `Request ${result.request_id} was saved for ${result.callsign}. A Commander must approve it before sign-in.`;
-      message.className = 'auth-message success';
+      if (result.status === 'saving' && result.request_id) {
+        message.textContent = 'Request received. Saving it securely…';
+        message.className = 'auth-message success';
+        location.assign('/verification-pending?request_id=' + encodeURIComponent(result.request_id));
+      } else {
+        message.textContent = `Your account request was received. A Commander must approve it before sign-in.`;
+        message.className = 'auth-message success';
+      }
       return;
     }
     window.lvfrSetSession(result.token, remember, result.user);

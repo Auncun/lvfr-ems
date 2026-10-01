@@ -1061,35 +1061,58 @@ def signup(data: SignupInput, request: Request):
     if conflicts_with_callsign:
         raise HTTPException(409, "The account name cannot match a member Callsign")
     try:
-        rows = _load_accounts(); same = next((r for r in rows if str(r.get("callsign", "")).upper() == callsign), None)
-        duplicate = next((r for r in rows if _name_key(r["name"]) == _name_key(name) and r["status"] != "removed"), None)
-        if duplicate and (not same or duplicate["account_id"] != same["account_id"]): raise HTTPException(409, "That name is already in use")
-        if same and same["status"] not in {"denied", "removed"} and same.get("callsign") == callsign: raise HTTPException(409, "An account is already linked to that Callsign")
-        salt = secrets.token_bytes(16).hex(); digest = _password_digest(data.password, salt)
-        now = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
-        row = {"account_id": same["account_id"] if same else str(uuid.uuid4()), "name": name, "callsign": callsign,
-            "password_salt": salt, "password_hash": digest, "status": "pending", "role": "member", "created_at": now,
-            "activated_at": "", "approved_by": "", "admin_changed_at": "", "admin_changed_by": ""}
+        # Hash before persisting the background task so plaintext passwords
+        # never enter the durable BackgroundJobs queue. Defer all Google
+        # Sheets reads and writes until after the user receives a request ID.
+        salt = secrets.token_bytes(16).hex()
+        digest = _password_digest(data.password, salt)
         request_id = str(uuid.uuid4())
-        _apply_account_change_locally(row, "Signup request", name)
         with SIGNUP_JOB_LOCK:
             SIGNUP_JOB_STATUS[request_id] = {"status": "saving", "error": ""}
             if len(SIGNUP_JOB_STATUS) > 200:
                 SIGNUP_JOB_STATUS.pop(next(iter(SIGNUP_JOB_STATUS)))
-        queue_archive_job(_save_signup_request, request_id, row, name, bool(same), required=True)
+        queue_archive_job(
+            _save_signup_request, request_id, name, callsign, salt, digest,
+            on_failure=lambda: _mark_signup_failed(request_id, "The request could not be saved. Please return to sign up and try again."),
+            failure_message="Could not save signup request", required=True,
+        )
         return {"ok": True, "status": "saving", "request_id": request_id}
     except HTTPException: raise
     except Exception as e:
         logger.info(f"[LVFR EMS] Account signup storage failed: {e}"); raise HTTPException(503, "Account storage is temporarily unavailable")
 
-def _save_signup_request(request_id, row, performed_by, update_existing):
+def _mark_signup_failed(request_id, message):
+    with SIGNUP_JOB_LOCK:
+        SIGNUP_JOB_STATUS[request_id] = {"status": "failed", "error": message}
+
+
+def _save_signup_request(request_id, name, callsign, salt, digest):
     try:
-        if update_existing:
-            if not L.update_account_record(row["account_id"], _account_payload(row)):
+        rows = L.get_account_records()
+        same = next((row for row in rows if str(row.get("callsign", "")).upper() == callsign), None)
+        duplicate = next((row for row in rows if _name_key(row.get("name")) == _name_key(name) and row.get("status") != "removed"), None)
+        if duplicate and (not same or duplicate["account_id"] != same["account_id"]):
+            _mark_signup_failed(request_id, "That name is already in use.")
+            return
+        if same and same["status"] not in {"denied", "removed"} and same.get("callsign") == callsign:
+            _mark_signup_failed(request_id, "An account is already linked to that Callsign.")
+            return
+        now = datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+        row = {
+            "account_id": same["account_id"] if same else str(uuid.uuid4()),
+            "name": name, "callsign": callsign, "password_salt": salt,
+            "password_hash": digest, "status": "pending", "role": "member",
+            "created_at": now, "activated_at": "", "approved_by": "",
+            "admin_changed_at": "", "admin_changed_by": "",
+        }
+        if same:
+            if not L.update_account_record_and_audit(row["account_id"], _account_payload(row), "Signup request", name):
                 raise RuntimeError("The previous account record could not be found")
-            L.append_account_audit(row["account_id"], row["name"], row["callsign"], "Signup request", performed_by)
         else:
-            L.append_account_record_and_audit(row, performed_by)
+            L.append_account_record_and_audit(row, name)
+        with ACCOUNT_CACHE_LOCK:
+            ACCOUNT_CACHE.update(at=time.monotonic(), rows=[dict(item) for item in rows])
+        _apply_account_change_locally(row, "Signup request", name)
         with SIGNUP_JOB_LOCK:
             SIGNUP_JOB_STATUS[request_id] = {"status": "saved", "error": ""}
     except Exception as e:
@@ -1097,8 +1120,7 @@ def _save_signup_request(request_id, row, performed_by, update_existing):
         _refresh_account_cache()
         with LEADER_OVERVIEW_LOCK:
             LEADER_OVERVIEW_CACHE.update(at=0.0, data=None)
-        with SIGNUP_JOB_LOCK:
-            SIGNUP_JOB_STATUS[request_id] = {"status": "failed", "error": "The request could not be saved. Please return to sign up and try again."}
+        _mark_signup_failed(request_id, "The request could not be saved. Please return to sign up and try again.")
         raise
 
 

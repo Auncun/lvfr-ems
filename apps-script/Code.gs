@@ -37,6 +37,10 @@ function doPost(e) {
     if (route === '/auth/signup' && String(input.method || 'GET') === 'POST') {
       return output_({ ok: true, data: signupWithPassword_(input.data || {}) });
     }
+    const signupStatusRoute = route.match(/^\/auth\/signup-status\/([^/]+)$/);
+    if (signupStatusRoute && String(input.method || 'GET') === 'GET') {
+      return output_({ ok: true, data: signupStatus_(decodeURIComponent(signupStatusRoute[1])) });
+    }
     if (route === '/auth/login' && String(input.method || 'GET') === 'POST') return output_({ ok: true, data: loginWithPassword_(input.data || {}) });
     if (route === '/auth/logout' && String(input.method || 'GET') === 'POST') { logoutSession_(input.sessionToken); return output_({ ok: true, data: { ok: true } }); }
     const method = String(input.method || 'GET');
@@ -231,21 +235,96 @@ function signupWithPassword_(data) {
   if (!/^[A-Za-z0-9]{4,20}$/.test(password)) throw new Error('Password must be 4–20 letters or numbers.');
   const salt = Utilities.getUuid().replace(/-/g, '');
   const hash = 'v3$' + passwordHash_(password, salt);
+  const requestId = Utilities.getUuid();
+  const properties = PropertiesService.getScriptProperties();
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
+    const queueKey = 'LVFR_SIGNUP_QUEUE';
+    const queue = JSON.parse(properties.getProperty(queueKey) || '[]');
+    properties.setProperty('LVFR_SIGNUP_JOB:' + requestId, JSON.stringify({
+      name, callsign, memberName, salt, hash
+    }));
+    properties.setProperty('LVFR_SIGNUP_STATUS:' + requestId, JSON.stringify({ status: 'saving', error: '', created_at: Date.now() }));
+    queue.push(requestId);
+    properties.setProperty(queueKey, JSON.stringify(queue));
+    try {
+      scheduleSignupWorker_();
+    } catch (error) {
+      properties.deleteProperty('LVFR_SIGNUP_JOB:' + requestId);
+      properties.setProperty(queueKey, JSON.stringify(queue.filter(id => id !== requestId)));
+      properties.setProperty('LVFR_SIGNUP_STATUS:' + requestId, JSON.stringify({
+        status: 'failed',
+        error: 'Background signup saving is not authorized. Ask the Apps Script owner to authorize the updated deployment.',
+        created_at: Date.now()
+      }));
+      throw error;
+    }
+  } finally { lock.releaseLock(); }
+  return { ok: true, status: 'saving', request_id: requestId, callsign };
+}
+
+function signupStatus_(requestId) {
+  const id = String(requestId || '').trim();
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('Signup request was not found.');
+  const value = PropertiesService.getScriptProperties().getProperty('LVFR_SIGNUP_STATUS:' + id);
+  if (!value) throw new Error('Signup request status is unavailable.');
+  return JSON.parse(value);
+}
+
+function scheduleSignupWorker_() {
+  const alreadyScheduled = ScriptApp.getProjectTriggers().some(trigger =>
+    trigger.getHandlerFunction() === 'processSignupQueue_'
+  );
+  if (!alreadyScheduled) ScriptApp.newTrigger('processSignupQueue_').timeBased().after(1000).create();
+}
+
+function processSignupQueue_() {
+  const properties = PropertiesService.getScriptProperties();
+  const queueKey = 'LVFR_SIGNUP_QUEUE';
+  for (let processed = 0; processed < 5; processed++) {
+    const lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    let requestId = '';
+    let job = null;
+    try {
+      const queue = JSON.parse(properties.getProperty(queueKey) || '[]');
+      if (!queue.length) break;
+      requestId = queue.shift();
+      properties.setProperty(queueKey, JSON.stringify(queue));
+      job = JSON.parse(properties.getProperty('LVFR_SIGNUP_JOB:' + requestId) || 'null');
+    } finally { lock.releaseLock(); }
+    if (!requestId || !job) continue;
+    try {
+      persistSignupRequest_(job);
+      properties.setProperty('LVFR_SIGNUP_STATUS:' + requestId, JSON.stringify({ status: 'saved', error: '', created_at: Date.now() }));
+    } catch (error) {
+      console.error('Signup request failed: ' + (error && error.stack ? error.stack : error));
+      properties.setProperty('LVFR_SIGNUP_STATUS:' + requestId, JSON.stringify({
+        status: 'failed', error: error && error.message ? error.message : 'The request could not be saved.', created_at: Date.now()
+      }));
+    } finally {
+      properties.deleteProperty('LVFR_SIGNUP_JOB:' + requestId);
+    }
+  }
+  if (JSON.parse(properties.getProperty(queueKey) || '[]').length) scheduleSignupWorker_();
+}
+
+function persistSignupRequest_(job) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
     const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
     const sheet = spreadsheet.getSheetByName(LVFR.accountsTab);
-    const rows = accountRows_(spreadsheet).rows;
     if (!sheet) throw new Error('The Accounts sheet is not configured. Contact a Commander.');
-    const existing = rows.filter(row => normalizeMemberName_(row[1]) === memberName && !['removed', 'denied'].includes(String(row[5] || '').toLowerCase()));
+    const rows = accountRows_(spreadsheet).rows;
+    const existing = rows.filter(row => normalizeMemberName_(row[1]) === job.memberName && !['removed', 'denied'].includes(String(row[5] || '').toLowerCase()));
     if (existing.length) throw new Error('An account is already linked to this member name. Contact a Commander.');
     const id = Utilities.getUuid(), now = new Date().toISOString();
-    sheet.appendRow([id, name, callsign, '', '', 'pending', 'member', now, '', '', '', '', '', '', '', salt, hash]);
+    sheet.appendRow([id, job.name, job.callsign, '', '', 'pending', 'member', now, '', '', '', '', '', '', '', job.salt, job.hash]);
     invalidateAccountRowsCache_();
-    try { recordAccountAudit_(id, name, callsign, 'Account Requested', name, spreadsheet); }
-    catch (auditError) { console.error('Account was saved but audit logging failed: ' + auditError); }
-    return { ok: true, status: 'pending', request_id: id, callsign: callsign };
+    try { recordAccountAudit_(id, job.name, job.callsign, 'Account Requested', job.name, spreadsheet); }
+    catch (auditError) { console.error('Account request was saved but audit logging failed: ' + auditError); }
   } finally { lock.releaseLock(); }
 }
 
