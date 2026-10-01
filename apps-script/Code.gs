@@ -37,6 +37,12 @@ function doPost(e) {
     if (route === '/auth/signup' && String(input.method || 'GET') === 'POST') {
       return output_({ ok: true, data: signupWithPassword_(input.data || {}) });
     }
+    if (route === '/auth/roster-lookup' && String(input.method || '') === 'POST') {
+      if (!input.workerSecret || !constantTimeEquals_(String(input.workerSecret), requiredProperty_('LVFR_D1_WORKER_SECRET'))) throw new Error('Unauthorized roster lookup.');
+      const member = findRosterMemberByName_(normalizeMemberName_((input.data || {}).name));
+      if (!member) throw new Error('Name was not found on the LVFR roster.');
+      return output_({ ok: true, data: member });
+    }
     if (route === '/auth/login' && String(input.method || 'GET') === 'POST') return output_({ ok: true, data: loginWithPassword_(input.data || {}) });
     if (route === '/auth/logout' && String(input.method || 'GET') === 'POST') { logoutSession_(input.sessionToken); return output_({ ok: true, data: { ok: true } }); }
     const method = String(input.method || 'GET');
@@ -149,6 +155,7 @@ function dispatch_(route, method, params, data, user) {
 
 function requireUser_(sessionToken) {
   if (!sessionToken) throw new Error('Sign in with your name and password.');
+  if (String(sessionToken).indexOf('d1v1.') === 0) return verifyD1Assertion_(sessionToken);
   const cache = CacheService.getScriptCache();
   const key = sessionCacheKey_(sessionToken);
   let accountId = cache.get(key);
@@ -160,6 +167,23 @@ function requireUser_(sessionToken) {
   const account = findAccountById_(accountId);
   if (!account) { cache.remove(key); throw new Error('Account not found.'); }
   return applyCurrentRosterIdentity_(account);
+}
+
+function verifyD1Assertion_(token) {
+  const parts = String(token).split('.');
+  if (parts.length !== 3 || parts[0] !== 'd1v1') throw new Error('Your session expired. Sign in again.');
+  const secret = requiredProperty_('LVFR_D1_AUTH_BRIDGE_SECRET');
+  const expected = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(parts[0] + '.' + parts[1], secret)).replace(/=+$/, '');
+  if (!constantTimeEquals_(expected, parts[2])) throw new Error('Invalid D1 session assertion.');
+  let claims;
+  try {
+    const bytes = Utilities.base64DecodeWebSafe(parts[1]);
+    claims = JSON.parse(Utilities.newBlob(bytes).getDataAsString('UTF-8'));
+  } catch (error) { throw new Error('Invalid D1 session assertion.'); }
+  if (!claims || !claims.sub || !claims.name || !claims.callsign || !claims.exp || Number(claims.exp) <= Math.floor(Date.now() / 1000) || claims.status !== 'approved') {
+    throw new Error('Your session expired. Sign in again.');
+  }
+  return { accountId: String(claims.sub), account_id: String(claims.sub), name: String(claims.name), callsign: String(claims.callsign), status: String(claims.status), role: String(claims.role || 'member') };
 }
 
 function loginWithPassword_(data) {

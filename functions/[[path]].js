@@ -9,6 +9,22 @@ export async function onRequest(context) {
     return context.next();
   }
 
+  if (String(env.D1_AUTH_MODE || "").toLowerCase() === "enabled") {
+    const { handleD1 } = await import("./_lib/d1-auth.js");
+    return handleD1(context);
+  }
+
+  const route = incoming.pathname;
+  const authorization = request.headers.get("Authorization") || "";
+  const sessionToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  let data = {};
+  if (!['GET', 'HEAD'].includes(request.method)) data = await request.json().catch(() => ({}));
+  return proxyToAppsScript(context, route, incoming, sessionToken, data);
+}
+
+export async function proxyToAppsScript(context, route, incoming, sessionToken, data) {
+  const { env } = context;
+  const { request } = context;
   const webAppUrl = String(env.GAS_WEB_APP_URL || DEFAULT_GAS_WEB_APP_URL).trim();
 
   let target;
@@ -21,19 +37,12 @@ export async function onRequest(context) {
     return Response.json({ detail: "GAS_WEB_APP_URL must be a Google Apps Script HTTPS web-app URL." }, { status: 503 });
   }
 
-  const route = incoming.pathname;
   const params = Object.fromEntries(incoming.searchParams.entries());
-  const authorization = request.headers.get("Authorization") || "";
-  const sessionToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-
-  let data = {};
-  if (!['GET', 'HEAD'].includes(request.method)) {
-    data = await request.json().catch(() => ({}));
-  }
   const upstreamRequest = new Request(target.toString(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ route, method: request.method, params, sessionToken, data }),
+    body: JSON.stringify({ route, method: request.method, params, sessionToken, data,
+      workerSecret: env.LVFR_D1_WORKER_SECRET || "" }),
     redirect: "manual",
   });
 
