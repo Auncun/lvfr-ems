@@ -471,6 +471,9 @@ def init_db():
             coverage_gaps TEXT NOT NULL DEFAULT '',
             watch_transition TEXT NOT NULL DEFAULT '',
             safety_concerns TEXT NOT NULL DEFAULT '',
+            active_unit TEXT NOT NULL DEFAULT '',
+            active_ems TEXT NOT NULL DEFAULT '',
+            active_merged INTEGER NOT NULL DEFAULT 0,
             created_by TEXT NOT NULL DEFAULT ''
         );
         """
@@ -484,6 +487,13 @@ def init_db():
         con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_watch_logs_draft_id ON WatchCommandLogs(draft_id)")
     if "finalized" not in watch_log_columns:
         con.execute("ALTER TABLE WatchCommandLogs ADD COLUMN finalized INTEGER NOT NULL DEFAULT 1")
+    for column, declaration in (
+        ("active_unit", "TEXT NOT NULL DEFAULT ''"),
+        ("active_ems", "TEXT NOT NULL DEFAULT ''"),
+        ("active_merged", "INTEGER NOT NULL DEFAULT 0"),
+    ):
+        if column not in watch_log_columns:
+            con.execute(f"ALTER TABLE WatchCommandLogs ADD COLUMN {column} {declaration}")
 
     leader_columns = {
         row["name"] for row in con.execute("PRAGMA table_info(DiscordLeaders)")

@@ -28,6 +28,13 @@
     .unit-roster-item { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px; border-radius:6px; background:#0d1219; color:#d5dce5; font-size:13px; }
     .unit-roster-item button { min-width:28px; min-height:28px; padding:2px 7px; color:#ff8178; font-weight:700; }
     .watch-fields .wide { grid-column:1/-1; }
+    .active-presence { grid-column:1/-1; padding:14px; border:1px solid #303945; border-radius:9px; background:#0d1219; }
+    .active-presence-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+    .active-presence-head h3 { margin:0; }
+    .active-presence-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    .active-presence-grid label { display:grid; gap:6px; color:#c9d1d9; }
+    .active-presence-grid textarea { min-height:68px; }
+    #activeEmsWrap[hidden] { display:none !important; }
     .time-fields { display:grid; grid-template-columns:1fr; gap:14px; }
     .watch-fields textarea { min-height:82px; }
     .quick-signin { margin-top:18px; padding:16px; border:1px solid #356da8; border-radius:10px; background:#101a27; }
@@ -101,6 +108,17 @@
           <option value="UTC">UTC</option>
         </select></label>
         <label class="wide"><span id="rollCallLabel">Roll Call (0)</span><textarea name="roll_call" placeholder="Personnel and units present"></textarea></label>
+        <div class="active-presence">
+          <div class="active-presence-head"><h3>Current Active Status</h3><button type="button" id="toggleActiveMerge" aria-pressed="false">MERGE</button></div>
+          <div class="active-presence-grid">
+            <label>ACTIVE UNIT<textarea id="activeUnitSummary" readonly aria-label="Active units"></textarea></label>
+            <label id="activeEmsWrap">ACTIVE EMS<textarea id="activeEmsSummary" readonly aria-label="Active EMS personnel"></textarea></label>
+          </div>
+          <input type="hidden" name="active_unit">
+          <input type="hidden" name="active_ems">
+          <input type="hidden" name="active_merged" value="false">
+          <p class="hint" style="margin:8px 0 0">Automatically lists live units and their active personnel. These summaries contain no times and are excluded from copied reports.</p>
+        </div>
       </div>
       <div class="time-fields watch-fields" style="margin-top:14px">
         <label id="watchStartTimeLabel">Start time<input name="start_time" type="time" required></label>
@@ -247,6 +265,6 @@
   </main>
   <script src="/static/session-auth.js?v=api-session-cache-2"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
-  <script src="/static/watch_command.js?v=64"></script>
+  <script src="/static/watch_command.js?v=65"></script>
 </body>
 </html>

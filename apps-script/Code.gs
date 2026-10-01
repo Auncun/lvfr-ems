@@ -1582,16 +1582,16 @@ const WATCH_FIELDS = [
 ];
 // Keep new fields after created_by so existing watch log columns retain their
 // positions when the Time Zone column is added.
-const WATCH_HEADERS = ['id', 'draft_id', 'finalized', 'created_at', ...WATCH_FIELDS, 'created_by', 'time_zone'];
+const WATCH_HEADERS = ['id', 'draft_id', 'finalized', 'created_at', ...WATCH_FIELDS, 'created_by', 'time_zone', 'active_unit', 'active_ems', 'active_merged'];
 
 function watchSheet_() {
   const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
   let sheet = spreadsheet.getSheetByName(LVFR.watchTab);
   if (!sheet) sheet = spreadsheet.insertSheet(LVFR.watchTab);
   if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, WATCH_HEADERS.length).setValues([WATCH_HEADERS]);
-  else if (String(sheet.getRange(1, WATCH_HEADERS.length).getValue() || '') !== 'time_zone') {
-    sheet.getRange(1, WATCH_HEADERS.length).setValue('time_zone');
-  }
+  WATCH_HEADERS.forEach((header, index) => {
+    if (String(sheet.getRange(1, index + 1).getValue() || '') !== header) sheet.getRange(1, index + 1).setValue(header);
+  });
   return sheet;
 }
 
@@ -1647,7 +1647,8 @@ function saveWatchLog_(input, user) {
       id = Math.max(0, sheet.getLastRow() - 1) + 1;
       targetRow = sheet.getLastRow() + 1;
     }
-    const row = [id, record.draft_id, record.finalized, createdAt, ...WATCH_FIELDS.map(key => record[key]), user.accountId, record.time_zone];
+    const row = [id, record.draft_id, record.finalized, createdAt, ...WATCH_FIELDS.map(key => record[key]), user.accountId, record.time_zone,
+      String(input.active_unit || ''), String(input.active_ems || ''), String(input.active_merged || 'false') === 'true'];
     sheet.getRange(targetRow, 1, 1, WATCH_HEADERS.length).setValues([row]);
     return Object.fromEntries(WATCH_HEADERS.map((key, index) => [key, row[index]]));
   } finally {

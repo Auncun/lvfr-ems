@@ -864,6 +864,9 @@ class WatchCommandInput(BaseModel):
     coverage_gaps: str = ""
     watch_transition: str = ""
     safety_concerns: str = ""
+    active_unit: str = ""
+    active_ems: str = ""
+    active_merged: bool = False
 
 
 @app.get("/api/watch-command/current-user")
@@ -981,8 +984,9 @@ def create_watch_command_log(data: WatchCommandInput):
         "watch_date", "watch_commander", "roll_call", "start_time", "end_time",
         "red_sector", "green_sector", "blue_sector", "specialised_units", "notes",
         "significant_call", "coverage_gaps", "watch_transition", "safety_concerns",
+        "active_unit", "active_ems", "active_merged",
     )
-    values = [record[key] for key in columns]
+    values = [int(data.active_merged) if key == "active_merged" else record[key] for key in columns]
     actor = current_actor()
     con = L.db()
     try:

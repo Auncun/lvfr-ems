@@ -26,6 +26,10 @@ const formUnitCount = document.querySelector('#formUnitCount');
 const formUnitMembers = document.querySelector('#formUnitMembers');
 const formUnitSubmit = document.querySelector('#submitFormUnit');
 const formUnitMessage = document.querySelector('#formUnitMessage');
+const activeUnitSummary = document.querySelector('#activeUnitSummary');
+const activeEmsSummary = document.querySelector('#activeEmsSummary');
+const activeEmsWrap = document.querySelector('#activeEmsWrap');
+const activeMergeButton = document.querySelector('#toggleActiveMerge');
 const memberNameCache = new Map();
 const WATCH_MEMBER_DIRECTORY_KEY = 'lvfr.watch.member.directory.v1';
 function cacheWatchMemberDirectory(members) {
@@ -36,6 +40,7 @@ function cacheWatchMemberDirectory(members) {
     if (callsign && name) memberNameCache.set(callsign, { name, rank: String(member.rank || '').trim() });
   }
   try { sessionStorage.setItem(WATCH_MEMBER_DIRECTORY_KEY, JSON.stringify([...memberNameCache].map(([callsign, member]) => ({ callsign, ...member })))); } catch {}
+  if (typeof refreshActivePresence === 'function') refreshActivePresence();
 }
 try {
   const savedDirectory = JSON.parse(sessionStorage.getItem(WATCH_MEMBER_DIRECTORY_KEY) || 'null');
@@ -393,6 +398,13 @@ function renderLog(log) {
     ).join('\n');
     addLogField(opening, 'Linked accounts', linkedAccountDisplay);
   }
+  const activeUnit = String(log.active_unit || '').trim();
+  const activeEms = String(log.active_ems || '').trim();
+  if (log.active_merged) addLogField(opening, 'ACTIVE UNIT', [activeUnit, activeEms ? `Personnel:\n${activeEms}` : ''].filter(Boolean).join('\n'));
+  else {
+    addLogField(opening, 'ACTIVE UNIT', activeUnit);
+    addLogField(opening, 'ACTIVE EMS', activeEms);
+  }
   article.append(titleRow, meta, opening);
   for (const [sectionTitle, fields] of logSections) {
     const sectionHeading = document.createElement('h3');
@@ -673,8 +685,45 @@ function renderUnitRosters() {
       }
     }
   }
+  refreshActivePresence();
   refreshDiveRescueUnitChoices();
 }
+function refreshActivePresence() {
+  const units = new Map();
+  const people = new Map();
+  for (const [sector, fieldName] of Object.entries(sectorFields)) {
+    for (const line of form.elements[fieldName].value.split('\n')) {
+      const assignment = parseAssignmentLine(line);
+      if (!assignment) continue;
+      const activeMembers = assignment.members.filter(member => member.active);
+      if (!activeMembers.length) continue;
+      const key = `${sector}|${assignment.unit}`;
+      if (!units.has(key)) units.set(key, { sector, unit: assignment.unit });
+      for (const member of activeMembers) {
+        const personKey = member.callsign.toUpperCase();
+        const rosterMember = memberNameCache.get(personKey);
+        people.set(personKey, `${personKey}${rosterMember?.name ? ` ${rosterMember.name}` : ''} — ${assignment.unit}`);
+      }
+    }
+  }
+  const unitLines = [...units.values()].map(item => `${item.sector}: ${item.unit}`);
+  const personLines = [...people.values()];
+  form.elements.active_unit.value = unitLines.join('\n');
+  form.elements.active_ems.value = personLines.join('\n');
+  const merged = form.elements.active_merged.value === 'true';
+  activeUnitSummary.value = merged
+    ? [unitLines.length ? unitLines.join('\n') : '', personLines.length ? `Personnel:\n${personLines.join('\n')}` : ''].filter(Boolean).join('\n')
+    : unitLines.join('\n');
+  activeEmsSummary.value = personLines.join('\n');
+  activeEmsWrap.hidden = merged;
+  activeMergeButton.textContent = merged ? 'SEPARATE' : 'MERGE';
+  activeMergeButton.setAttribute('aria-pressed', String(merged));
+}
+activeMergeButton?.addEventListener('click', () => {
+  form.elements.active_merged.value = form.elements.active_merged.value === 'true' ? 'false' : 'true';
+  refreshActivePresence();
+  persistFormDraft();
+});
 async function markAssignment10_42(button) {
   const callsign = button.dataset.callsign || '';
   if (!callsign || !form.reportValidity()) return;
@@ -1587,10 +1636,15 @@ if (!restoredDraft) {
   newDraftId();
 }
 for (const fieldName of Object.values(sectorFields)) compactUnitLines(fieldName);
+renderUnitRosters();
 document.querySelector('#specialisedUnitWrap').hidden = document.querySelector('#activitySector').value !== 'Specialised';
 quickButton.textContent = document.querySelector('#activityStatus').value === '10-42 Leaving' ? 'Sign out' : 'Sign in';
 form.addEventListener('input', persistFormDraft);
 form.addEventListener('change', persistFormDraft);
+for (const fieldName of Object.values(sectorFields)) {
+  form.elements[fieldName].addEventListener('input', refreshActivePresence);
+  form.elements[fieldName].addEventListener('change', refreshActivePresence);
+}
 document.querySelector('#activitySector').addEventListener('change', event => {
   if (event.target.value !== 'Specialised') activityAttachedUnit.value = '';
   document.querySelector('#specialisedUnitWrap').hidden = event.target.value !== 'Specialised';
