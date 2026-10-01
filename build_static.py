@@ -23,7 +23,7 @@ def main():
     for asset in SOURCE.iterdir():
         if asset.is_file() and asset.name in {
             "manifest.webmanifest", "service-worker.js", "pwa-icon.svg", "offline.html",
-            "_redirects", "_headers",
+            "_redirects", "_headers", "_routes.json",
         }:
             shutil.copy2(asset, OUTPUT / asset.name)
 
