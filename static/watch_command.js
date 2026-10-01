@@ -267,7 +267,9 @@ function formatDiscordWatchLog(log) {
   };
   const dateStamp = discordTimestamp(log.watch_date, '12:00', 'D', timeZone);
   const startStamp = discordTimestamp(log.watch_date, log.start_time, 't', timeZone) || 'N/A';
-  const endStamp = discordTimestamp(log.watch_date, log.end_time, 't', timeZone) || 'N/A';
+  const copiedAt = currentWatchTime(timeZone);
+  const copyDate = localDateInputValue(timeZone);
+  const endStamp = discordTimestamp(copyDate, copiedAt.padStart(5, '0'), 't', timeZone) || 'N/A';
   const dateLine = dateStamp ? `**•**Watch Date: ${dateStamp}` : '-# **•**Watch Date: N/A';
   const lines = ["**Watch Command**", dateLine];
   if (dateStamp) lines.push('');
@@ -1421,30 +1423,9 @@ async function transferWatchCommand(input = null, trigger = null) {
   let oldValues = null;
   try {
     const member = await lookupMember(callsign);
-    oldValues = {
-      commander: form.elements.watch_commander.value,
-      transition: form.elements.watch_transition.value,
-      rollCall: form.elements.roll_call.value,
-      activeWatchCommanderCallsign,
-      coverage: Object.fromEntries(Object.values(sectorFields).map(key => [key, form.elements[key].value])),
-    };
-    form.elements.watch_commander.value = `${callsign} ${member.name}`;
-    activeWatchCommanderCallsign = callsign;
-    markRollCallWatchCommander(callsign, member.name, true);
-    for (const fieldName of Object.values(sectorFields)) {
-      form.elements[fieldName].value = form.elements[fieldName].value.split('\n').map(line => {
-        const assignment = parseAssignmentLine(line);
-        if (!assignment) return line;
-        const members = new Map(assignment.members.map(item => [item.callsign, {
-          ...item,
-          watchCommander: item.active && item.callsign === callsign,
-        }]));
-        return formatAssignment({ ...assignment, members });
-      }).join('\n');
-    }
+    oldValues = { transition: form.elements.watch_transition.value };
     const transition = `${currentWatchTime()} ${callsign} ${member.name}`;
     appendText('watch_transition', transition);
-    refreshRollCallSummary();
     persistFormDraft();
     const save = () => request('/api/watch-command', {
       method: 'POST', body: JSON.stringify(currentRecord(false)),
@@ -1456,17 +1437,12 @@ async function transferWatchCommand(input = null, trigger = null) {
       newDraftId();
       await save();
     }
-    setMessage(input ? message : quickMessage, `Watch Command transferred to ${callsign} ${member.name}.`, 'success');
+    setMessage(input ? message : quickMessage, `Transition added for ${callsign} ${member.name}.`, 'success');
     if (input) input.value = '';
     await loadHistory();
   } catch (error) {
     if (oldValues) {
-      form.elements.watch_commander.value = oldValues.commander;
       form.elements.watch_transition.value = oldValues.transition;
-      form.elements.roll_call.value = oldValues.rollCall;
-      activeWatchCommanderCallsign = oldValues.activeWatchCommanderCallsign;
-      for (const [key, value] of Object.entries(oldValues.coverage)) form.elements[key].value = value;
-      refreshRollCallSummary();
       persistFormDraft();
     }
     setMessage(input ? message : quickMessage, error.message, 'error');
