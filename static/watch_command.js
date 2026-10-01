@@ -1,5 +1,6 @@
 ﻿const form = document.querySelector('#watchForm');
 const history = document.querySelector('#watchHistory');
+const watchTimeZonePicker = document.querySelector('#watchTimeZone');
 const message = document.querySelector('#watchMessage');
 const saveButton = document.querySelector('#saveWatch');
 const quickButton = document.querySelector('#quickSignIn');
@@ -50,17 +51,54 @@ const logSections = [
   ]],
 ];
 
-function localDateInputValue() {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+function isValidTimeZone(timeZone) {
+  try { new Intl.DateTimeFormat('en', { timeZone }).format(); return true; }
+  catch (_) { return false; }
 }
-function currentCETTime() {
+function selectedTimeZone() {
+  return watchTimeZonePicker?.value || 'Africa/Lagos';
+}
+function timeZoneLabel(timeZone = selectedTimeZone()) {
+  return timeZone;
+}
+function localDateInputValue(timeZone = selectedTimeZone()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date()).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+function currentWatchTime(timeZone = selectedTimeZone()) {
   return formatWatchTime(new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).format(new Date()));
 }
 function formatWatchTime(value) {
   return String(value || '').replace(/^0(?=\d:)/, '');
+}
+const detectedTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+let savedTimeZone = '';
+try { savedTimeZone = localStorage.getItem('lvfr-watch-time-zone') || ''; } catch (_) {}
+const initialTimeZone = isValidTimeZone(savedTimeZone) ? savedTimeZone
+  : isValidTimeZone(detectedTimeZone) ? detectedTimeZone : 'Africa/Lagos';
+let preferredTimeZone = initialTimeZone;
+if (![...watchTimeZonePicker.options].some(option => option.value === initialTimeZone)) {
+  const option = document.createElement('option');
+  option.value = initialTimeZone;
+  option.textContent = `${initialTimeZone} (device time)`;
+  watchTimeZonePicker.append(option);
+}
+watchTimeZonePicker.value = initialTimeZone;
+refreshStartTimeLabel();
+watchTimeZonePicker.addEventListener('change', () => {
+  preferredTimeZone = selectedTimeZone();
+  try { localStorage.setItem('lvfr-watch-time-zone', preferredTimeZone); } catch (_) {}
+  refreshStartTimeLabel();
+  refreshRollCallSummary();
+  persistFormDraft();
+});
+function refreshStartTimeLabel() {
+  const label = document.querySelector('#watchStartTimeLabel');
+  if (label) label.firstChild.textContent = `Start time (${timeZoneLabel()})`;
 }
 function newDraftId() {
   const id = crypto.randomUUID();
@@ -138,6 +176,7 @@ function currentRecord(finalized) {
     ...Object.fromEntries(new FormData(form)),
     draft_id: ensureDraftId(),
     finalized,
+    time_zone: selectedTimeZone(),
   };
 }
 function addLogField(parent, label, value) {
@@ -161,7 +200,7 @@ function rollCallCount(value = form.elements.roll_call.value) {
 function refreshRollCallSummary() {
   const startTime = form.elements.start_time.value;
   if (rollCallLabel) {
-    rollCallLabel.textContent = `Roll Call (${rollCallCount()})${startTime ? ` · ${formatWatchTime(startTime)} CET` : ''}`;
+    rollCallLabel.textContent = `Roll Call (${rollCallCount()})${startTime ? ` · ${formatWatchTime(startTime)} ${timeZoneLabel()}` : ''}`;
   }
 }
 function normalizeAttachedUnit(value) {
@@ -174,14 +213,14 @@ function addAttachedUnit(unit, rawAttachment) {
   const attachment = normalizeAttachedUnit(rawAttachment);
   return attachment ? `${unit}(${attachment})` : '';
 }
-function discordTimestamp(date, time, style) {
+function discordTimestamp(date, time, style, timeZone = selectedTimeZone()) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) || !/^\d{2}:\d{2}$/.test(String(time || ''))) return '';
   const [year, month, day] = date.split('-').map(Number);
   const [hour, minute] = time.split(':').map(Number);
   const target = Date.UTC(year, month - 1, day, hour, minute);
   let epoch = target;
   const formatter = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   });
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -194,45 +233,31 @@ function discordTimestamp(date, time, style) {
   }
   return `<t:${Math.floor(epoch / 1000)}:${style}>`;
 }
-function formatCoverageForDiscord(value, watchEndTime) {
+function formatCoverageForDiscord(value, timeZone = selectedTimeZone()) {
+  const copiedAt = currentWatchTime(timeZone);
   return String(value || '').split('\n').map(line => {
     const assignment = parseAssignmentLine(line);
     if (!assignment) return line;
-    const lastClosedMember = [...assignment.members].reverse().find(member => member.closedWithX);
-    const closedAtWatchEnd = assignment.closedWithX && watchEndTime && lastClosedMember &&
-      formatWatchTime(lastClosedMember.endTime) === formatWatchTime(watchEndTime);
     const members = assignment.members.map(member => {
       const start = formatWatchTime(member.startTime || assignment.startTime);
-      const end = formatWatchTime(member.active ? 'ONGOING' : (member.endTime || assignment.endTime || assignment.startTime));
+      const end = formatWatchTime(member.active ? copiedAt : (member.endTime || assignment.endTime || assignment.startTime));
       return `${member.callsign} ${start}-${end}`;
     });
-    const unitClosed = assignment.closedWithX && !assignment.active && !closedAtWatchEnd;
+    const unitClosed = assignment.closedWithX && !assignment.active;
     return `${assignment.unit} | ${members.join(' | ')} |${unitClosed ? ' X' : ''}`;
   }).join('\n').trim();
 }
-function formatCoverageForView(value, watchEndTime, notes = '') {
-  return String(value || '').split('\n').map(line => {
-    const assignment = parseAssignmentLine(line);
-    if (!assignment || !assignment.closedWithX || assignment.active) return line;
-    const lastClosedMember = [...assignment.members].reverse().find(member => member.closedWithX);
-    const unitEndedAtWatchEnd = Boolean(watchEndTime && lastClosedMember &&
-      formatWatchTime(lastClosedMember.endTime) === formatWatchTime(watchEndTime));
-    const assignmentEndedAtWatchEnd = Boolean(watchEndTime &&
-      formatWatchTime(assignment.endTime) === formatWatchTime(watchEndTime));
-    const recordedAsMemberExit = Boolean(lastClosedMember && String(notes || '').split('\n').some(note => {
-      const match = note.match(/^(\d{1,2}:\d{2})\s+([A-Z]+-\d+)\b.*\b10-42\b/i);
-      return match && match[2].toUpperCase() === lastClosedMember.callsign &&
-        formatWatchTime(match[1]) === formatWatchTime(lastClosedMember.endTime);
-    }));
-    if (!unitEndedAtWatchEnd && !assignmentEndedAtWatchEnd && !recordedAsMemberExit) return line;
-    return line.replace(/\s*\|\s*X\s*$/i, '').replace(/\s+X\s*$/i, '');
-  }).join('\n');
+function formatCoverageForView(value) {
+  // Keep X as the durable signal that this particular unit stint is empty,
+  // even when its final member left at the watch end time.
+  return String(value || '');
 }
 function formatDiscordWatchLog(log) {
+  const timeZone = isValidTimeZone(log.time_zone) ? log.time_zone : selectedTimeZone();
   const value = key => String(log[key] || "").trim() || "N/A";
   const addField = (lines, label, key, inline = false) => {
     const fieldValue = ['red_sector', 'green_sector', 'blue_sector', 'specialised_units'].includes(key)
-      ? (formatCoverageForDiscord(log[key], log.end_time) || 'N/A')
+      ? (formatCoverageForDiscord(log[key], timeZone) || 'N/A')
       : value(key);
     const cleanLabel = label.trim();
     const bullet = cleanLabel.startsWith("•") ? `**•**${cleanLabel.slice(1)}` : cleanLabel;
@@ -240,9 +265,9 @@ function formatDiscordWatchLog(log) {
     else if (inline) lines.push(`${bullet} ${fieldValue}`);
     else lines.push(bullet, fieldValue, "");
   };
-  const dateStamp = discordTimestamp(log.watch_date, '12:00', 'D');
-  const startStamp = discordTimestamp(log.watch_date, log.start_time, 't') || 'N/A';
-  const endStamp = discordTimestamp(log.watch_date, log.end_time, 't') || 'N/A';
+  const dateStamp = discordTimestamp(log.watch_date, '12:00', 'D', timeZone);
+  const startStamp = discordTimestamp(log.watch_date, log.start_time, 't', timeZone) || 'N/A';
+  const endStamp = discordTimestamp(log.watch_date, log.end_time, 't', timeZone) || 'N/A';
   const dateLine = dateStamp ? `**•**Watch Date: ${dateStamp}` : '-# **•**Watch Date: N/A';
   const lines = ["**Watch Command**", dateLine];
   if (dateStamp) lines.push('');
@@ -267,7 +292,7 @@ function formatDiscordWatchLog(log) {
   addField(lines, "•Watch Command transition: ", "watch_transition");
   addField(lines, "•Any safety concerns:", "safety_concerns");
   return lines.join("\n").trimEnd().replace(/\b(\d{1,2}):([0-5]\d)\b/g, (match, hour, minute) =>
-    discordTimestamp(log.watch_date, `${hour.padStart(2, '0')}:${minute}`, 't') || match
+    discordTimestamp(log.watch_date, `${hour.padStart(2, '0')}:${minute}`, 't', timeZone) || match
   );
 }
 async function copyWatchLog(log, button) {
@@ -323,7 +348,8 @@ function renderLog(log) {
   titleRow.append(heading, copyButton);
   const meta = document.createElement('div');
   meta.className = 'watch-log-meta';
-  meta.append(document.createTextNode('Start and end time CET: '));
+  const recordTimeZone = isValidTimeZone(log.time_zone) ? log.time_zone : selectedTimeZone();
+  meta.append(document.createTextNode(`Start and end time (${timeZoneLabel(recordTimeZone)}): `));
   for (const [time, separator] of [[formatWatchTime(log.start_time) || 'N/A', '–'], [formatWatchTime(log.end_time) || 'N/A', '']]) {
     const timePart = document.createElement('span');
     timePart.textContent = time;
@@ -334,7 +360,7 @@ function renderLog(log) {
   if (log.created_by) meta.append(document.createTextNode(` · Recorded by ${log.created_by}`));
   const opening = document.createElement('div');
   opening.className = 'watch-log-grid';
-  const rollCallDisplay = `(${rollCallCount(log.roll_call)}) ${formatWatchTime(log.start_time) || 'N/A'} CET\n${String(log.roll_call || '').trim() || 'N/A'}`;
+  const rollCallDisplay = `(${rollCallCount(log.roll_call)}) ${formatWatchTime(log.start_time) || 'N/A'} ${timeZoneLabel(recordTimeZone)}\n${String(log.roll_call || '').trim() || 'N/A'}`;
   addLogField(opening, 'Roll Call', rollCallDisplay);
   const linkedAccounts = Array.isArray(log.linked_accounts) ? log.linked_accounts : [];
   if (linkedAccounts.length) {
@@ -351,7 +377,7 @@ function renderLog(log) {
     grid.className = 'watch-log-grid';
     for (const [label, key] of fields) {
       const value = ['red_sector', 'green_sector', 'blue_sector', 'specialised_units'].includes(key)
-        ? formatCoverageForView(log[key], log.end_time, log.notes)
+        ? formatCoverageForView(log[key])
         : log[key];
       addLogField(grid, label, value);
     }
@@ -451,7 +477,9 @@ function addCallsignToUnit(fieldName, unit, callsign, startTime, watchCommander 
   let unitEndTime = '';
   for (let index = 0; index < lines.length; index += 1) {
     const assignment = parseAssignmentLine(lines[index]);
-    if (!assignment || assignment.unit.toLowerCase() !== unit.toLowerCase()) continue;
+    // Keep completed stints as separate history lines. Reuse only a live
+    // instance of this unit; an X marks an empty instance that has ended.
+    if (!assignment || assignment.unit.toLowerCase() !== unit.toLowerCase() || !assignment.active) continue;
     matches.push(index);
     for (const member of assignment.members) members.set(member.callsign, member);
     if (!unitStartTime) unitStartTime = assignment.startTime;
@@ -480,29 +508,31 @@ function addCallsignToUnit(fieldName, unit, callsign, startTime, watchCommander 
 function compactUnitLines(fieldName) {
   const field = form.elements[fieldName];
   const lines = field.value.split('\n');
-  const grouped = new Map();
-  for (const line of lines) {
+  const activeGroups = new Map();
+  lines.forEach((line, index) => {
     const assignment = parseAssignmentLine(line);
-    if (!assignment) continue;
+    if (!assignment?.active) return;
     const key = assignment.unit.toLowerCase();
-    if (!grouped.has(key)) grouped.set(key, {
-      unit: assignment.unit, startTime: assignment.startTime,
-      endTime: assignment.endTime, members: new Map(), closedWithX: assignment.closedWithX,
+    if (!activeGroups.has(key)) activeGroups.set(key, {
+      firstIndex: index,
+      record: { unit: assignment.unit, startTime: assignment.startTime, endTime: assignment.endTime, members: new Map(), closedWithX: false },
+      indices: [],
     });
-    const group = grouped.get(key);
-    if (assignment.endTime) group.endTime = assignment.endTime;
-    group.closedWithX = group.closedWithX && assignment.closedWithX;
-    for (const member of assignment.members) group.members.set(member.callsign, member);
-  }
-  const emitted = new Set();
-  field.value = lines.map(line => {
-    const assignment = parseAssignmentLine(line);
-    if (!assignment) return line;
-    const key = assignment.unit.toLowerCase();
-    const group = grouped.get(key);
-    if (emitted.has(key)) return null;
-    emitted.add(key);
-    return formatAssignment(group);
+    const group = activeGroups.get(key);
+    group.indices.push(index);
+    if (assignment.endTime) group.record.endTime = assignment.endTime;
+    assignment.members.forEach(member => group.record.members.set(member.callsign, member));
+  });
+  const replacements = new Map();
+  const removed = new Set();
+  activeGroups.forEach(group => {
+    replacements.set(group.firstIndex, formatAssignment(group.record));
+    group.indices.slice(1).forEach(index => removed.add(index));
+  });
+  field.value = lines.map((line, index) => {
+    if (removed.has(index)) return null;
+    if (replacements.has(index)) return replacements.get(index);
+    return line;
   }).filter(line => line !== null).join('\n');
 }
 function isRollCallWatchCommander(callsign) {
@@ -528,7 +558,7 @@ function closeOpenAssignments(callsign, endTime) {
         ...assignment,
         endTime,
         members,
-        closedWithX: false,
+        closedWithX: ![...members.values()].some(member => member.active),
       });
     }).join('\n');
   }
@@ -542,22 +572,16 @@ function closeAllOpenAssignments(endTime) {
       const assignment = parseAssignmentLine(line);
       if (!assignment) return line;
       const hasActiveMembers = assignment.members.some(member => member.active);
-      const endedAtWatchEnd = assignment.members.some(member => member.closedWithX &&
-        formatWatchTime(member.endTime) === formatWatchTime(endTime)) ||
-        (assignment.closedWithX && !assignment.members.some(member => member.closedWithX) &&
-          formatWatchTime(assignment.endTime) === formatWatchTime(endTime));
-      if (!hasActiveMembers && !endedAtWatchEnd) return line;
+      if (!hasActiveMembers) return line;
       const members = new Map(assignment.members.map(member => [
         member.callsign,
-        member.active
-          ? { ...member, active: false, endTime, closedWithX: false }
-          : (endedAtWatchEnd && member.closedWithX ? { ...member, closedWithX: false } : member),
+        member.active ? { ...member, active: false, endTime, closedWithX: false } : member,
       ]));
       return formatAssignment({
         ...assignment,
         endTime: hasActiveMembers ? endTime : assignment.endTime,
         members,
-        closedWithX: false,
+        closedWithX: true,
       });
     }).join('\n');
     compactUnitLines(fieldName);
@@ -642,7 +666,7 @@ async function markAssignment10_42(button) {
 
   const changedFields = ['notes', 'roll_call', ...Object.values(sectorFields)];
   const previous = Object.fromEntries(changedFields.map(key => [key, form.elements[key].value]));
-  const time = currentCETTime();
+  const time = currentWatchTime();
   const unit = closeOpenAssignments(callsign, time);
   if (!unit) {
     renderUnitRosters();
@@ -705,7 +729,7 @@ async function dissolveUnit(button) {
   }
   const oldNotes = form.elements.notes.value;
   const oldCoverage = Object.fromEntries(Object.values(sectorFields).map(key => [key, form.elements[key].value]));
-  const time = currentCETTime();
+  const time = currentWatchTime();
   for (const member of members) {
     closeOpenAssignments(member.callsign, time);
     appendText('notes', `${time} ${member.callsign} ${member.name} 10-42 Dissolving ${unit}`);
@@ -911,7 +935,7 @@ async function addInitialRollCallMember() {
   const fieldName = sectorFields[sector];
   const alreadyAssigned = unit && assignments.some(item => item.sector === sector && item.unit === unit);
   if (unit && !alreadyAssigned) {
-    const startTime = formatWatchTime(form.elements.start_time.value || currentCETTime());
+    const startTime = formatWatchTime(form.elements.start_time.value || currentWatchTime());
     addCallsignToUnit(fieldName, unit, callsign, startTime, isLoggedInWatchCommander(callsign));
   }
   const notesBeforeRollCallChange = form.elements.notes.value;
@@ -1129,7 +1153,7 @@ async function recordActivity() {
 
   const changedFields = ['notes', 'roll_call', ...Object.values(sectorFields)];
   const previous = Object.fromEntries(changedFields.map(key => [key, form.elements[key].value]));
-  const time = currentCETTime();
+  const time = currentWatchTime();
   let unit = '';
   let joinedExistingUnit = false;
   const previousAssignment = activeAssignmentsFor(callsign)[0] || null;
@@ -1267,7 +1291,7 @@ async function formUnitWithMembers() {
 
   const changedFields = ['notes', 'roll_call', ...Object.values(sectorFields)];
   const previous = Object.fromEntries(changedFields.map(key => [key, form.elements[key].value]));
-  const time = currentCETTime();
+  const time = currentWatchTime();
   const unit = sector === 'Specialised' ? nextSpecialisedUnit(specialName) : nextSectorUnit(sector);
   const probieRanks = ['probationary', 'probie', 'probationary volunteer', 'probie volunteer'];
   const hasUnitLeader = members.some(member => !probieRanks.includes(member.rank.trim().toLowerCase()));
@@ -1418,7 +1442,7 @@ async function transferWatchCommand(input = null, trigger = null) {
         return formatAssignment({ ...assignment, members });
       }).join('\n');
     }
-    const transition = `${currentCETTime()} ${callsign} ${member.name}`;
+    const transition = `${currentWatchTime()} ${callsign} ${member.name}`;
     appendText('watch_transition', transition);
     refreshRollCallSummary();
     persistFormDraft();
@@ -1485,7 +1509,7 @@ callsignInput.addEventListener('input', () => {
     } catch (error) {
       if (callsignInput.value.trim().toUpperCase() === callsign) {
         memberLookup.textContent = error.status === 404
-          ? `${callsign} was not found on the synced roster.`
+          ? `${callsign} was not found on the roster.`
           : error.message;
       }
     }
@@ -1632,7 +1656,7 @@ initialCallsignInput.addEventListener('input', () => {
     } catch (error) {
       if (initialCallsignInput.value.trim().toUpperCase() === callsign) {
         initialMemberLookup.textContent = error.status === 404
-          ? `${callsign} was not found on the synced roster.`
+          ? `${callsign} was not found on the roster.`
           : error.message;
       }
     }
@@ -1732,7 +1756,7 @@ for (const [choicesId, fieldName] of [['coverageGapChoices', 'coverage_gaps'], [
   syncChecksFromText();
 }
 function addCall(isDnr = false) {
-  const time = currentCETTime();
+  const time = currentWatchTime();
   const type = isDnr ? 'DNR' : document.querySelector('#callType').value;
   const details = document.querySelector('#callDetails').value.trim();
   const location = document.querySelector('#callLocation').value.trim();
@@ -1786,7 +1810,7 @@ updateAvailableChoices();
 persistFormDraft();
 form.addEventListener('submit', async event => {
   event.preventDefault();
-  const endTime = currentCETTime();
+  const endTime = currentWatchTime();
   form.elements.end_time.value = endTime;
   closeAllOpenAssignments(endTime);
   renderUnitRosters();
@@ -1808,6 +1832,8 @@ form.addEventListener('submit', async event => {
     }
     setMessage(message, 'Watch log saved.', 'success');
     form.reset();
+    watchTimeZonePicker.value = preferredTimeZone;
+    refreshStartTimeLabel();
     sessionStorage.removeItem('watch-command-draft-id');
     sessionStorage.removeItem('watch-command-form-draft');
     newDraftId();

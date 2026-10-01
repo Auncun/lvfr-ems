@@ -86,10 +86,24 @@
       <div class="watch-fields">
         <label>Watch date<input name="watch_date" type="date" required></label>
         <label>Watch Commander (account holder)<input name="watch_commander" maxlength="120" required readonly></label>
+        <label>Time zone<select id="watchTimeZone" aria-label="Watch time zone">
+          <option value="Africa/Lagos">Africa/Lagos (UTC+01)</option>
+          <option value="Europe/London">Europe/London</option>
+          <option value="Europe/Paris">Europe/Paris</option>
+          <option value="America/New_York">America/New_York</option>
+          <option value="America/Chicago">America/Chicago</option>
+          <option value="America/Denver">America/Denver</option>
+          <option value="America/Los_Angeles">America/Los_Angeles</option>
+          <option value="Asia/Dubai">Asia/Dubai</option>
+          <option value="Asia/Kolkata">Asia/Kolkata</option>
+          <option value="Asia/Tokyo">Asia/Tokyo</option>
+          <option value="Australia/Sydney">Australia/Sydney</option>
+          <option value="UTC">UTC</option>
+        </select></label>
         <label class="wide"><span id="rollCallLabel">Roll Call (0)</span><textarea name="roll_call" placeholder="Personnel and units present"></textarea></label>
       </div>
       <div class="time-fields watch-fields" style="margin-top:14px">
-        <label>Start time (CET)<input name="start_time" type="time" required></label>
+        <label id="watchStartTimeLabel">Start time<input name="start_time" type="time" required></label>
         <input name="end_time" type="hidden" value="">
       </div>
 
@@ -233,6 +247,6 @@
   </main>
   <script src="/static/session-auth.js?v=auth-latency-1"></script>
   <script src="/static/account-settings.js?v=account-settings-4"></script>
-  <script src="/static/watch_command.js?v=58"></script>
+  <script src="/static/watch_command.js?v=61"></script>
 </body>
 </html>

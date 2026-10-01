@@ -124,14 +124,13 @@ function dispatch_(route, method, params, data, user) {
   }
   if (route === '/api/watch-command/current-user' && method === 'GET') {
     requireApproved_(user);
-    const member = rosterMember_(user.callsign);
-    return { callsign: user.callsign, name: member ? member.name : user.name };
+    return { callsign: user.callsign, name: user.name };
   }
   if (route.startsWith('/api/watch-command/member/') && method === 'GET') {
     requireApproved_(user);
     const callsign = decodeURIComponent(route.slice('/api/watch-command/member/'.length)).trim().toUpperCase();
-    const member = rosterMember_(callsign);
-    if (!member) throw new Error('Callsign was not found on the synced roster.');
+    const member = watchMemberNameByCallsign_(callsign);
+    if (!member) throw new Error('Callsign was not found on the roster.');
     return member;
   }
   if (route === '/api/watch-command' && method === 'GET') {
@@ -1516,18 +1515,39 @@ function rosterMember_(callsign) {
   return member ? { callsign: member.callsign, name: member.name, rank: member.rank } : null;
 }
 
+// Watch Command only needs to resolve a callsign to its displayed name. Read
+// those two roster columns directly instead of building the operations roster
+// snapshot with training, status colors, rank and eligibility data.
+function watchMemberNameByCallsign_(callsign) {
+  const normalized = String(callsign || '').trim().toUpperCase();
+  if (!/^[A-Z]+-\d+$/.test(normalized) || LVFR.ignoredCallsigns.has(normalized)) return null;
+  const sheet = rosterSheet_();
+  if (!sheet) throw new Error('Roster sheet was not found.');
+  const count = Math.max(0, sheet.getLastRow() - 1);
+  if (!count) return null;
+  const row = sheet.getRange(2, 2, count, 2).getDisplayValues()
+    .find(values => String(values[0] || '').trim().toUpperCase() === normalized);
+  const name = row ? String(row[1] || '').trim() : '';
+  return name ? { callsign: normalized, name: name, rank: rankFromCallsign_(normalized) } : null;
+}
+
 const WATCH_FIELDS = [
   'watch_date', 'watch_commander', 'roll_call', 'start_time', 'end_time',
   'red_sector', 'green_sector', 'blue_sector', 'specialised_units', 'notes',
   'significant_call', 'coverage_gaps', 'watch_transition', 'safety_concerns'
 ];
-const WATCH_HEADERS = ['id', 'draft_id', 'finalized', 'created_at', ...WATCH_FIELDS, 'created_by'];
+// Keep new fields after created_by so existing watch log columns retain their
+// positions when the Time Zone column is added.
+const WATCH_HEADERS = ['id', 'draft_id', 'finalized', 'created_at', ...WATCH_FIELDS, 'created_by', 'time_zone'];
 
 function watchSheet_() {
   const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
   let sheet = spreadsheet.getSheetByName(LVFR.watchTab);
   if (!sheet) sheet = spreadsheet.insertSheet(LVFR.watchTab);
   if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, WATCH_HEADERS.length).setValues([WATCH_HEADERS]);
+  else if (String(sheet.getRange(1, WATCH_HEADERS.length).getValue() || '') !== 'time_zone') {
+    sheet.getRange(1, WATCH_HEADERS.length).setValue('time_zone');
+  }
   return sheet;
 }
 
@@ -1550,11 +1570,15 @@ function saveWatchLog_(input, user) {
   WATCH_FIELDS.forEach(key => { record[key] = String(input[key] || '').trim(); });
   record.draft_id = String(input.draft_id || '').trim();
   record.finalized = Boolean(input.finalized);
+  record.time_zone = String(input.time_zone || '').trim();
   if (!record.watch_date || !/^\d{4}-\d{2}-\d{2}$/.test(record.watch_date) || isNaN(Date.parse(record.watch_date))) throw new Error('Select a valid watch date.');
   if (!record.watch_commander || record.watch_commander.length > 120) throw new Error('Enter a Watch Commander (120 characters or fewer).');
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(record.start_time)) throw new Error('Enter a start time in 24-hour HH:MM format.');
   if (record.finalized && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(record.end_time)) throw new Error('Enter an end time in 24-hour HH:MM format.');
   if (record.end_time && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(record.end_time)) throw new Error('End time must use 24-hour HH:MM format.');
+  if (!record.time_zone || record.time_zone.length > 64) throw new Error('Choose a valid time zone.');
+  try { Utilities.formatDate(new Date(), record.time_zone, 'HH:mm'); }
+  catch (error) { throw new Error('Choose a valid time zone.'); }
   Object.keys(record).forEach(key => { if (typeof record[key] === 'string' && record[key].length > 5000) throw new Error('Each field must be 5,000 characters or fewer.'); });
 
   const lock = LockService.getScriptLock();
@@ -1574,12 +1598,12 @@ function saveWatchLog_(input, user) {
       const existing = sheet.getRange(targetRow, 1, 1, WATCH_HEADERS.length).getValues()[0];
       id = existing[0];
       createdAt = existing[3] || now;
-      if (String(existing[WATCH_HEADERS.length - 1] || '') !== user.accountId && !isAdmin_(user)) throw new Error('This watch log belongs to another user.');
+      if (String(existing[WATCH_HEADERS.indexOf('created_by')] || '') !== user.accountId && !isAdmin_(user)) throw new Error('This watch log belongs to another user.');
     } else {
       id = Math.max(0, sheet.getLastRow() - 1) + 1;
       targetRow = sheet.getLastRow() + 1;
     }
-    const row = [id, record.draft_id, record.finalized, createdAt, ...WATCH_FIELDS.map(key => record[key]), user.accountId];
+    const row = [id, record.draft_id, record.finalized, createdAt, ...WATCH_FIELDS.map(key => record[key]), user.accountId, record.time_zone];
     sheet.getRange(targetRow, 1, 1, WATCH_HEADERS.length).setValues([row]);
     return Object.fromEntries(WATCH_HEADERS.map((key, index) => [key, row[index]]));
   } finally {
