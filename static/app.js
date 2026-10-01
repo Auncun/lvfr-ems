@@ -801,6 +801,22 @@ const memberCache = new Map();
 let allMembersCache = null;
 let allMembersCacheAt = 0;
 
+function normalizeMembersResponse(response, source = "/api/members") {
+    let value = response;
+    for (let depth = 0; depth < 5; depth++) {
+        if (Array.isArray(value)) return value;
+        if (!value || typeof value !== "object") break;
+        if (value.error || value.detail) {
+            throw new Error(String(value.error || value.detail));
+        }
+        const key = ["members", "items", "data", "result"].find(name => name in value);
+        if (!key) break;
+        value = value[key];
+    }
+    const received = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
+    throw new Error(`Invalid roster response from ${source}: expected a member list, received ${received}.`);
+}
+
 async function loadMembers(silent = false) {
     if (memberListRequestInFlight) { memberListReloadQueued = true; return; }
     memberListRequestInFlight = true;
@@ -839,9 +855,9 @@ async function loadMembers(silent = false) {
 
         let loadedRows;
         if (!silent && allMembersCache && Date.now() - allMembersCacheAt < 15000) {
-            loadedRows = allMembersCache;
+            loadedRows = normalizeMembersResponse(allMembersCache);
         } else {
-            loadedRows = await api("/api/members");
+            loadedRows = normalizeMembersResponse(await api("/api/members"));
             allMembersCache = loadedRows;
             allMembersCacheAt = Date.now();
         }
@@ -4175,9 +4191,10 @@ if (syncButton) {
                 toast("Refresh started. Current roster stays visible while updated data loads.");
                 void (async () => {
                     try {
-                        const sourceMembers = Array.isArray(r.result?.members)
-                            ? r.result.members
-                            : await api("/api/members");
+                        const sourceMembers = normalizeMembersResponse(
+                            Array.isArray(r.result?.members) ? r.result.members : await api("/api/members"),
+                            "/api/sync roster refresh"
+                        );
                         allMembersCache = sourceMembers;
                         allMembersCacheAt = Date.now();
                         memberCache.clear();
