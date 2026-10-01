@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-01-account-presence-8-notifications',
+  apiVersion: '2026-10-01-account-presence-9-performance',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -191,7 +191,17 @@ function loginWithPassword_(data) {
   }
   applyCurrentRosterIdentity_(account);
   const token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
-  CacheService.getScriptCache().put(sessionCacheKey_(token), account.accountId, 21600);
+  const scriptCache = CacheService.getScriptCache();
+  scriptCache.put(sessionCacheKey_(token), account.accountId, 21600);
+  // /auth/me follows login immediately in the PWA. Seed the safe account
+  // identity cache now so that request does not reopen and scan Accounts.
+  try {
+    scriptCache.put(accountCacheKey_(account.accountId), JSON.stringify({
+      accountId: account.accountId, account_id: account.accountId,
+      name: account.name, callsign: account.callsign,
+      status: account.status, role: account.role
+    }), 120);
+  } catch (ignored) {}
   if (String(data.remember_me || '').toLowerCase() === 'on' || data.remember_me === true) saveRememberedSession_(token, account.accountId);
   // Keep login response lean: instructor status is available from /auth/me
   // and need not delay authentication on a cold instructor-directory cache.
@@ -438,24 +448,44 @@ function appendNotification_(sheet, kind, title, message, callsign, targetRank, 
 }
 
 function syncNotifications_(user, sheets) {
+  // Gather the read-only source snapshots before taking the write lock. These
+  // helpers may need the same script lock while building the cold roster cache.
+  const eligible = new Map();
+  listMembers_('').forEach(member => {
+    const callsign = String(member.callsign || '').trim().toUpperCase();
+    if (!callsign || LVFR.ignoredCallsigns.has(callsign)) return;
+    const result = eligibility_(member);
+    if (result.eligible && result.next_rank) eligible.set(callsign, { name: member.name, rank: result.next_rank });
+  });
+  const command = isCommand_(user);
+  const inactive = command
+    ? new Map(inactiveMembers_().map(member => [String(member.callsign).toUpperCase(), member.name]))
+    : null;
+  const pendingAccounts = isAdmin_(user) && sheets.accounts && sheets.accounts.getLastRow() > 1
+    ? sheets.accounts.getRange(2, 1, sheets.accounts.getLastRow() - 1, 8).getDisplayValues()
+    : [];
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
     const state = notificationStateMap_(sheets.state);
     const now = new Date().toISOString();
-    const eligible = new Map();
-    listMembers_('').forEach(member => {
-      const callsign = String(member.callsign || '').trim().toUpperCase();
-      if (!callsign || LVFR.ignoredCallsigns.has(callsign)) return;
-      const result = eligibility_(member);
-      if (result.eligible && result.next_rank) eligible.set(callsign, { name: member.name, rank: result.next_rank });
-    });
-    const eligibilitySeeded = state.has('eligibility_seeded');
+    const notifiedEligibility = new Set();
+    if (sheets.notifications.getLastRow() > 1) {
+      sheets.notifications.getRange(2, 1, sheets.notifications.getLastRow() - 1, NOTIFICATION_HEADERS.length).getDisplayValues()
+        .forEach(row => {
+          if (row[1] === 'eligible') notifiedEligibility.add(String(row[4] || '').toUpperCase() + '|' + String(row[5] || ''));
+        });
+    }
     eligible.forEach((member, callsign) => {
       const key = 'eligible:' + callsign;
-      if (eligibilitySeeded && state.get(key) !== member.rank) {
+      const notificationKey = callsign + '|' + member.rank;
+      // Also backfill currently eligible members whose state was silently
+      // seeded before notifications were enabled. Existing alerts prevent
+      // repeats when the same member remains eligible across polling.
+      if (!notifiedEligibility.has(notificationKey)) {
         appendNotification_(sheets.notifications, 'eligible', 'New eligible promotion',
           member.name + ' (' + callsign + ') is eligible for ' + member.rank + '.', callsign, member.rank, now);
+        notifiedEligibility.add(notificationKey);
       }
       state.set(key, member.rank);
     });
@@ -463,9 +493,7 @@ function syncNotifications_(user, sheets) {
       .forEach(key => state.delete(key));
     state.set('eligibility_seeded', '1');
 
-    const command = isCommand_(user);
     if (command) {
-      const inactive = new Map(inactiveMembers_().map(member => [String(member.callsign).toUpperCase(), member.name]));
       const inactiveSeeded = state.has('inactive_seeded');
       inactive.forEach((name, callsign) => {
         const key = 'inactive:' + callsign;
@@ -478,9 +506,8 @@ function syncNotifications_(user, sheets) {
       state.set('inactive_seeded', '1');
     }
 
-    if (isAdmin_(user) && sheets.accounts && sheets.accounts.getLastRow() > 1) {
-      const rows = sheets.accounts.getRange(2, 1, sheets.accounts.getLastRow() - 1, 8).getDisplayValues();
-      rows.forEach(row => {
+    if (isAdmin_(user)) {
+      pendingAccounts.forEach(row => {
         if (String(row[5] || '').toLowerCase() !== 'pending') return;
         const key = 'request:' + row[0];
         if (!state.has(key)) appendNotification_(sheets.notifications, 'request', 'New account request',
@@ -656,12 +683,22 @@ function rosterSheet_(spreadsheet) {
 function listMembers_(search) {
   const cache = CacheService.getScriptCache();
   const cacheKey = 'roster:members:v2';
-  let records;
-  const cached = readRosterCache_(cache, cacheKey);
-  if (cached) records = cached;
-  else {
-    records = readRosterMembers_();
-    writeRosterCache_(cache, cacheKey, records);
+  let records = readRosterCache_(cache, cacheKey);
+  if (!records) {
+    // Several independent API calls start together on a cold page load. Lock
+    // only the cache-miss build so they share one Sheets read instead of all
+    // loading and formatting the roster concurrently.
+    const lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    try {
+      records = readRosterCache_(cache, cacheKey);
+      if (!records) {
+        records = readRosterMembers_();
+        writeRosterCache_(cache, cacheKey, records);
+      }
+    } finally {
+      lock.releaseLock();
+    }
   }
   const query = String(search || '').trim().toLowerCase();
   if (!query) return records;
@@ -910,7 +947,10 @@ function memberLogs_(kind) {
   const result = readMemberLogs_(kind);
   const serialized = JSON.stringify(result);
   if (serialized.length < 90000) {
-    try { cache.put(cacheKey, serialized, 45); } catch (ignored) {}
+    // Logs change only when a roster action writes a new activity-log row;
+    // appendAppLog_ invalidates these entries. Longer TTLs make repeat opens
+    // return quickly without hiding writes made through the PWA.
+    try { cache.put(cacheKey, serialized, 180); } catch (ignored) {}
   }
   return result;
 }

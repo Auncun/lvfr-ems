@@ -55,6 +55,12 @@ async function api(url, options = {}) {
         throw error;
     }
 
+    const backendStatus = $("#dbStatus");
+    if (backendStatus) {
+        backendStatus.textContent = "Google Apps Script: online";
+        backendStatus.style.color = "#56d364";
+    }
+
     if (cacheableRead) {
         try { apiReadCache.set(url, { savedAt: Date.now(), body: JSON.stringify(d) }); } catch {}
     }
@@ -68,7 +74,7 @@ function isBackgroundMutationRequest(url, options) {
     return new Set([
         "/api/activity", "/api/note", "/api/date", "/api/training", "/api/exam",
         "/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank",
-        "/api/change-callsign", "/api/terminate", "/api/notifications/read"
+        "/api/change-callsign", "/api/terminate"
     ]).has(path) || /^\/api\/member\/[^/]+\/instructor$/.test(path) ||
         /^\/api\/leaders\/[^/]+(?:\/(?:allow|deny|admin|demote|member|leader|deactivate|reactivate))?$/.test(path);
 }
@@ -511,7 +517,7 @@ async function markNotificationsRead(ids = []) {
         );
         renderNotifications();
     } catch (error) {
-        toast(`Could not update notifications: ${error.message}`);
+        if (!isBackgroundPending(error)) toast(`Could not update notifications: ${error.message}`);
     }
 }
 
@@ -1626,7 +1632,9 @@ async function loadMembersLog(
     let hadCachedData = false;
     try {
         const cached = JSON.parse(sessionStorage.getItem(`lvfr.log.${currentUserAccountId}.${type}.v1`) || "null");
-        if (Array.isArray(cached?.rows) && Date.now() - cached.savedAt < 10 * 60 * 1000) {
+        // Paint the last known log immediately, even after a longer gap, then
+        // replace it with the authoritative server response below.
+        if (Array.isArray(cached?.rows)) {
             currentLogRows = cached.rows;
             hadCachedData = true;
             renderMembersLog();
@@ -4454,37 +4462,48 @@ if (modal) {
 // INITIAL LOAD
 // ============================================================
 
+function applyAccountUser(user) {
+    window.lvfrCacheUser?.(user);
+    if (user.role === "member") {
+        location.replace("/watch-command");
+        return;
+    }
+    currentUserIsAdmin = Boolean(user.is_admin);
+    currentUserAccountId = String(user.account_id || user.id || "");
+    currentUserIsCommand = Boolean(user.is_command);
+    const commandSyncPanel = $("#commandSyncPanel");
+    if (commandSyncPanel) commandSyncPanel.hidden = user.role === "member";
+    const autoSyncControl = $("#autoSyncBtn");
+    if (autoSyncControl) autoSyncControl.hidden = !(currentUserIsCommand || currentUserIsAdmin);
+    currentInstructorTypes = String(user.instructor_type || "")
+        .split("/").map(value => value.trim().toUpperCase()).filter(Boolean);
+    const account = $("#accountName");
+    if (account) account.textContent = user.name;
+    const nameDisplay = $("#accountNameDisplay");
+    if (nameDisplay) nameDisplay.textContent = `Signed in as ${user.name}`;
+    const callsignDisplay = $("#accountCallsignDisplay");
+    if (callsignDisplay) callsignDisplay.textContent = `Current callsign: ${user.callsign || ""}`;
+    const leadersTab = $("#leadersTab");
+    if (leadersTab) leadersTab.style.display = user.is_admin ? "" : "none";
+    const inactiveTab = $("#inactiveTab");
+    if (inactiveTab) inactiveTab.style.display = (user.is_admin || user.is_command) ? "" : "none";
+    const terminationLogTab = $("#terminationLogTab");
+    if (terminationLogTab) terminationLogTab.style.display = user.is_admin ? "" : "none";
+    const instructorLogTab = $("#instructorLogTab");
+    if (instructorLogTab) instructorLogTab.style.display = user.is_admin ? "" : "none";
+}
+
 async function loadAccount() {
+    const cached = window.lvfrCachedUser?.();
+    if (cached) {
+        applyAccountUser(cached);
+        // Login already validated and cached this identity. Refresh permissions
+        // and instructor details in the background instead of blocking startup.
+        void api("/auth/me").then(applyAccountUser).catch(() => location.assign("/login"));
+        return;
+    }
     try {
-        const user = await api("/auth/me");
-        window.lvfrCacheUser?.(user);
-        if (user.role === "member") {
-            location.replace("/watch-command");
-            return;
-        }
-        currentUserIsAdmin = Boolean(user.is_admin);
-        currentUserAccountId = String(user.account_id || user.id || "");
-        currentUserIsCommand = Boolean(user.is_command);
-        const commandSyncPanel = $("#commandSyncPanel");
-        if (commandSyncPanel) commandSyncPanel.hidden = user.role === "member";
-        const autoSyncControl = $("#autoSyncBtn");
-        if (autoSyncControl) autoSyncControl.hidden = !(currentUserIsCommand || currentUserIsAdmin);
-        currentInstructorTypes = String(user.instructor_type || "")
-            .split("/").map(value => value.trim().toUpperCase()).filter(Boolean);
-        const account = $("#accountName");
-        if (account) account.textContent = user.name;
-        const nameDisplay = $("#accountNameDisplay");
-        if (nameDisplay) nameDisplay.textContent = `Signed in as ${user.name}`;
-        const callsignDisplay = $("#accountCallsignDisplay");
-        if (callsignDisplay) callsignDisplay.textContent = `Current callsign: ${user.callsign || ""}`;
-        const leadersTab = $("#leadersTab");
-        if (leadersTab) leadersTab.style.display = user.is_admin ? "" : "none";
-        const inactiveTab = $("#inactiveTab");
-        if (inactiveTab) inactiveTab.style.display = (user.is_admin || user.is_command) ? "" : "none";
-        const terminationLogTab = $("#terminationLogTab");
-        if (terminationLogTab) terminationLogTab.style.display = user.is_admin ? "" : "none";
-        const instructorLogTab = $("#instructorLogTab");
-        if (instructorLogTab) instructorLogTab.style.display = user.is_admin ? "" : "none";
+        applyAccountUser(await api("/auth/me"));
     } catch {
         location.assign("/login");
     }
@@ -4562,7 +4581,6 @@ $("#changePasswordForm")?.addEventListener("submit", async event => {
         // together so roster rendering does not wait for /auth/me.
         await Promise.all([
             loadAccount(),
-            health(),
             loadNotifications(),
             loadConfig(),
             rosterLoad,

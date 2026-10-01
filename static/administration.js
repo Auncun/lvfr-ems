@@ -138,6 +138,7 @@ async function markNotificationsRead(ids = []) {
   notificationItems = notificationItems.map(item => !selected.size || selected.has(Number(item.id)) ? { ...item, is_read: 1 } : item);
   renderNotifications();
   void api('/api/notifications/read', { method: 'POST', body: JSON.stringify({ ids }) }).catch(error => {
+    if (String(error?.message || error) === 'BACKGROUND_SAVE_PENDING') return;
     setMessage(`Save failed: ${error.message}. Notification state may differ from Google Sheets. Reload notifications to refresh it.`, 'error');
   });
 }
