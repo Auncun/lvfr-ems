@@ -47,10 +47,8 @@ async function submitAuth(form, route) {
       }
       return;
     }
-    window.lvfrSetSession(result.token, remember, result.user);
-    // The login response already contains the authenticated user. Use it
-    // directly instead of making a second /auth/me round-trip before redirect.
-    routeForUser(result.user);
+    window.lvfrSetSession(result.token, remember);
+    await checkAccount();
   } catch (error) {
     message.textContent = error.message;
   } finally { button.disabled = false; }

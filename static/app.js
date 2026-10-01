@@ -23,10 +23,6 @@ async function api(url, options = {}) {
         }
     } else if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
         apiReadCache.clear();
-        // Keep the last roster visible while Sync refreshes the server copy.
-        if (new URL(url, location.href).pathname !== "/api/sync") {
-            try { sessionStorage.removeItem("lvfr.roster.snapshot.v1"); } catch {}
-        }
     }
     const r = await fetch(url, {
         ...options,
@@ -111,7 +107,6 @@ function startBackgroundMutation(url, options) {
         throw new Error(BACKGROUND_PENDING_MESSAGE);
     }
     apiReadCache.clear();
-    try { sessionStorage.removeItem("lvfr.roster.snapshot.v1"); } catch {}
     applyOptimisticMutation(path, payload, callsign);
     const pendingRank = path === "/api/promote" ? optimisticRank : String(payload.new_rank || optimisticRank);
     if (path === "/api/promote") toast(`PROMOTED TO ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
@@ -539,9 +534,7 @@ async function openNotification(id) {
     const button = $("#notificationButton");
     if (panel) panel.hidden = true;
     if (button) button.setAttribute("aria-expanded", "false");
-    // Persist the read receipt in parallel; opening the destination profile
-    // should not wait for an unrelated spreadsheet write.
-    void markNotificationsRead([id]);
+    await markNotificationsRead([id]);
 
     if (["eligible", "inactive"].includes(item.kind) && item.callsign) {
         await profile(item.callsign, true);
@@ -801,22 +794,6 @@ const memberCache = new Map();
 let allMembersCache = null;
 let allMembersCacheAt = 0;
 
-function normalizeMembersResponse(response, source = "/api/members") {
-    let value = response;
-    for (let depth = 0; depth < 5; depth++) {
-        if (Array.isArray(value)) return value;
-        if (!value || typeof value !== "object") break;
-        if (value.error || value.detail) {
-            throw new Error(String(value.error || value.detail));
-        }
-        const key = ["members", "items", "data", "result"].find(name => name in value);
-        if (!key) break;
-        value = value[key];
-    }
-    const received = value === null ? "null" : Array.isArray(value) ? "array" : typeof value;
-    throw new Error(`Invalid roster response from ${source}: expected a member list, received ${received}.`);
-}
-
 async function loadMembers(silent = false) {
     if (memberListRequestInFlight) { memberListReloadQueued = true; return; }
     memberListRequestInFlight = true;
@@ -828,36 +805,11 @@ async function loadMembers(silent = false) {
 
         const q = searchElement ? searchElement.value.trim().toLocaleLowerCase() : "";
 
-        // Restore this tab's last rendered roster immediately, then continue
-        // below with the normal request so newer sheet data replaces it.
-        const viewKey = JSON.stringify([
-            currentUserAccountId, q,
-            $("#filterHert")?.value || "all",
-            $("#filterFortInstructor")?.value || "all",
-            $("#filterHertInstructor")?.value || "all",
-            $("#filterBasic")?.value || "all",
-            $("#filterAdvanced")?.value || "all",
-            $("#filterSupervisorExam")?.value || "all",
-            $("#filterActivity")?.value || "all",
-            $("#filterRank")?.value || "all"
-        ]);
-        try {
-            const cachedView = JSON.parse(sessionStorage.getItem("lvfr.roster.snapshot.v1") || "null");
-            if (cachedView?.viewKey === viewKey && typeof cachedView.html === "string") {
-                const table = $("#membersTable");
-                if (table) table.innerHTML = cachedView.html;
-                const count = $("#memberCount");
-                if (count) count.textContent = String(cachedView.count ?? 0);
-                memberListRenderKey = cachedView.renderKey || memberListRenderKey;
-                if (Array.isArray(cachedView.members)) cachedView.members.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
-            }
-        } catch {}
-
         let loadedRows;
         if (!silent && allMembersCache && Date.now() - allMembersCacheAt < 15000) {
-            loadedRows = normalizeMembersResponse(allMembersCache);
+            loadedRows = allMembersCache;
         } else {
-            loadedRows = normalizeMembersResponse(await api("/api/members"));
+            loadedRows = await api("/api/members");
             allMembersCache = loadedRows;
             allMembersCacheAt = Date.now();
         }
@@ -993,15 +945,6 @@ async function loadMembers(silent = false) {
                 `
 
                 : empty();
-
-        // Keep only the current view in sessionStorage (per tab, cleared at
-        // logout). A size guard avoids filling the browser's storage quota.
-        try {
-            const html = membersTable.innerHTML;
-            if (html.length < 1500000) sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify({
-                viewKey, html, count: rows.length, renderKey, members: loadedRows, savedAt: Date.now()
-            }));
-        } catch {}
 
     } catch (e) {
         if (!silent) toast(e.message);
@@ -4188,31 +4131,23 @@ if (syncButton) {
                     );
 
 
-                toast("Refresh started. Current roster stays visible while updated data loads.");
-                void (async () => {
-                    try {
-                        const sourceMembers = normalizeMembersResponse(
-                            Array.isArray(r.result?.members) ? r.result.members : await api("/api/members"),
-                            "/api/sync roster refresh"
-                        );
-                        allMembersCache = sourceMembers;
-                        allMembersCacheAt = Date.now();
-                        memberCache.clear();
-                        sourceMembers.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
-                        memberListRenderKey = "";
+                const sourceMembers = Array.isArray(r.result?.members)
+                    ? r.result.members
+                    : await api("/api/members");
+                allMembersCache = sourceMembers;
+                allMembersCacheAt = Date.now();
+                memberCache.clear();
+                sourceMembers.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
+                memberListRenderKey = "";
 
-                        const activeTab = $(".tab.active")?.dataset.tab;
-                        await Promise.all([
-                            loadMembers(),
-                            ...(activeTab === "eligible" ? [loadEligible()] : []),
-                            ...(activeTab === "inactive" && (currentUserIsAdmin || currentUserIsCommand) ? [loadInactive()] : [])
-                        ]);
-                        if (activeProfileMember?.callsign) profile(activeProfileMember.callsign, true);
-                        toast(`Roster updated - ${sourceMembers.length} members`);
-                    } catch (refreshError) {
-                        toast(`Refresh could not finish: ${refreshError.message}`);
-                    }
-                })();
+                const activeTab = $(".tab.active")?.dataset.tab;
+                await Promise.all([
+                    loadMembers(),
+                    ...(activeTab === "eligible" ? [loadEligible()] : []),
+                    ...(activeTab === "inactive" && (currentUserIsAdmin || currentUserIsCommand) ? [loadInactive()] : [])
+                ]);
+                if (activeProfileMember?.callsign) profile(activeProfileMember.callsign, true);
+                toast(`Roster updated - ${sourceMembers.length} members`);
 
 
             } catch (e) {
@@ -4610,21 +4545,11 @@ $("#changePasswordForm")?.addEventListener("submit", async event => {
         if ($("#terminationLogTab")) $("#terminationLogTab").style.display = cachedUser.is_admin ? "" : "none";
         if ($("#instructorLogTab")) $("#instructorLogTab").style.display = cachedUser.is_admin ? "" : "none";
     }
-    const rosterLoad = loadMembers();
-    const notificationsLoad = loadNotifications();
-    void notificationsLoad.then(() => {
-        let pendingNotificationId = 0;
-        try {
-            pendingNotificationId = Number(sessionStorage.getItem("lvfr.portal.pending-notification") || 0);
-            sessionStorage.removeItem("lvfr.portal.pending-notification");
-        } catch {}
-        if (pendingNotificationId) void openNotification(pendingNotificationId);
-    });
     try {
-        // Keep authentication and the independent page data requests in flight
-        // together so roster rendering does not wait for /auth/me.
+        await loadAccount();
+        const rosterLoad = loadMembers();
         await Promise.all([
-            loadAccount(),
+            loadNotifications(),
             loadConfig(),
             rosterLoad,
             loadMembersLog("promotion"),

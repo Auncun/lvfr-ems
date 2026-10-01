@@ -10,8 +10,6 @@ const cachedPortalUser = window.lvfrCachedUser?.();
 showAvailableApps(cachedPortalUser);
 
 const notificationList = document.querySelector('#portalNotificationList');
-const notificationsButton = document.querySelector('#portalNotificationsButton');
-const notificationPanel = document.querySelector('#portalNotificationPanel');
 const notificationStorageKey = `lvfr.portal.notifications.v1:${cachedPortalUser?.account_id || cachedPortalUser?.id || 'user'}`;
 function renderPortalNotifications(items = []) {
   if (!notificationList) return;
@@ -43,43 +41,20 @@ function escapePortalText(value) {
   element.textContent = String(value);
   return element.innerHTML;
 }
-let cachedNotifications = null;
-let notificationLoadPromise = null;
-let notificationLoadedAt = 0;
 try {
-  const stored = JSON.parse(localStorage.getItem(notificationStorageKey) || 'null');
-  if (Array.isArray(stored)) cachedNotifications = stored;
+  const cachedNotifications = JSON.parse(localStorage.getItem(notificationStorageKey) || 'null');
+  if (Array.isArray(cachedNotifications)) renderPortalNotifications(cachedNotifications);
 } catch {}
-if (cachedNotifications) renderPortalNotifications(cachedNotifications);
-function loadPortalNotifications() {
-  if (notificationLoadPromise) return notificationLoadPromise;
-  if (cachedNotifications) renderPortalNotifications(cachedNotifications);
-  else if (notificationList) notificationList.innerHTML = '<p>Loading notifications…</p>';
-  notificationLoadPromise = fetch('/api/notifications')
-    .then(response => response.ok ? response.json() : Promise.reject(new Error('Unable to load notifications')))
-    .then(result => {
-      cachedNotifications = Array.isArray(result.items) ? result.items : [];
-      notificationLoadedAt = Date.now();
-      try { localStorage.setItem(notificationStorageKey, JSON.stringify(cachedNotifications)); } catch {}
-      renderPortalNotifications(cachedNotifications);
-    })
-    .catch(() => {
-      if (notificationList && !cachedNotifications) notificationList.innerHTML = '<p>Could not load notifications. Try again.</p>';
-    })
-    .finally(() => { notificationLoadPromise = null; });
-  return notificationLoadPromise;
-}
-notificationsButton?.addEventListener('click', () => {
-  const opening = notificationPanel?.hidden;
-  if (notificationPanel) notificationPanel.hidden = !opening;
-  notificationsButton.setAttribute('aria-expanded', String(Boolean(opening)));
-  if (opening && Date.now() - notificationLoadedAt > 15000) void loadPortalNotifications();
-});
-// Fetch as soon as Portal opens; the panel itself stays hidden until requested.
-void loadPortalNotifications();
-setInterval(() => {
-  if (!document.hidden) void loadPortalNotifications();
-}, 15000);
+fetch('/api/notifications')
+  .then(response => response.ok ? response.json() : Promise.reject(new Error('Unable to load notifications')))
+  .then(result => {
+    const items = Array.isArray(result.items) ? result.items : [];
+    try { localStorage.setItem(notificationStorageKey, JSON.stringify(items)); } catch {}
+    renderPortalNotifications(items);
+  })
+  .catch(() => {
+    if (notificationList && !notificationList.querySelector('.portal-notification')) notificationList.innerHTML = '<p>Notifications will appear here when available.</p>';
+  });
 
 if (!cachedPortalUser) fetch('/auth/me')
   .then(response => response.ok ? response.json() : null)

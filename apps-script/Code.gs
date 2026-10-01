@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-01-account-presence-14-performance',
+  apiVersion: '2026-10-01-account-presence-13-performance',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -21,10 +21,6 @@ const LVFR = Object.freeze({
   ],
   ignoredCallsigns: new Set(['B-01'])
 });
-
-// Keep the roster snapshot warm across normal page loads. Manual Sync and
-// roster mutations clear these entries so an explicit refresh stays current.
-const ROSTER_CACHE_TTL_SECONDS = 1800;
 
 function doGet(e) {
   return output_({ ok: true, service: 'LVFR EMS Apps Script API', version: LVFR.apiVersion, postOnly: true });
@@ -207,9 +203,9 @@ function loginWithPassword_(data) {
     }), 120);
   } catch (ignored) {}
   const rememberMe = String(data.remember_me || '').toLowerCase() === 'on' || data.remember_me === true;
-  // Avoid spreadsheet writes on the normal sign-in path. The live session is
-  // already cached; only Remember me needs the persistent recovery record.
-  if (rememberMe) saveRememberedSession_(token, account.accountId, true);
+  // CacheService may evict entries before their TTL. Keep a hashed recovery
+  // record for every session so a refresh after Sync does not sign the user out.
+  saveRememberedSession_(token, account.accountId, rememberMe);
   // Keep login response lean: instructor status is available from /auth/me
   // and need not delay authentication on a cold instructor-directory cache.
   return { token: token, user: publicUser_(account, false) };
@@ -315,6 +311,13 @@ function rememberedSessionsSheet_(create) {
 }
 function saveRememberedSession_(token, accountId, rememberMe) {
   const sheet = rememberedSessionsSheet_(true), now = Date.now();
+  const lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    const rows = sheet.getRange(2, 1, lastRow - 1, 4).getDisplayValues();
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (!rows[i][2] || Date.parse(rows[i][2]) <= now) sheet.deleteRow(i + 2);
+    }
+  }
   const lifetime = rememberMe ? 30 * 86400000 : 6 * 60 * 60 * 1000;
   sheet.appendRow([sessionTokenHash_(token), accountId, new Date(now + lifetime).toISOString(), new Date(now).toISOString()]);
 }
@@ -375,7 +378,7 @@ function rosterMembersByName_() {
   });
   try {
     const serialized = JSON.stringify(Array.from(membersByName.entries()));
-    if (serialized.length < 90000) cache.put(key, serialized, ROSTER_CACHE_TTL_SECONDS);
+    if (serialized.length < 90000) cache.put(key, serialized, 300);
   } catch (ignored) {}
   return membersByName;
 }
@@ -667,7 +670,7 @@ function instructorDirectory_(spreadsheet) {
   addSheet('HERT Certified', 2, 6, null, 'HERT');
   addSheet('FIREFIGHTER CERT', 1, 2, 4, 'FORT');
   const result = Array.from(byName.values());
-  try { cache.put(cacheKey, JSON.stringify(result), ROSTER_CACHE_TTL_SECONDS); } catch (ignored) {}
+  try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (ignored) {}
   return result;
 }
 
@@ -715,7 +718,6 @@ function invalidateRosterCache_() {
   const cacheKey = 'roster:members:v2';
   cache.remove('roster:name-index:v1');
   cache.remove('roster:available-callsigns:v1');
-  cache.remove('instructor-directory:v1');
   cache.remove('leader-overview:v1');
   cache.remove('leader-overview:v2');
   const index = cache.get(cacheKey);
@@ -758,9 +760,9 @@ function writeRosterCache_(cache, cacheKey, records) {
   if (count > 32) return;
   try {
     for (let part = 0; part < count; part++) {
-      cache.put(cacheKey + ':' + part, serialized.slice(part * chunkSize, (part + 1) * chunkSize), ROSTER_CACHE_TTL_SECONDS);
+      cache.put(cacheKey + ':' + part, serialized.slice(part * chunkSize, (part + 1) * chunkSize), 300);
     }
-    cache.put(cacheKey, JSON.stringify({ chunks: count }), ROSTER_CACHE_TTL_SECONDS);
+    cache.put(cacheKey, JSON.stringify({ chunks: count }), 300);
   } catch (ignored) {
     cache.remove(cacheKey);
   }
@@ -1319,7 +1321,7 @@ function availableCallsigns_() {
       .filter(item => Number.isFinite(item.number)).sort((a, b) => a.number - b.number);
     if (candidates.length) result[rank] = candidates[0].callsign;
   });
-  try { cache.put(key, JSON.stringify(result), ROSTER_CACHE_TTL_SECONDS); } catch (ignored) {}
+  try { cache.put(key, JSON.stringify(result), 300); } catch (ignored) {}
   return result;
 }
 
