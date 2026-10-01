@@ -2,8 +2,34 @@
 (function () {
   const TOKEN_KEY = 'lvfr.session.token';
   const USER_KEY = 'lvfr.session.user';
+  const API_CACHE_INDEX = 'lvfr.api.cache.index.v1';
   const nativeFetch = window.fetch.bind(window);
   const apiPrefix = /^(?:\/api\/|\/auth\/)/;
+
+  const cachedApiRoute = pathname => pathname === '/api/config'
+    || pathname === '/api/members'
+    || pathname === '/api/eligible'
+    || pathname === '/api/inactive'
+    || pathname === '/api/account/profile'
+    || pathname.startsWith('/api/member/')
+    || pathname.startsWith('/api/members-log')
+    || ['/api/promotions', '/api/training-log', '/api/exam-log', '/api/termination-log', '/api/instructors', '/api/watch-command/members'].includes(pathname);
+  const readApiCacheIndex = () => {
+    try { return JSON.parse(sessionStorage.getItem(API_CACHE_INDEX) || '[]'); }
+    catch { return []; }
+  };
+  const clearApiCache = () => {
+    for (const key of readApiCacheIndex()) sessionStorage.removeItem(key);
+    sessionStorage.removeItem(API_CACHE_INDEX);
+    sessionStorage.removeItem('lvfr.roster.snapshot.v1');
+    const accountId = window.lvfrCachedUser?.()?.account_id || window.lvfrCachedUser?.()?.id || '';
+    if (accountId) sessionStorage.removeItem(`lvfr.account.profile.v1:${accountId}`);
+  };
+  const cachedResponse = entry => new Response(entry.body, {
+    status: entry.status,
+    statusText: entry.statusText,
+    headers: entry.headers || { 'Content-Type': 'application/json' }
+  });
 
   window.lvfrSessionToken = () => localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY) || '';
   window.lvfrCachedUser = () => {
@@ -16,6 +42,7 @@
     try { store.setItem(USER_KEY, JSON.stringify(user)); } catch {}
   };
   window.lvfrSetSession = (token, remember = false, user = null) => {
+    clearApiCache();
     localStorage.removeItem(TOKEN_KEY);
     sessionStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
@@ -26,6 +53,7 @@
     if (user) store.setItem(USER_KEY, JSON.stringify(user));
   };
   window.lvfrForgetSession = () => {
+    clearApiCache();
     localStorage.removeItem(TOKEN_KEY);
     sessionStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
@@ -68,15 +96,40 @@
     const requestUrl = input instanceof Request ? input.url : String(input);
     const url = new URL(requestUrl, location.href);
     if (url.origin !== location.origin || !apiPrefix.test(url.pathname)) return nativeFetch(input, init);
+    const method = String(init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+    const canCache = method === 'GET' && cachedApiRoute(url.pathname);
+    const cacheKey = `lvfr.api.response.v1:${url.pathname}${url.search}`;
+    if (canCache && window.lvfrSessionToken?.()) {
+      try {
+        const cached = JSON.parse(sessionStorage.getItem(cacheKey) || 'null');
+        if (cached && Date.now() - Number(cached.saved_at || 0) < 15 * 60 * 1000) return Promise.resolve(cachedResponse(cached));
+      } catch {}
+    }
     const headers = new Headers(input instanceof Request ? input.headers : undefined);
     new Headers(init.headers || {}).forEach((value, key) => headers.set(key, value));
     const token = window.lvfrSessionToken();
     if (token) headers.set('Authorization', `Bearer ${token}`);
     const requestInit = { ...init, headers, credentials: 'same-origin' };
     if (input instanceof Request && init.body === undefined && !['GET', 'HEAD'].includes(input.method)) requestInit.body = input.clone().body;
-    return nativeFetch(input, requestInit).then(response => {
+    return nativeFetch(input, requestInit).then(async response => {
       if (response.status === 401) window.lvfrForgetSession();
       if (url.pathname === '/auth/logout') window.lvfrForgetSession();
+      if (canCache && response.ok) {
+        try {
+          const body = await response.clone().text();
+          const entry = {
+            saved_at: Date.now(), body, status: response.status, statusText: response.statusText,
+            headers: { 'Content-Type': response.headers.get('Content-Type') || 'application/json' }
+          };
+          sessionStorage.setItem(cacheKey, JSON.stringify(entry));
+          const keys = readApiCacheIndex();
+          if (!keys.includes(cacheKey)) {
+            keys.push(cacheKey);
+            sessionStorage.setItem(API_CACHE_INDEX, JSON.stringify(keys));
+          }
+        } catch {}
+      }
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && response.ok && url.pathname.startsWith('/api/')) clearApiCache();
       return response;
     });
   };
