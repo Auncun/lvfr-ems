@@ -525,7 +525,7 @@ async function openNotification(id) {
     if (panel) panel.hidden = true;
     if (button) button.setAttribute("aria-expanded", "false");
 
-    if (["eligible", "inactive"].includes(item.kind) && item.callsign) {
+    if (item.kind === "eligible" && item.callsign) {
         await profile(item.callsign, true);
     } else if (item.kind === "request" && currentUserIsAdmin) {
         $("#leadersTab")?.click();
@@ -4166,7 +4166,7 @@ if (syncButton) {
                     loadMembers(),
                     syncStatus(),
                     ...(activeTab === "eligible" ? [loadEligible()] : []),
-                    ...(activeTab === "inactive" && (currentUserIsAdmin || currentUserIsCommand) ? [loadInactive()] : [])
+                    ...(activeTab === "inactive" && currentUserIsAdmin ? [loadInactive()] : [])
                 ]);
 
                 if (activeProfileMember?.callsign) profile(activeProfileMember.callsign, true);
@@ -4480,7 +4480,7 @@ async function loadAccount() {
         const leadersTab = $("#leadersTab");
         if (leadersTab) leadersTab.style.display = user.is_admin ? "" : "none";
         const inactiveTab = $("#inactiveTab");
-        if (inactiveTab) inactiveTab.style.display = (user.is_admin || user.is_command) ? "" : "none";
+        if (inactiveTab) inactiveTab.style.display = user.is_admin ? "" : "none";
         const terminationLogTab = $("#terminationLogTab");
         if (terminationLogTab) terminationLogTab.style.display = user.is_admin ? "" : "none";
         const instructorLogTab = $("#instructorLogTab");
@@ -4552,7 +4552,7 @@ $("#changePasswordForm")?.addEventListener("submit", async event => {
         currentUserIsCommand = Boolean(cachedUser.is_command);
         if ($("#accountName")) $("#accountName").textContent = cachedUser.name || "";
         if ($("#leadersTab")) $("#leadersTab").style.display = cachedUser.is_admin ? "" : "none";
-        if ($("#inactiveTab")) $("#inactiveTab").style.display = (cachedUser.is_admin || cachedUser.is_command) ? "" : "none";
+        if ($("#inactiveTab")) $("#inactiveTab").style.display = cachedUser.is_admin ? "" : "none";
         if ($("#terminationLogTab")) $("#terminationLogTab").style.display = cachedUser.is_admin ? "" : "none";
         if ($("#instructorLogTab")) $("#instructorLogTab").style.display = cachedUser.is_admin ? "" : "none";
     }
