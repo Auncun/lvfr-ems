@@ -19,20 +19,34 @@ async function signedClaims(account, secret) {
   const body = b64url(enc.encode(JSON.stringify(claims)));
   return `d1v1.${body}.${await hmac(secret, `d1v1.${body}`)}`;
 }
-function bearer(request) {
+function sessionTokens(request) {
   const header = request.headers.get("Authorization") || "";
-  if (header.startsWith("Bearer ")) return header.slice(7).trim();
-  // Same-origin HttpOnly cookie is the fallback for full-page navigations,
-  // separate tabs, and clients that do not attach Authorization headers.
+  const result = header.startsWith("Bearer ") ? [header.slice(7).trim()] : [];
+  // Try the same-origin HttpOnly cookie too. A stale header from a tab should
+  // not mask a valid cookie session from the current login.
   const cookies = request.headers.get("Cookie") || "";
   const pair = cookies.split(";").map(value => value.trim()).find(value => value.startsWith("lvfr_d1_session="));
-  return pair ? decodeURIComponent(pair.slice("lvfr_d1_session=".length)) : "";
+  if (pair) {
+    try {
+      const cookieToken = decodeURIComponent(pair.slice("lvfr_d1_session=".length));
+      if (cookieToken && !result.includes(cookieToken)) result.push(cookieToken);
+    } catch {}
+  }
+  return result;
 }
 async function accountForToken(db, token) {
   if (!token) return null;
   return db.prepare(`SELECT a.account_id, a.name, a.callsign, a.status, a.role
     FROM auth_sessions s JOIN accounts a ON a.account_id=s.account_id
     WHERE s.token_hash=? AND s.expires_at>?`).bind(await sha256(token), nowSeconds()).first();
+}
+async function accountForRequest(db, request) {
+  const tokens = sessionTokens(request);
+  for (const token of tokens) {
+    const account = await accountForToken(db, token);
+    if (account) return { account, token };
+  }
+  return { account: null, token: tokens[0] || "" };
 }
 async function gasCall(env, route, method, data = {}, token = "", params = {}) {
   const target = String(env.GAS_WEB_APP_URL || "").trim();
@@ -167,7 +181,7 @@ export async function handleD1(context) {
   try {
     if (!db) return json({ detail:"LVFR_DB D1 binding is missing." },503);
     let data={}; if(!["GET","HEAD"].includes(method)) data=await request.json().catch(()=>({}));
-    const token=bearer(request), authRoute=route.startsWith("/auth/");
+    const session=await accountForRequest(db,request), token=session.token, authRoute=route.startsWith("/auth/");
     if (route==="/api/health" && method==="GET") return json({ok:true,backend:"Cloudflare D1",auth_store:"D1"});
     if (route==="/auth/signup" && method==="POST") return json(await signup(db,env,data));
     if (route==="/auth/login" && method==="POST") {
@@ -175,13 +189,19 @@ export async function handleD1(context) {
       return json({ token:result.token, user:result.user },200,{ "Set-Cookie":`lvfr_d1_session=${encodeURIComponent(result.token)}; Path=/; Max-Age=${result.max_age}; HttpOnly; Secure; SameSite=Lax` });
     }
     if (route==="/auth/logout" && method==="POST") {
-      if(token) await db.prepare("DELETE FROM auth_sessions WHERE token_hash=?").bind(await sha256(token)).run();
+      for (const candidate of sessionTokens(request)) await db.prepare("DELETE FROM auth_sessions WHERE token_hash=?").bind(await sha256(candidate)).run();
       return json({ok:true},200,{ "Set-Cookie":"lvfr_d1_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax" });
     }
-    if (route==="/auth/me" && method==="GET") { const a=await accountForToken(db,token); if(!a) return json({detail:"Your session expired. Sign in again."},401); return json(await publicUser(a)); }
+    if (route==="/auth/me" && method==="GET") {
+      const a=session.account;
+      if(!a) return json({detail:token ? "Session token was not found or has expired in D1." : "No session token or login cookie reached the API."},401);
+      return json(await publicUser(a));
+    }
     if (route==="/auth/bootstrap-commander" && method==="POST") return json(await bootstrapCommander(db,env,request,data));
-    const user=await accountForToken(db,token);
-    if(!user || user.status!=="approved") return json({detail:"Sign in again."},401);
+    const user=session.account;
+    if(!token) return json({detail:"No session token or login cookie reached the API."},401);
+    if(!user) return json({detail:"Session token was not found or has expired in D1."},401);
+    if(user.status!=="approved") return json({detail:"This D1 account is not approved."},401);
     await db.prepare("INSERT INTO account_presence(account_id,last_seen) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET last_seen=excluded.last_seen").bind(user.account_id,nowSeconds()).run();
     if (route==="/api/presence" && method==="POST") return json({ok:true});
     if (route==="/api/presence/summary" && method==="GET") { const r=await db.prepare("SELECT COUNT(*) AS online_count FROM account_presence p JOIN accounts a ON a.account_id=p.account_id WHERE a.status='approved' AND p.last_seen>?").bind(nowSeconds()-90).first(); return json({online_count:r.online_count}); }
