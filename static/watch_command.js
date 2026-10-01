@@ -1843,7 +1843,7 @@ form.addEventListener('submit', async event => {
 document.querySelector('#watchLogout').addEventListener('click', () => {
   sessionStorage.removeItem('watch-command-draft-id');
   sessionStorage.removeItem('watch-command-form-draft');
-  fetch('/auth/logout', { method: 'POST' }).finally(() => location.assign('/login'));
+  window.lvfrLogout?.();
 });
 
 request('/api/watch-command/current-user')

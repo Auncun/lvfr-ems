@@ -67,6 +67,7 @@ function dispatch_(route, method, params, data, user) {
   }
   if (route === '/api/account/password' && method === 'POST') return changeOwnPassword_(data, user);
   if (route === '/api/presence' && method === 'POST') { requireApproved_(user); touchPresence_(user); return { ok: true }; }
+  if (route === '/api/presence/summary' && method === 'GET') { requireApproved_(user); return onlineSummary_(); }
   if (route === '/api/health') return { ok: true, backend: 'Google Apps Script' };
   if (route === '/api/config') return {
     ranks: LVFR.ranks,
@@ -192,7 +193,9 @@ function loginWithPassword_(data) {
   const token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
   CacheService.getScriptCache().put(sessionCacheKey_(token), account.accountId, 21600);
   if (String(data.remember_me || '').toLowerCase() === 'on' || data.remember_me === true) saveRememberedSession_(token, account.accountId);
-  return { token: token, user: publicUser_(account) };
+  // Keep login response lean: instructor status is available from /auth/me
+  // and need not delay authentication on a cold instructor-directory cache.
+  return { token: token, user: publicUser_(account, false) };
 }
 
 function changeOwnPassword_(data, user) {
@@ -276,9 +279,10 @@ function logoutSession_(token) {
   CacheService.getScriptCache().remove(sessionCacheKey_(token));
   const sheet = rememberedSessionsSheet_(false);
   if (!sheet || sheet.getLastRow() < 2) return;
-  const hash = sessionTokenHash_(token), hashes = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getDisplayValues();
-  const index = hashes.findIndex(row => row[0] === hash);
-  if (index >= 0) sheet.deleteRow(index + 2);
+  const hash = sessionTokenHash_(token);
+  const match = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1)
+    .createTextFinder(hash).matchEntireCell(true).findNext();
+  if (match) sheet.deleteRow(match.getRow());
 }
 function sessionTokenHash_(token) {
   return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token))).replace(/=+$/, '');
@@ -376,10 +380,10 @@ function applyCurrentRosterIdentity_(account) {
   return account;
 }
 
-function publicUser_(user) {
-  const instructor = instructorDirectory_().find(item =>
+function publicUser_(user, includeInstructor = true) {
+  const instructor = includeInstructor ? instructorDirectory_().find(item =>
     normalizeMemberName_(item.name) === normalizeMemberName_(user.name)
-  );
+  ) : null;
   return {
     account_id: user.accountId || user.account_id,
     id: user.accountId || user.account_id,
@@ -410,6 +414,18 @@ function addPresenceToOverview_(overview) {
   });
   overview.online_count = onlineCount;
   return overview;
+}
+
+function onlineSummary_() {
+  const { rows } = accountRows_();
+  const approvedIds = rows.filter(row => String(row[5] || '').toLowerCase() === 'approved').map(row => String(row[0] || '')).filter(Boolean);
+  const cache = CacheService.getScriptCache(), now = Date.now();
+  const keys = approvedIds.map(presenceKey_);
+  const seen = keys.length ? cache.getAll(keys) : {};
+  return { online_count: approvedIds.reduce((count, id) => {
+    const timestamp = Number(seen[presenceKey_(id)] || 0);
+    return count + (timestamp > 0 && now - timestamp < 90000 ? 1 : 0);
+  }, 0) };
 }
 
 function requireApproved_(user) {

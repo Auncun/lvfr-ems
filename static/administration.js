@@ -232,7 +232,7 @@ document.addEventListener('click', event => {
   notificationButton.setAttribute('aria-expanded', 'false');
 });
 document.querySelector('#logoutButton').addEventListener('click', () => {
-  fetch('/auth/logout', { method: 'POST' }).finally(() => location.assign('/login'));
+  window.lvfrLogout?.();
 });
 loadAccounts();
 loadNotifications();

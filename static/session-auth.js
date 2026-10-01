@@ -22,7 +22,7 @@
     sessionStorage.removeItem(USER_KEY);
     sessionStorage.removeItem('lvfr.roster.snapshot.v1');
     const store = remember ? localStorage : sessionStorage;
-    store.setItem(TOKEN_KEY, token);
+    if (token) store.setItem(TOKEN_KEY, token);
     if (user) store.setItem(USER_KEY, JSON.stringify(user));
   };
   window.lvfrForgetSession = () => {
@@ -37,9 +37,9 @@
     const token = window.lvfrSessionToken();
     window.lvfrForgetSession();
     location.replace('/login');
-    if (token) nativeFetch('/auth/logout', {
-      method: 'POST', keepalive: true, credentials: 'omit',
-      headers: { Authorization: `Bearer ${token}` }
+    nativeFetch('/auth/logout', {
+      method: 'POST', keepalive: true, credentials: 'same-origin',
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
     }).catch(() => {});
   };
   document.addEventListener('submit', event => {
@@ -55,7 +55,7 @@
     const token = window.lvfrSessionToken();
     if (!token || document.hidden) return;
     nativeFetch('/api/presence', {
-      method: 'POST', keepalive: true, credentials: 'omit',
+      method: 'POST', keepalive: true, credentials: 'same-origin',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: '{}'
     }).catch(() => {});
@@ -72,7 +72,7 @@
     new Headers(init.headers || {}).forEach((value, key) => headers.set(key, value));
     const token = window.lvfrSessionToken();
     if (token) headers.set('Authorization', `Bearer ${token}`);
-    const requestInit = { ...init, headers, credentials: 'omit' };
+    const requestInit = { ...init, headers, credentials: 'same-origin' };
     if (input instanceof Request && init.body === undefined && !['GET', 'HEAD'].includes(input.method)) requestInit.body = input.clone().body;
     return nativeFetch(input, requestInit).then(response => {
       if (response.status === 401) window.lvfrForgetSession();

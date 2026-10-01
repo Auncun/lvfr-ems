@@ -23,7 +23,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=presence-indicators-5"
+    href="/static/style.css?v=presence-indicators-6"
 >
 
 <style>
@@ -172,6 +172,7 @@
         </div>
 
         <span id="accountName" class="status-dot account-user-name"></span>
+        <span id="topOnlineCount" class="online-account-count" aria-live="polite">Online now: —</span>
         <button type="button" id="manageAccountButton">Account</button>
         <form action="/auth/logout" method="post">
             <button type="submit">Sign out</button>
@@ -182,7 +183,7 @@
             id="dbStatus"
             class="status-dot"
         >
-            Checkingâ€¦
+            Checking…
         </span>
 
 
@@ -307,7 +308,7 @@
         <input
             id="search"
             type="text"
-            placeholder="Search name, callsign or rankâ€¦"
+            placeholder="Search by name, Callsign, or rank"
             autocomplete="off"
         >
 
@@ -458,7 +459,7 @@
         <input
             id="inactiveSearch"
             type="text"
-            placeholder="Search name or callsignâ€¦"
+            placeholder="Search by name or Callsign"
             autocomplete="off"
         >
 
@@ -602,7 +603,7 @@
         <input
             id="membersLogSearch"
             type="text"
-            placeholder="Search current logâ€¦"
+            placeholder="Search current log"
             autocomplete="off"
         >
 
@@ -790,8 +791,8 @@
      APPLICATION JAVASCRIPT
      ========================================================= -->
 
-<script src="/static/session-auth.js?v=account-presence-6"></script>
-<script src="/static/app.js?v=account-presence-search-19"></script>
+<script src="/static/session-auth.js?v=auth-latency-1"></script>
+<script src="/static/app.js?v=account-presence-search-20"></script>
 <script src="/static/pwa.js"></script>
 
 

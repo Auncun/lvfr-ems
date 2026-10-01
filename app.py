@@ -690,6 +690,7 @@ async def account_auth_guard(request: Request, call_next):
             or path.startswith("/api/watch-command/")
             or path == "/api/account/password"
             or path == "/api/presence"
+            or path == "/api/presence/summary"
         )
         if path not in member_page_paths and not is_watch_api:
             if path.startswith("/api/"):
@@ -1121,7 +1122,10 @@ def account_login(data: LoginInput, request: Request):
         _enforce_auth_rate_limit("login", identifier, 5, 300)
         if len(data.password) > MAX_PASSWORD_LENGTH:
             raise HTTPException(400, "Password must be 128 characters or fewer")
-        row = _account_by_name(identifier) or next((r for r in _load_accounts() if str(r.get("callsign", "")).casefold() == identifier.casefold()), None)
+        accounts = _load_accounts()
+        row = next((r for r in accounts if _name_key(r.get("name")) == _name_key(identifier)), None)
+        if not row:
+            row = next((r for r in accounts if str(r.get("callsign", "")).casefold() == identifier.casefold()), None)
         if not row or not hmac.compare_digest(str(row.get("password_hash") or "invalid"), _password_digest(data.password, row.get("password_salt") or "00"*16)):
             raise HTTPException(401, "Name or password is incorrect")
         if row["status"] == "pending": raise HTTPException(403, "Your account is waiting for activation")
@@ -1132,7 +1136,18 @@ def account_login(data: LoginInput, request: Request):
             "name": row["name"],
             "pw_version": _password_version(row),
         }, data.stay_logged_in)
-        response = JSONResponse({"ok": True}); _set_cookie(response, request, token, data.stay_logged_in); return response
+        role = str(row.get("role") or "leader").lower()
+        callsign = str(row.get("callsign") or "")
+        command = _callsign_prefix(callsign) in COMMAND_CALLSIGN_PREFIXES or role in {"admin", "commander"}
+        user = {
+            "id": row["account_id"], "account_id": row["account_id"],
+            "name": row["name"], "display_name": row["name"], "callsign": callsign,
+            "role": role, "status": "approved", "is_admin": role in {"admin", "commander"},
+            "is_command": command, "instructor_type": "",
+        }
+        response = JSONResponse({"ok": True, "user": user})
+        _set_cookie(response, request, token, data.stay_logged_in)
+        return response
     except HTTPException: raise
     except Exception as e:
         logger.info(f"[LVFR EMS] Account login storage failed: {e}"); raise HTTPException(503, "Account storage is temporarily unavailable")
@@ -1156,6 +1171,7 @@ def account_me():
         "display_name": u.get("name", ""),
         "is_admin": is_admin,
         "role": str(u.get("role") or "leader"),
+        "status": "approved",
         "is_command": _current_user_is_command(),
         "instructor_type": "HERT / FORT" if is_admin else instructor.get("type", ""),
     }
@@ -1177,6 +1193,22 @@ def update_presence():
     finally:
         con.close()
     return {"ok": True}
+
+
+@app.get("/api/presence/summary")
+def presence_summary():
+    require_role("watch_command")
+    now = time.time()
+    con = L.db()
+    try:
+        con.execute("CREATE TABLE IF NOT EXISTS AccountPresence (account_id TEXT PRIMARY KEY, last_seen REAL NOT NULL)")
+        count = con.execute(
+            "SELECT COUNT(*) FROM AccountPresence WHERE last_seen >= ?",
+            (now - PRESENCE_ONLINE_SECONDS,),
+        ).fetchone()[0]
+    finally:
+        con.close()
+    return {"online_count": int(count or 0)}
 
 
 def _leader_overview_with_presence(overview):

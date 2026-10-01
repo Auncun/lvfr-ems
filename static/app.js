@@ -1,4 +1,4 @@
-﻿const $ = s => document.querySelector(s);
+const $ = s => document.querySelector(s);
 
 let config = {};
 // Keep brief deduplication for rapid repeat reads while allowing polling to
@@ -413,7 +413,7 @@ document.addEventListener("click", event => {
         case "resolve-leader": resolveLeader(accountId, control.dataset.resolution); break;
         case "app-selection": location.assign("/portal"); break;
         case "close-modal": closeModal(); break;
-        case "logout": fetch("/auth/logout", { method: "POST" }).finally(() => location.assign("/login")); break;
+        case "logout": window.lvfrLogout?.(); break;
     }
 });
 window.addEventListener("scroll", () => {
@@ -1288,6 +1288,21 @@ let instructorRows = [];
 let leaderAuditRows = [];
 let currentLeaderView = "all";
 
+function setOnlineCount(value) {
+    const text = `Online now: ${Number(value || 0)}`;
+    ["#onlineAccountCount", "#topOnlineCount"].forEach(selector => {
+        const element = $(selector);
+        if (element) element.textContent = text;
+    });
+}
+
+async function refreshOnlineCount() {
+    try {
+        const summary = await api("/api/presence/summary");
+        setOnlineCount(summary.online_count);
+    } catch {}
+}
+
 
 async function loadLeaders() {
     const pending = $("#pendingLeadersTable");
@@ -1321,8 +1336,7 @@ async function loadLeaders() {
             api("/api/instructors").catch(() => [])
         ]);
         leaderRows = accounts;
-        const onlineCount = $("#onlineAccountCount");
-        if (onlineCount) onlineCount.textContent = `Online now: ${Number(accounts.online_count || 0)}`;
+        setOnlineCount(accounts.online_count);
         instructorRows = Array.isArray(instructorsData) ? instructorsData : [];
         leaderAuditRows = Array.isArray(leaderRows.audit) ? leaderRows.audit : [];
         try { sessionStorage.setItem(`lvfr.leaders.${currentUserAccountId}.v1`, JSON.stringify({ data: leaderRows, instructors: instructorRows, savedAt: Date.now() })); } catch {}
@@ -1415,11 +1429,11 @@ function renderLeaders() {
                 <tbody>${filteredRows.map(row => `
                     <tr>
                         <td class="leader-account-cell"><strong>${esc(row.name || row.display_name)}</strong><small>${row.callsign ? `Callsign ${esc(row.callsign)}` : "No Callsign linked"}</small></td>
-                        <td>${esc(row.linked_at || "â€”")}</td>
-                        <td class="leader-detail-cell"><span>${esc(row.approved_at || "â€”")}</span><small>By ${esc(row.approved_by || "â€”")}</small></td>
+                        <td>${esc(row.linked_at || "—")}</td>
+                        <td class="leader-detail-cell"><span>${esc(row.approved_at || "—")}</span><small>By ${esc(row.approved_by || "—")}</small></td>
                         <td>${row.is_admin ? "Commander" : row.role === "member" ? "Member" : "Leader"}</td>
                         <td><span class="presence-badge ${row.online ? "online" : "offline"}">${row.online ? "Online" : "Offline"}</span></td>
-                        <td class="leader-detail-cell">${row.admin_changed_at ? `<span>${esc(row.admin_changed_at)}</span><small>By ${esc(row.admin_changed_by || "â€”")}</small>` : "â€”"}</td>
+                        <td class="leader-detail-cell">${row.admin_changed_at ? `<span>${esc(row.admin_changed_at)}</span><small>By ${esc(row.admin_changed_by || "—")}</small>` : "—"}</td>
                         <td class="leader-request-actions">${accountActions(row)}</td></tr>
                 `).join("")}</tbody>
             </table>
@@ -1438,7 +1452,7 @@ function renderLeaders() {
             <table>
                 <thead><tr><th>Instructor</th><th>Type</th><th>Since</th></tr></thead>
                 <tbody>${filteredInstructors.map(row => `
-                    <tr><td><strong>${esc(row.name)}</strong></td><td>${esc(row.type)}</td><td>${esc(row.date || "â€”")}</td></tr>
+                    <tr><td><strong>${esc(row.name)}</strong></td><td>${esc(row.type)}</td><td>${esc(row.date || "—")}</td></tr>
                 `).join("")}</tbody>
             </table>
         ` : empty("No instructors found.");
@@ -2302,7 +2316,7 @@ function renderMembersLog() {
                 <thead><tr><th>Date</th><th>Callsign</th><th>Member</th><th>Type</th><th>Action</th><th>Changed By</th></tr></thead>
                 <tbody>${rows.map(r => `
                     <tr>
-                        <td>${esc(r.log_date)}</td>
+                        <td>${esc(r.log_date || r.created_at || "—")}</td>
                         <td>${esc(r.callsign)}</td>
                         <td>${esc(r.member_name)}</td>
                         <td>${esc(r.instructor_type)}</td>
@@ -2361,9 +2375,9 @@ async function profile(
 
     try {
         const normalizedCallsign = String(cs || "").trim().toUpperCase();
-        // A profile opened from the roster must reflect the current server
-        // state; only use caller-provided data for optimistic updates/rollbacks.
-        const cachedMember = providedMember;
+        // Render the roster snapshot immediately, then refresh it quietly.
+        const cachedMember = providedMember || memberCache.get(normalizedCallsign);
+        const shouldRefresh = !providedMember && Boolean(cachedMember);
         let m;
         if (cachedMember) {
             m = providedMember && Array.isArray(providedMember.trainings)
@@ -2631,6 +2645,14 @@ async function profile(
             modal.classList.remove(
                 "hidden"
             );
+        }
+
+        if (shouldRefresh) {
+            api("/api/member/" + encodeURIComponent(normalizedCallsign)).then(fresh => {
+                if (renderToken !== profileRenderToken || activeProfileMember?.callsign !== normalizedCallsign) return;
+                memberCache.set(normalizedCallsign, fresh);
+                profile(normalizedCallsign, true, fresh);
+            }).catch(() => {});
         }
 
     } catch (e) {
@@ -3510,7 +3532,7 @@ async function promote(cs) {
 
 
         toast(
-            `Promoted to ${r.new_rank} â€” ${r.new_callsign}`
+            `Promoted to ${r.new_rank} — ${r.new_callsign}`
         );
 
 
@@ -3820,7 +3842,7 @@ async function forcePromote(cs) {
 
 
         toast(
-            `Changed to ${r.new_rank} â€” ${r.new_callsign}`
+            `Changed to ${r.new_rank} — ${r.new_callsign}`
         );
 
 
@@ -3879,7 +3901,7 @@ async function demote(cs) {
 
 
         toast(
-            `Demoted to ${r.new_rank} â€” ${r.new_callsign}`
+            `Demoted to ${r.new_rank} — ${r.new_callsign}`
         );
 
 
@@ -3938,7 +3960,7 @@ async function changeRank(cs) {
 
 
         toast(
-            `Changed to ${r.new_rank} â€” ${r.new_callsign}`
+            `Changed to ${r.new_rank} — ${r.new_callsign}`
         );
 
 
@@ -4480,17 +4502,23 @@ $("#manageAccountButton")?.addEventListener("click", async () => {
     accountDialog?.classList.remove("hidden");
     try {
         const user = window.lvfrCachedUser?.() || await api("/auth/me");
-        const cachedProfile = memberCache.get(String(user.callsign || "").toUpperCase());
-        const profile = cachedProfile || await api("/api/account/profile").catch(() => ({}));
-        const set = (id, value) => { const el = $(id); if (el) el.textContent = value || "—"; };
-        set("#accountNameDisplay", user.name);
-        set("#accountCallsignDisplay", user.callsign);
-        set("#accountRankDisplay", profile.rank);
-        set("#accountDateDisplay", profile.rank_assigned_date || profile.date);
-        set("#accountActivityDisplay", profile.activity);
-        set("#accountInstructorDisplay", user.instructor_type || profile.instructor_type || "Not an Instructor");
-        set("#accountTrainingDisplay", [profile.has_basic_firefighting && "Basic Firefighting", profile.has_advanced_firefighting && "Advanced Firefighting", profile.has_hert && "HERT"].filter(Boolean).join(", ") || "None");
-        set("#accountExamDisplay", profile.has_supervisor_exam ? "Passed" : "Not completed");
+        const callsign = String(user.callsign || "").toUpperCase();
+        const paint = profile => {
+            if (!accountDialog || accountDialog.classList.contains("hidden")) return;
+            const set = (id, value) => { const el = $(id); if (el) el.textContent = value || "—"; };
+            set("#accountNameDisplay", user.name);
+            set("#accountCallsignDisplay", user.callsign);
+            set("#accountRankDisplay", profile.rank);
+            set("#accountDateDisplay", profile.rank_assigned_date || profile.date);
+            set("#accountActivityDisplay", profile.activity);
+            set("#accountInstructorDisplay", user.instructor_type || profile.instructor_type || "Not an Instructor");
+            set("#accountTrainingDisplay", [profile.has_basic_firefighting && "Basic Firefighting", profile.has_advanced_firefighting && "Advanced Firefighting", profile.has_hert && "HERT"].filter(Boolean).join(", ") || "None");
+            set("#accountExamDisplay", profile.has_supervisor_exam ? "Passed" : "Not completed");
+        };
+        const cachedProfile = memberCache.get(callsign);
+        paint(cachedProfile || {});
+        if (!cachedProfile) ["#accountRankDisplay", "#accountDateDisplay", "#accountActivityDisplay", "#accountTrainingDisplay", "#accountExamDisplay"].forEach(id => { const el = $(id); if (el) el.textContent = "Loading…"; });
+        api("/api/account/profile").then(profile => { memberCache.set(callsign, profile); paint(profile); }).catch(() => {});
     } catch (error) { toast(error.message); }
 });
 $("#closeAccountDialog")?.addEventListener("click", () => accountDialog?.classList.add("hidden"));
@@ -4546,6 +4574,9 @@ $("#changePasswordForm")?.addEventListener("submit", async event => {
     }
 
 })();
+
+refreshOnlineCount();
+setInterval(refreshOnlineCount, 30000);
 
 setInterval(() => { if (!document.hidden) syncStatus(); }, 60000);
 setInterval(() => {

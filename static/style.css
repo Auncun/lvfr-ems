@@ -304,6 +304,21 @@ tr:hover {
     color:#c9d1d9;
     font-weight:600
 }
+#topOnlineCount {
+    margin:0 4px;
+    white-space:nowrap;
+    font-size:12px
+}
+#membersTable table { table-layout:fixed; min-width:760px; }
+#membersTable th, #membersTable td { padding:8px 10px; }
+#membersTable th:nth-child(1) { width:14%; }
+#membersTable th:nth-child(2) { width:30%; }
+#membersTable th:nth-child(3) { width:20%; }
+#membersTable th:nth-child(4) { width:10%; }
+#membersTable th:nth-child(5) { width:16%; }
+#membersTable th:nth-child(6) { width:10%; }
+#allLeadersTable table { table-layout:fixed; min-width:900px; }
+#allLeadersTable th, #allLeadersTable td { padding:8px 6px; }
 .presence-badge {
     display:inline-flex;
     align-items:center;

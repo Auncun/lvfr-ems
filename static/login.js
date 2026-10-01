@@ -27,6 +27,7 @@ async function submitAuth(form, route) {
   if (fields.name) fields.name = String(fields.name).trim().replace(/\s+/g, ' ');
   const remember = fields.remember_me === 'on';
   fields.remember_me = remember;
+  fields.stay_logged_in = remember;
   button.disabled = true;
   message.className = 'auth-message';
   message.textContent = route === '/auth/login' ? 'Signing in…' : 'Submitting account request…';
