@@ -23,7 +23,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=leaders-header-compact-1"
+    href="/static/style.css?v=account-settings-4"
 >
 
 <style>
@@ -173,7 +173,7 @@
 
         <span id="accountName" class="status-dot account-user-name"></span>
         <span id="topOnlineCount" class="online-account-count" aria-live="polite">Online now: —</span>
-        <button type="button" id="manageAccountButton">Account</button>
+        <button type="button" id="manageAccountButton">Account settings</button>
         <form action="/auth/logout" method="post">
             <button type="submit">Sign out</button>
         </form>
@@ -723,32 +723,6 @@
 
 </main>
 
-<div id="accountDialog" class="modal hidden">
-    <div class="modal-box">
-        <button type="button" class="close" id="closeAccountDialog">&times;</button>
-        <h2>Manage account</h2>
-        <dl class="account-details">
-            <dt>Name</dt><dd id="accountNameDisplay"></dd>
-            <dt>Callsign</dt><dd id="accountCallsignDisplay"></dd>
-            <dt>Rank</dt><dd id="accountRankDisplay"></dd>
-            <dt>Rank assigned</dt><dd id="accountDateDisplay"></dd>
-            <dt>Activity</dt><dd id="accountActivityDisplay"></dd>
-            <dt>Instructor</dt><dd id="accountInstructorDisplay"></dd>
-            <dt>Training</dt><dd id="accountTrainingDisplay"></dd>
-            <dt>Supervisor exam</dt><dd id="accountExamDisplay"></dd>
-        </dl>
-        <details class="account-password-section">
-            <summary>Change password</summary>
-            <form id="changePasswordForm" class="form-grid">
-                <label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label>
-                <label>New password<input name="new_password" type="password" minlength="4" maxlength="20" pattern="[A-Za-z0-9]{4,20}" autocomplete="new-password" required></label>
-                <button type="submit" class="primary">Change password</button>
-            </form>
-        </details>
-    </div>
-</div>
-
-
 <!-- =========================================================
      MODAL
      ========================================================= -->
@@ -792,6 +766,7 @@
      ========================================================= -->
 
 <script src="/static/session-auth.js?v=auth-latency-1"></script>
+<script src="/static/account-settings.js?v=account-settings-4"></script>
 <script src="/static/app.js?v=account-presence-search-28"></script>
 <script src="/static/pwa.js"></script>
 

@@ -8,23 +8,26 @@
   dialog.innerHTML = `
     <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="accountSettingsTitle">
       <button type="button" class="close" id="closeAccountSettings" aria-label="Close">&times;</button>
-      <h2 id="accountSettingsTitle">Account</h2>
+      <h2 id="accountSettingsTitle">Manage account</h2>
       <dl class="account-details">
         <dt>Name</dt><dd id="accountSettingsName">Loading…</dd>
         <dt>Callsign</dt><dd id="accountSettingsCallsign"></dd>
         <dt>Rank</dt><dd id="accountSettingsRank"></dd>
         <dt>Rank assigned</dt><dd id="accountSettingsDate"></dd>
         <dt>Activity</dt><dd id="accountSettingsActivity"></dd>
+        <dt>Instructor</dt><dd id="accountSettingsInstructor"></dd>
         <dt>Training</dt><dd id="accountSettingsTraining"></dd>
         <dt>Supervisor exam</dt><dd id="accountSettingsExam"></dd>
       </dl>
-      <h3>Change password</h3>
-      <form id="accountSettingsPassword" class="auth-form">
-        <label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label>
-        <label>New password<input name="new_password" type="password" minlength="4" maxlength="20" pattern="[A-Za-z0-9]{4,20}" autocomplete="new-password" required></label>
-        <button type="submit" class="primary">Change password</button>
-        <p id="accountSettingsMessage" role="status" aria-live="polite"></p>
-      </form>
+      <details class="account-password-section">
+        <summary>Change password</summary>
+        <form id="accountSettingsPassword" class="form-grid">
+          <label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label>
+          <label>New password<input name="new_password" type="password" minlength="4" maxlength="20" pattern="[A-Za-z0-9]{4,20}" autocomplete="new-password" required></label>
+          <button type="submit" class="primary">Change password</button>
+          <p id="accountSettingsMessage" role="status" aria-live="polite"></p>
+        </form>
+      </details>
     </div>`;
   document.body.append(dialog);
 
@@ -38,6 +41,7 @@
     field('accountSettingsRank').textContent = '';
     field('accountSettingsDate').textContent = '';
     field('accountSettingsActivity').textContent = '';
+    field('accountSettingsInstructor').textContent = '';
     field('accountSettingsTraining').textContent = '';
     field('accountSettingsExam').textContent = '';
     try {
@@ -49,6 +53,7 @@
       if (!response.ok) throw new Error(profile.detail || profile.error || 'Could not load account.');
       field('accountSettingsName').textContent = profile.name || user?.name || '';
       field('accountSettingsCallsign').textContent = profile.callsign || user?.callsign || '';
+      field('accountSettingsInstructor').textContent = profile.instructor_type || user?.instructor_type || 'Not an Instructor';
       const memberResponse = profile.callsign
         ? await fetch('/api/account/profile', { headers })
         : null;
@@ -57,6 +62,7 @@
         field('accountSettingsRank').textContent = member.rank || '';
         field('accountSettingsDate').textContent = member.rank_assigned_date || member.date || '';
         field('accountSettingsActivity').textContent = member.activity || '';
+        field('accountSettingsInstructor').textContent = member.instructor_type || profile.instructor_type || user?.instructor_type || 'Not an Instructor';
         field('accountSettingsTraining').textContent = [member.has_basic_firefighting && 'Basic Firefighting', member.has_advanced_firefighting && 'Advanced Firefighting', member.has_hert && 'HERT'].filter(Boolean).join(', ') || 'None';
         field('accountSettingsExam').textContent = member.has_supervisor_exam ? 'Passed' : 'Not completed';
       }
@@ -73,7 +79,10 @@
     message.textContent = 'Changing password…';
     try {
       const response = await fetch('/api/account/password', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: {
+          'Content-Type': 'application/json',
+          ...(window.lvfrSessionToken?.() ? { Authorization: `Bearer ${window.lvfrSessionToken()}` } : {})
+        },
         body: JSON.stringify(Object.fromEntries(new FormData(form)))
       });
       const result = await response.json();

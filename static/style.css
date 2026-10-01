@@ -253,12 +253,12 @@ tr:hover {
     border-radius:14px;
     padding:24px
 }
-#accountDialog .modal-box {
+#accountSettingsDialog .modal-box {
     width:min(560px,100%);
     padding:28px;
     box-shadow:0 24px 70px #0009
 }
-#accountDialog h2 {
+#accountSettingsDialog h2 {
     margin:0 40px 20px 0
 }
 .account-details {
@@ -381,7 +381,7 @@ main {
 }
 
 @media(max-width:480px) {
-    #accountDialog .modal-box { padding:22px 16px }
+    #accountSettingsDialog .modal-box { padding:22px 16px }
     .account-details { grid-template-columns:minmax(100px,.75fr) minmax(0,1.25fr) }
     .account-details dt,.account-details dd { padding:9px 8px }
 }

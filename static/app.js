@@ -4487,54 +4487,6 @@ async function loadAccount() {
     }
 }
 
-const accountDialog = $("#accountDialog");
-accountDialog?.querySelectorAll("[data-toggle-passwords]").forEach(toggle => toggle.addEventListener("change", () => {
-    const form = toggle.closest("form");
-    form?.querySelectorAll('input[type="password"], input[type="text"][data-password-field]').forEach(input => {
-        input.type = toggle.checked ? "text" : "password";
-        input.toggleAttribute("data-password-field", toggle.checked);
-    });
-}));
-$("#manageAccountButton")?.addEventListener("click", async () => {
-    accountDialog?.classList.remove("hidden");
-    try {
-        const user = window.lvfrCachedUser?.() || await api("/auth/me");
-        const callsign = String(user.callsign || "").toUpperCase();
-        const paint = profile => {
-            if (!accountDialog || accountDialog.classList.contains("hidden")) return;
-            const set = (id, value) => { const el = $(id); if (el) el.textContent = value || "—"; };
-            set("#accountNameDisplay", user.name);
-            set("#accountCallsignDisplay", user.callsign);
-            set("#accountRankDisplay", profile.rank);
-            set("#accountDateDisplay", profile.rank_assigned_date || profile.date);
-            set("#accountActivityDisplay", profile.activity);
-            set("#accountInstructorDisplay", user.instructor_type || profile.instructor_type || "Not an Instructor");
-            set("#accountTrainingDisplay", [profile.has_basic_firefighting && "Basic Firefighting", profile.has_advanced_firefighting && "Advanced Firefighting", profile.has_hert && "HERT"].filter(Boolean).join(", ") || "None");
-            set("#accountExamDisplay", profile.has_supervisor_exam ? "Passed" : "Not completed");
-        };
-        const cachedProfile = memberCache.get(callsign);
-        paint(cachedProfile || {});
-        if (!cachedProfile) ["#accountRankDisplay", "#accountDateDisplay", "#accountActivityDisplay", "#accountTrainingDisplay", "#accountExamDisplay"].forEach(id => { const el = $(id); if (el) el.textContent = "Loading…"; });
-        api("/api/account/profile").then(profile => { memberCache.set(callsign, profile); paint(profile); }).catch(() => {});
-    } catch (error) { toast(error.message); }
-});
-$("#closeAccountDialog")?.addEventListener("click", () => accountDialog?.classList.add("hidden"));
-accountDialog?.addEventListener("click", event => {
-    if (event.target === accountDialog) accountDialog.classList.add("hidden");
-});
-$("#changePasswordForm")?.addEventListener("submit", async event => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const body = Object.fromEntries(new FormData(form));
-    try {
-        await api("/api/account/password", { method: "POST", body: JSON.stringify(body) });
-        form.reset();
-        accountDialog?.classList.add("hidden");
-        toast("Password changed successfully.");
-    } catch (error) {
-        toast(error.message);
-    }
-});
 
 (async () => {
 
