@@ -720,6 +720,7 @@ function listMembers_(search) {
 function invalidateRosterCache_() {
   const cache = CacheService.getScriptCache();
   const cacheKey = 'roster:members:v2';
+  cache.remove('roster:watch-member-directory:v1');
   cache.remove('roster:name-index:v1');
   cache.remove('roster:available-callsigns:v1');
   cache.remove('leader-overview:v1');
@@ -1524,6 +1525,11 @@ function rosterMember_(callsign) {
 function syncRosterSnapshot_(source) {
   invalidateRosterCache_();
   const members = listMembers_('');
+  try {
+    CacheService.getScriptCache().put('roster:watch-member-directory:v1', JSON.stringify(
+      members.map(member => ({ callsign: member.callsign, name: member.name, rank: member.rank }))
+    ), 300);
+  } catch (ignored) {}
   const syncedAt = new Date().toISOString();
   PropertiesService.getScriptProperties().setProperty('LVFR_LAST_MANUAL_SYNC_AT', syncedAt);
   PropertiesService.getScriptProperties().setProperty('LVFR_LAST_SYNC_SOURCE', source || 'manual');
@@ -1547,18 +1553,26 @@ function watchMemberNameByCallsign_(callsign) {
 }
 
 function watchMemberDirectory_() {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'roster:watch-member-directory:v1';
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    try { return JSON.parse(cached); } catch (ignored) {}
+  }
   const sheet = rosterSheet_();
   if (!sheet) throw new Error('Roster sheet was not found.');
   const count = Math.max(0, sheet.getLastRow() - 1);
   if (!count) return [];
-  return sheet.getRange(2, 2, count, 2).getDisplayValues().reduce((members, row) => {
+  const members = sheet.getRange(2, 2, count, 2).getDisplayValues().reduce((result, row) => {
     const callsign = String(row[0] || '').trim().toUpperCase();
     const name = String(row[1] || '').trim();
     if (name && /^[A-Z]+-\d+$/.test(callsign) && !LVFR.ignoredCallsigns.has(callsign)) {
-      members.push({ callsign, name, rank: rankFromCallsign_(callsign) });
+      result.push({ callsign, name, rank: rankFromCallsign_(callsign) });
     }
-    return members;
+    return result;
   }, []);
+  try { cache.put(cacheKey, JSON.stringify(members), 300); } catch (ignored) {}
+  return members;
 }
 
 const WATCH_FIELDS = [

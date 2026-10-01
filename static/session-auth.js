@@ -129,7 +129,12 @@
           }
         } catch {}
       }
-      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && response.ok && url.pathname.startsWith('/api/')) clearApiCache();
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && response.ok && url.pathname.startsWith('/api/')) {
+        clearApiCache();
+        if (url.pathname === '/api/sync' || /^\/api\/(activity|note|date|training|exam|promote|force-promote|demote|change-rank|change-callsign|terminate)$/.test(url.pathname) || /^\/api\/member\/[^/]+\/instructor$/.test(url.pathname)) {
+          sessionStorage.removeItem('lvfr.watch.member.directory.v1');
+        }
+      }
       return response;
     });
   };

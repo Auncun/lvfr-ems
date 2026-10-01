@@ -27,6 +27,28 @@ const formUnitMembers = document.querySelector('#formUnitMembers');
 const formUnitSubmit = document.querySelector('#submitFormUnit');
 const formUnitMessage = document.querySelector('#formUnitMessage');
 const memberNameCache = new Map();
+const WATCH_MEMBER_DIRECTORY_KEY = 'lvfr.watch.member.directory.v1';
+function cacheWatchMemberDirectory(members) {
+  memberNameCache.clear();
+  for (const member of members || []) {
+    const callsign = String(member.callsign || '').trim().toUpperCase();
+    const name = String(member.name || '').trim();
+    if (callsign && name) memberNameCache.set(callsign, { name, rank: String(member.rank || '').trim() });
+  }
+  try { sessionStorage.setItem(WATCH_MEMBER_DIRECTORY_KEY, JSON.stringify([...memberNameCache].map(([callsign, member]) => ({ callsign, ...member })))); } catch {}
+}
+try {
+  const savedDirectory = JSON.parse(sessionStorage.getItem(WATCH_MEMBER_DIRECTORY_KEY) || 'null');
+  const savedRoster = JSON.parse(sessionStorage.getItem('lvfr.roster.snapshot.v1') || 'null');
+  const initialDirectory = Array.isArray(savedDirectory) ? savedDirectory : savedRoster;
+  if (Array.isArray(initialDirectory)) {
+    for (const member of initialDirectory) {
+      const callsign = String(member.callsign || '').trim().toUpperCase();
+      const name = String(member.name || '').trim();
+      if (callsign && name) memberNameCache.set(callsign, { name, rank: String(member.rank || '').trim() });
+    }
+  }
+} catch {}
 let suppressBackgroundSaveSuccess = false;
 let memberLookupTimer;
 let initialMemberLookupTimer;
@@ -1467,6 +1489,7 @@ async function lookupMember(callsign) {
   if (memberNameCache.has(callsign)) return memberNameCache.get(callsign);
   if (memberDirectoryPromise) await memberDirectoryPromise;
   if (memberNameCache.has(callsign)) return memberNameCache.get(callsign);
+  if (memberDirectoryPromise) throw new Error(`${callsign} was not found on the roster.`);
   const member = await request(`/api/watch-command/member/${encodeURIComponent(callsign)}`);
   const name = String(member.name || '').trim();
   if (!name) throw new Error(`${callsign} has no member name on the roster.`);
@@ -1478,12 +1501,13 @@ async function lookupMember(callsign) {
 let memberDirectoryPromise = null;
 function loadMemberDirectory() {
   if (memberDirectoryPromise) return memberDirectoryPromise;
+  if (memberNameCache.size) {
+    refreshOnDutyCallsignChoices();
+    memberDirectoryPromise = Promise.resolve();
+    return memberDirectoryPromise;
+  }
   memberDirectoryPromise = request('/api/watch-command/members').then(members => {
-    for (const member of members || []) {
-      const callsign = String(member.callsign || '').trim().toUpperCase();
-      const name = String(member.name || '').trim();
-      if (callsign && name) memberNameCache.set(callsign, { name, rank: String(member.rank || '').trim() });
-    }
+    cacheWatchMemberDirectory(members);
     refreshOnDutyCallsignChoices();
   }).catch(error => {
     memberDirectoryPromise = null;
@@ -1502,6 +1526,10 @@ callsignInput.addEventListener('input', () => {
   updateAvailableChoices();
   if (!callsign) {
     memberLookup.textContent = 'Enter a callsign to look up the member name.';
+    return;
+  }
+  if (!/^[A-Z]+-\d+$/.test(callsign)) {
+    memberLookup.textContent = 'Enter a complete callsign to look up the member name.';
     return;
   }
   const cachedMember = memberNameCache.get(callsign);
@@ -1657,6 +1685,10 @@ initialCallsignInput.addEventListener('input', () => {
   const callsign = initialCallsignInput.value.trim().toUpperCase();
   if (!callsign) {
     initialMemberLookup.textContent = 'Enter a callsign to look up the member name.';
+    return;
+  }
+  if (!/^[A-Z]+-\d+$/.test(callsign)) {
+    initialMemberLookup.textContent = 'Enter a complete callsign to look up the member name.';
     return;
   }
   const cachedMember = memberNameCache.get(callsign);
