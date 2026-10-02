@@ -228,6 +228,12 @@ function memberFromRow(row) {
     has_advanced_firefighting: !!row.has_advanced_firefighting, has_supervisor_exam: !!row.has_supervisor_exam,
     has_hert: !!row.has_hert, do_not_promote: !!row.do_not_promote, days_in_rank: days };
 }
+function compareCallsigns(a, b) {
+  const left=String(a||"").trim().toUpperCase().match(/^([A-Z]+)-(\d+)$/);
+  const right=String(b||"").trim().toUpperCase().match(/^([A-Z]+)-(\d+)$/);
+  if(left && right && left[1]===right[1]) return Number(left[2])-Number(right[2]);
+  return String(a||"").localeCompare(String(b||""),undefined,{numeric:true,sensitivity:"base"});
+}
 async function readMembers(db, search = "", env = null, token = "") {
   // Do not seed an empty D1 database from Sheet during a read. Run Sync now.
   const q = String(search || "").trim().toLowerCase();
@@ -235,7 +241,7 @@ async function readMembers(db, search = "", env = null, token = "") {
     ? await db.prepare("SELECT * FROM members WHERE lower(callsign) LIKE ? OR lower(name) LIKE ? OR lower(rank) LIKE ? ORDER BY rank,name").bind(`%${q}%`,`%${q}%`,`%${q}%`).all()
     : await db.prepare("SELECT * FROM members ORDER BY rank,name").all();
   const rankOrder=["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer"];
-  return (result.results || []).map(memberFromRow).sort((a,b)=>(rankOrder.indexOf(a.rank)<0?999:rankOrder.indexOf(a.rank))-(rankOrder.indexOf(b.rank)<0?999:rankOrder.indexOf(b.rank)) || a.callsign.localeCompare(b.callsign));
+  return (result.results || []).map(memberFromRow).sort((a,b)=>(rankOrder.indexOf(a.rank)<0?999:rankOrder.indexOf(a.rank))-(rankOrder.indexOf(b.rank)<0?999:rankOrder.indexOf(b.rank)) || compareCallsigns(a.callsign,b.callsign));
 }
 function rankEligibility(member) {
   const rules = { EMR:["EMT",7,[],[]], Probationary:["EMT",7,[],[]], EMT:["AEMT",14,["has_basic_firefighting"],[]], AEMT:["Paramedic",21,["has_basic_firefighting","has_advanced_firefighting"],["has_supervisor_exam"]], "Advanced EMT":["Paramedic",21,["has_basic_firefighting","has_advanced_firefighting"],["has_supervisor_exam"]], "EMR/Volunteer":["Volunteer",7,[],[]], "Probationary Volunteer":["Volunteer",7,[],[]], Volunteer:["Senior Volunteer",14,[],[]] };
