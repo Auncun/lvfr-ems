@@ -1,4 +1,4 @@
-const API_PATHS = ["/api/", "/auth/"];
+const API_PATHS = ["/api/", "/auth/", "/internal/"];
 const DEFAULT_GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyoset4GXE3nQi6kXJvhiBOzLX-OP0_PxaxlHlzB66en5qpiQGEL67DPY48oeGhrqbc/exec";
 
 export async function onRequest(context) {
