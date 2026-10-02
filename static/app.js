@@ -134,7 +134,7 @@ function startBackgroundMutation(url, options) {
     else if (path === "/api/date") toast("Rank date updated.");
     else if (path.startsWith("/api/leaders/")) {
         const action = path.match(/\/(allow|deny|admin|demote|member|leader|deactivate|reactivate)$/)?.[1] || "delete";
-        const messages = { allow: "Account activated.", deny: "Account request denied.", admin: "Commander access granted.", demote: "Commander access removed.", member: "Member access set.", leader: "Leader access set.", deactivate: "Account deactivated.", reactivate: "Account reactivated.", delete: "Account deleted." };
+        const messages = { allow: "Account activated.", deny: "Account request denied.", admin: "Commander access granted.", demote: "Commander access removed.", member: "Member access set.", leader: "Supervisor access set.", deactivate: "Account deactivated.", reactivate: "Account reactivated.", delete: "Account deleted." };
         toast(messages[action]);
     }
     const request = fetch(url, {
@@ -1338,7 +1338,7 @@ async function loadLeaders() {
         if (hadCachedData) return;
         leaderRows = { approved: [], pending: [], deactivated: [] };
         leaderAuditRows = [];
-        const message = empty("Failed to load Leaders: " + e.message);
+        const message = empty("Failed to load Supervisors: " + e.message);
         if (pending) pending.innerHTML = message;
         if (all) all.innerHTML = message;
         if (audit) audit.innerHTML = message;
@@ -1363,7 +1363,7 @@ function renderLeaders() {
         else {
         const memberRoleAction = row.status === "approved"
             ? row.role === "member"
-                ? `<button type="button" class="primary" data-action="set-member-role" data-account-id="${esc(row.account_id)}" data-role="leader">Make Leader</button>`
+                ? `<button type="button" class="primary" data-action="set-member-role" data-account-id="${esc(row.account_id)}" data-role="leader">Make Supervisor</button>`
                 : `<button type="button" class="primary" data-action="set-member-role" data-account-id="${esc(row.account_id)}" data-role="member">Make Member</button>`
             : "";
         const stateAction = row.status === "deactivated"
@@ -1422,7 +1422,7 @@ function renderLeaders() {
                         <td class="leader-account-cell"><strong>${esc(row.name || row.display_name)}</strong><small>${row.callsign ? `Callsign ${esc(row.callsign)}` : "No Callsign linked"}</small></td>
                         <td>${esc(row.linked_at || "—")}</td>
                         <td class="leader-detail-cell"><span>${esc(row.approved_at || "—")}</span><small>By ${esc(row.approved_by || "—")}</small></td>
-                        <td>${row.is_admin ? "Commander" : row.role === "member" ? "Member" : "Leader"}</td>
+                        <td>${row.is_admin ? "Commander" : row.role === "member" ? "Member" : "Supervisor"}</td>
                         <td><span class="presence-badge ${row.online ? "online" : "offline"}">${row.online ? "Online" : "Offline"}</span></td>
                         <td class="leader-detail-cell">${row.admin_changed_at ? `<span>${esc(row.admin_changed_at)}</span><small>By ${esc(row.admin_changed_by || "—")}</small>` : "—"}</td>
                         <td class="leader-request-actions">${accountActions(row)}</td></tr>
@@ -1471,9 +1471,7 @@ function renderLeaders() {
 
 
 async function loadInstructors() {
-    const content = $("#membersLogContent"), view = $("#instructorsView"), table = $("#instructorsTable");
-    if (content) content.style.display = "none";
-    if (view) view.style.display = "block";
+    const table = $("#instructorsTable");
     if (table) table.innerHTML = '<div class="empty">Loading...</div>';
     try {
         const result = await api("/api/instructors");
@@ -1554,7 +1552,7 @@ async function setMemberRole(discordId, role) {
     if (makeMember && !confirm("Limit this account to Watch Command access?")) return;
     try {
         await api(`/api/leaders/${encodeURIComponent(discordId)}/${makeMember ? "member" : "leader"}`, { method: "POST" });
-        toast(makeMember ? "Member role queued; access will be limited to Watch Command." : "Leader role queued.");
+        toast(makeMember ? "Member role queued; access will be limited to Watch Command." : "Supervisor role queued.");
         await loadLeaders();
     } catch (e) {
         if (isBackgroundPending(e)) return;
@@ -1628,9 +1626,9 @@ async function loadMembersLog(
 ) {
 
     currentLogType = type;
-    const logContent = $("#membersLogContent"), instructorsView = $("#instructorsView");
-    if (logContent) logContent.style.display = "";
-    if (instructorsView) instructorsView.style.display = "none";
+    const logContent = $("#membersLogContent"), instructorLog = $("#instructorLog");
+    if (logContent) logContent.style.display = type === "instructor" ? "none" : "";
+    if (instructorLog) instructorLog.style.display = type === "instructor" ? "" : "none";
 
     document.querySelectorAll(".log-tab:not(.leader-view-tab)").forEach(button => {
         button.classList.toggle("active", button.dataset.log === type);
@@ -4095,7 +4093,7 @@ document
                         loadLeaders();
                     }
                     if (b.dataset.tab === "doNotPromote") loadDoNotPromote();
-                    if (b.dataset.tab === "instructorLog") loadMembersLog("instructor");
+                    if (b.dataset.tab === "instructorsDirectory") loadInstructors();
 
                 }
             );

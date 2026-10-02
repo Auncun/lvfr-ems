@@ -13,7 +13,7 @@ Roster edits and account changes update the local view immediately and are sent 
 ## Deployment
 
 1. Copy `apps-script/Code.gs` into the existing Apps Script project and save it. The API version should report `2026-09-30-fast-cache-6`.
-2. Deploy a new Web App version. Manual Sync now invalidates the Apps Script roster cache before it reads the roster and is available to approved Leaders as well as Command ranks.
+2. Deploy a new Web App version. Manual Sync now invalidates the Apps Script roster cache before it reads the roster and is available to approved Supervisors as well as Command ranks.
 3. Deploy the updated files from `dist` to Cloudflare Pages.
 
 No background trigger or `script.scriptapp` permission is required for this version. If you created a `processBackgroundJobs` trigger during setup, remove it from the Apps Script **Triggers** page.

@@ -11,7 +11,7 @@ body {
     display:flex;
     justify-content:space-between;
     align-items:center;
-    padding:18px 28px;
+    padding:18px 28px 18px 70px;
     background:#111720;
     border-bottom:1px solid #27303b;
     gap:20px
@@ -453,6 +453,26 @@ main {
     background: transparent;
     border-radius: 0;
 }
+
+.portal-back {
+    position: fixed;
+    z-index: 1000;
+    top: max(14px, env(safe-area-inset-top));
+    left: max(14px, env(safe-area-inset-left));
+    display: grid;
+    width: 42px;
+    height: 42px;
+    place-items: center;
+    border: 1px solid #303945;
+    border-radius: 50%;
+    background: #111720;
+    color: #e6edf3;
+    text-decoration: none;
+    font-size: 24px;
+    line-height: 1;
+}
+
+.portal-back:hover { background: #202b38; }
 
 .leader-request-actions {
     display: flex;

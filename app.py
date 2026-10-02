@@ -699,7 +699,7 @@ async def account_auth_guard(request: Request, call_next):
             return RedirectResponse("/watch-command", status_code=303)
         if path == "/":
             return RedirectResponse("/watch-command", status_code=303)
-    # A regular Leader may only use the two explicitly permitted member actions.
+    # A regular Supervisor may only use the two explicitly permitted member actions.
     # Keep account self-service and notification acknowledgements available.
     if (
         request.method in {"POST", "PUT", "PATCH", "DELETE"}
@@ -718,7 +718,7 @@ async def account_auth_guard(request: Request, call_next):
         and not path.startswith("/api/watch-command/")
     ):
         return JSONResponse(
-            {"detail": "Leaders may only promote EMT members to AEMT or change a callsign within the same rank."},
+            {"detail": "Supervisors may only promote EMT members to AEMT or change a callsign within the same rank."},
             status_code=403,
         )
     token = CURRENT_USER.set(user)
@@ -912,7 +912,7 @@ def _attach_linked_accounts_to_watch_logs(logs, accounts):
         if str(account.get("callsign") or "").strip()
         and account.get("status") not in {"removed", "denied"}
     }
-    role_labels = {"member": "Member", "leader": "Leader", "admin": "Commander", "commander": "Commander"}
+    role_labels = {"member": "Member", "leader": "Supervisor", "admin": "Commander", "commander": "Commander"}
     for log in logs:
         callsigns = dict.fromkeys(
             match.group(1).upper()
@@ -922,7 +922,7 @@ def _attach_linked_accounts_to_watch_logs(logs, accounts):
             {
                 "callsign": callsign,
                 "account_name": str(account_by_callsign[callsign].get("name") or ""),
-                "role": role_labels.get(str(account_by_callsign[callsign].get("role") or "").lower(), "Leader"),
+                "role": role_labels.get(str(account_by_callsign[callsign].get("role") or "").lower(), "Supervisor"),
             }
             for callsign in callsigns
             if callsign in account_by_callsign
@@ -1340,7 +1340,7 @@ def _refresh_leader_overview_in_background(baseline):
                     at=time.monotonic(), data=_public_leader_overview(rows, audit)
                 )
     except Exception as e:
-        logger.info(f"[LVFR EMS] Background Leaders refresh failed: {e}")
+        logger.info(f"[LVFR EMS] Background Supervisors refresh failed: {e}")
         with LEADER_OVERVIEW_LOCK:
             if LEADER_OVERVIEW_CACHE.get("data") is not None and LEADER_OVERVIEW_CACHE["at"] == baseline:
                 LEADER_OVERVIEW_CACHE["at"] = time.monotonic() - 270
@@ -1457,7 +1457,7 @@ def make_leader_account(account_id: str):
     if row["status"] != "approved": raise HTTPException(409, "Activate the account first")
     if row["role"] != "member": raise HTTPException(409, "Account is not a Member")
     row.update(role="leader", admin_changed_at=datetime.datetime.now().astimezone().isoformat(timespec="seconds"), admin_changed_by=current_actor())
-    _queue_account_change(row, "Changed role to Leader")
+    _queue_account_change(row, "Changed role to Supervisor")
     return {"ok": True, "status": "saving"}
 
 @app.post("/api/leaders/{account_id}/deactivate")
@@ -3821,7 +3821,7 @@ def promote(
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
         if str(member.get("rank") or "").strip().casefold() != "emt":
-            raise HTTPException(status_code=403, detail="Leaders may only promote EMT members to AEMT.")
+            raise HTTPException(status_code=403, detail="Supervisors may only promote EMT members to AEMT.")
 
     try:
 
@@ -3846,7 +3846,7 @@ def promote(
             )
 
         if not user.get("is_admin") and str(next_rank or "").strip().casefold() != "aemt":
-            raise HTTPException(status_code=403, detail="Leaders may only promote EMT members to AEMT.")
+            raise HTTPException(status_code=403, detail="Supervisors may only promote EMT members to AEMT.")
 
         if profile["rank"] in (
             "Probationary",
@@ -4107,7 +4107,7 @@ def change_callsign(
 
     user = CURRENT_USER.get() or {}
     if not user.get("is_admin") and a.force:
-        raise HTTPException(status_code=403, detail="Leaders cannot change a member's rank.")
+        raise HTTPException(status_code=403, detail="Supervisors cannot change a member's rank.")
 
     try:
 
@@ -4150,7 +4150,7 @@ def change_callsign(
         ):
             raise HTTPException(
                 status_code=403,
-                detail="Leaders may only change a callsign while keeping the member's current rank.",
+                detail="Supervisors may only change a callsign while keeping the member's current rank.",
             )
 
         if (

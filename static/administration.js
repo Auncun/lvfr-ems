@@ -49,7 +49,7 @@ function accountActions(account) {
     ? `<button type="button" data-action="demote" data-id="${id}">Remove Commander</button>`
     : `<button type="button" data-action="promote" data-id="${id}">Make Commander</button>`;
   const memberButton = account.role === 'member'
-    ? `<button type="button" data-action="leader" data-id="${id}">Make Leader</button>`
+    ? `<button type="button" data-action="leader" data-id="${id}">Make Supervisor</button>`
     : `<button type="button" data-action="member" data-id="${id}">Make Member</button>`;
   const deactivateButton = account.is_admin
     ? '<button type="button" disabled title="Remove Commander access first">Deactivate</button>'
@@ -74,7 +74,7 @@ function renderAccounts() {
   accountRows.innerHTML = rows.map(account => `
     <tr><td><strong>${esc(account.display_name || account.name)}</strong>${account.approved_by ? `<br><small class="muted">Approved by ${esc(account.approved_by)}</small>` : ''}</td>
       <td>${esc(account.callsign || '—')}</td><td>${esc(account.status)}</td>
-      <td>${account.is_admin ? 'Commander' : account.role === 'member' ? 'Member' : account.status === 'pending' ? '—' : 'Leader'}</td>
+      <td>${account.is_admin ? 'Commander' : account.role === 'member' ? 'Member' : account.status === 'pending' ? '—' : 'Supervisor'}</td>
       <td><span class="presence-badge ${account.online ? 'online' : 'offline'}">${account.online ? 'Online' : 'Offline'}</span></td>
       <td>${esc(account.requested_at || '—')}</td><td><div class="admin-actions">${accountActions(account)}</div></td></tr>`).join('');
 }
@@ -168,7 +168,7 @@ async function performAction(button) {
   };
   const method = action === 'delete' ? 'DELETE' : 'POST';
   applyOptimisticAccountAction(account, action);
-  const success = { allow: 'Account approved.', deny: 'Account request denied.', promote: 'Commander access granted.', demote: 'Commander access removed.', member: 'Account set to Member.', leader: 'Account set to Leader.', deactivate: 'Account deactivated.', reactivate: 'Account reactivated.', delete: 'Account deleted.' };
+  const success = { allow: 'Account approved.', deny: 'Account request denied.', promote: 'Commander access granted.', demote: 'Commander access removed.', member: 'Account set to Member.', leader: 'Account set to Supervisor.', deactivate: 'Account deactivated.', reactivate: 'Account reactivated.', delete: 'Account deleted.' };
   setMessage(success[action] || 'Account updated.', 'success');
   button.disabled = true;
   void api(paths[action], { method }).catch(error => {

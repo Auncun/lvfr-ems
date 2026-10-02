@@ -162,7 +162,7 @@ async function accountAction(db, id, action, actor) {
     case "admin": if (status !== "approved") throw new Error("Activate the account first."); role="admin"; changedAt=now; changedBy=actor.name; break;
     case "demote": if (!["admin","commander"].includes(role)) throw new Error("Account is not a Commander."); role="leader"; changedAt=now; changedBy=actor.name; break;
     case "member": if(status!=="approved" || ["admin","commander"].includes(role)) throw new Error("Remove Commander access first."); role="member"; changedAt=now; changedBy=actor.name; break;
-    case "leader": if(status!=="approved" || role!=="member") throw new Error("Only an approved Member can become a Leader."); role="leader"; changedAt=now; changedBy=actor.name; break;
+    case "leader": if(status!=="approved" || role!=="member") throw new Error("Only an approved Member can become a Supervisor."); role="leader"; changedAt=now; changedBy=actor.name; break;
     case "deactivate": if(status!=="approved" || ["admin","commander"].includes(role)) throw new Error("Remove Commander access first."); status="deactivated"; changedAt=now; changedBy=actor.name; break;
     case "reactivate": if(status!=="deactivated") throw new Error("Account is not deactivated."); status="approved"; activated=now; approvedBy=actor.name; break;
     case "delete": if(["admin","commander"].includes(role)) throw new Error("Remove Commander access before deleting the account."); status="removed"; break;

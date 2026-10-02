@@ -23,7 +23,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=account-settings-4"
+    href="/static/style.css?v=portal-back-1"
 >
 
 <style>
@@ -115,6 +115,8 @@
 
 
 <body>
+
+<a class="portal-back" href="/portal" aria-label="Back to Portal" title="Back to Portal">←</a>
 
 
 <!-- =========================================================
@@ -250,8 +252,8 @@
         Members Log
     </button>
 
-    <button id="instructorLogTab" data-tab="instructorLog" class="tab" style="display:none">
-        Instructor
+    <button id="instructorsDirectoryTab" data-tab="instructorsDirectory" class="tab" style="display:none">
+        Instructors
     </button>
 
 
@@ -261,7 +263,7 @@
         class="tab"
         style="display:none"
     >
-        Leaders
+        Supervisors
     </button>
 
 
@@ -596,8 +598,8 @@
             Activity
         </button>
 
-        <button type="button" class="log-tab" id="instructorsDirectoryTab" data-log="instructors" style="display:none">
-            Instructors
+        <button type="button" class="log-tab" id="instructorLogTab" data-log="instructor" style="display:none">
+            Instructor
         </button>
 
     </div>
@@ -666,7 +668,25 @@
 
     </div>
 
-    <div id="instructorsView" style="display:none">
+    <div id="instructorLog" style="display:none">
+        <div class="section-head"><div><h2>Instructor Log</h2></div></div>
+        <div class="log-toolbar">
+            <input id="instructorLogSearch" type="text" placeholder="Search instructor log" autocomplete="off">
+            <button type="button" id="instructorLogClearBtn">Clear</button>
+        </div>
+        <div id="instructorLogTable" class="table-wrap"></div>
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     INSTRUCTORS DIRECTORY
+     ========================================================= -->
+
+<section id="instructorsDirectory" class="panel">
+    <div class="section-head"><div><h2>Instructors</h2></div></div>
+    <div id="instructorsView">
         <div class="toolbar">
             <input id="instructorSearch" type="text" placeholder="Search instructor name" autocomplete="off">
             <button type="button" id="clearInstructorSearch">Clear</button>
@@ -682,22 +702,6 @@
         </div>
         <div id="instructorsTable" class="table-wrap"></div>
     </div>
-
-
-</section>
-
-
-<!-- =========================================================
-     INSTRUCTOR LOG
-     ========================================================= -->
-
-<section id="instructorLog" class="panel">
-    <div class="section-head"><div><h2>Instructor Log</h2></div></div>
-    <div class="log-toolbar">
-        <input id="instructorLogSearch" type="text" placeholder="Search instructor log" autocomplete="off">
-        <button type="button" id="instructorLogClearBtn">Clear</button>
-    </div>
-    <div id="instructorLogTable" class="table-wrap"></div>
 </section>
 
 
@@ -711,7 +715,7 @@
 >
     <div class="section-head">
         <div>
-            <h2>Leaders</h2>
+            <h2>Supervisors</h2>
         </div>
     </div>
 
@@ -731,9 +735,9 @@
         <p id="onlineAccountCount" class="online-account-count" aria-live="polite">Online now: —</p>
         <div class="log-filters leader-role-filter">
             <label for="leaderRoleFilter">Role</label>
-            <select id="leaderRoleFilter" aria-label="Filter Leaders by role">
+            <select id="leaderRoleFilter" aria-label="Filter Supervisors by role">
                 <option value="all">All roles</option>
-                <option value="leader">Leader</option>
+                <option value="leader">Supervisor</option>
                 <option value="member">Member</option>
                 <option value="admin">Commander</option>
             </select>
@@ -793,7 +797,7 @@
 
 <script src="/static/session-auth.js?v=shared-session-4"></script>
 <script src="/static/account-settings.js?v=account-settings-5"></script>
-<script src="/static/app.js?v=manual-sync-36-dnp-fast-rank-sort"></script>
+<script src="/static/app.js?v=manual-sync-38-supervisor-role-label"></script>
 <script src="/static/pwa.js"></script>
 
 

@@ -5,10 +5,10 @@
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Watch Command | LVFR</title>
-  <link rel="stylesheet" href="/static/style.css?v=account-settings-4">
+  <link rel="stylesheet" href="/static/style.css?v=portal-back-1">
   <style>
     body { min-height:100vh; background:#0b1017; color:#f3f6fa; }
-    .watch-shell { width:min(1100px,100%); margin:0 auto; padding:24px; }
+    .watch-shell { width:min(1100px,100%); margin:0 auto; padding:72px 24px 24px; }
     .watch-header { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:22px; }
     .watch-brand { display:flex; align-items:center; gap:12px; }
     .watch-header p,.hint { color:#9aa4b2; }
@@ -71,10 +71,11 @@
     .watch-log-grid p.watch-na { color:#788391; }
     .watch-empty { color:#9aa4b2; }
     @media(max-width:850px) { .quick-controls{grid-template-columns:repeat(2,minmax(0,1fr))} }
-    @media(max-width:650px) { .watch-shell{padding:14px}.watch-card{padding:16px}.watch-fields,.watch-log-grid{grid-template-columns:1fr}.watch-fields .wide{grid-column:auto}.quick-controls{grid-template-columns:1fr 1fr}.watch-log-title-row{align-items:flex-start;flex-direction:column} }
+    @media(max-width:650px) { .watch-shell{padding:72px 14px 14px}.watch-card{padding:16px}.watch-fields,.watch-log-grid{grid-template-columns:1fr}.watch-fields .wide{grid-column:auto}.quick-controls{grid-template-columns:1fr 1fr}.watch-log-title-row{align-items:flex-start;flex-direction:column} }
   </style>
 </head>
 <body>
+  <a class="portal-back" href="/portal" aria-label="Back to Portal" title="Back to Portal">←</a>
   <main class="watch-shell">
     <header class="watch-header">
       <div class="watch-brand"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"><div><h1>Watch Command</h1><p>Create and review watch handover logs.</p></div></div>

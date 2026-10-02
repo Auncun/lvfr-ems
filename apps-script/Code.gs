@@ -1288,10 +1288,10 @@ function rankLevel_(rank) {
 
 function promoteMember_(data, user) {
   const old = memberByCallsign_(data.callsign);
-  if (!isAdmin_(user) && old.rank.toLowerCase() !== 'emt') throw new Error('Leaders may only promote EMT members to AEMT.');
+  if (!isAdmin_(user) && old.rank.toLowerCase() !== 'emt') throw new Error('Supervisors may only promote EMT members to AEMT.');
   const eligibility = eligibility_(old);
   if (!eligibility.eligible) throw new Error(eligibility.reason);
-  if (!isAdmin_(user) && eligibility.next_rank.toLowerCase() !== 'aemt') throw new Error('Leaders may only promote EMT members to AEMT.');
+  if (!isAdmin_(user) && eligibility.next_rank.toLowerCase() !== 'aemt') throw new Error('Supervisors may only promote EMT members to AEMT.');
   const target = nextEmptyCallsign_(eligibility.next_rank);
   moveMember_(old, target, eligibility.next_rank, user, 'NORMAL');
   return { ok: true, new_callsign: target.callsign, new_rank: eligibility.next_rank };
@@ -1319,7 +1319,7 @@ function changeMemberCallsign_(data, user) {
   if (!next || next === old.callsign || LVFR.ignoredCallsigns.has(next)) throw new Error('Enter a different valid Callsign.');
   const rank = rankFromCallsign_(next);
   if (old.do_not_promote && rank && rankLevel_(rank) > rankLevel_(old.rank)) throw new Error('This member is on the Do not Promote list.');
-  if (!isAdmin_(user) && (data.force || rank !== old.rank)) throw new Error('Leaders may only change a Callsign while keeping the member’s current rank.');
+  if (!isAdmin_(user) && (data.force || rank !== old.rank)) throw new Error('Supervisors may only change a Callsign while keeping the member’s current rank.');
   if (isAdmin_(user) && rank && rank !== old.rank && !data.force) throw new Error('The Callsign belongs to a different rank. Confirm a rank change first.');
   const target = emptyRowForCallsign_(next);
   moveMember_(old, target, isAdmin_(user) && rank ? rank : old.rank, user, 'CALLSIGN_CHANGE');
@@ -1639,7 +1639,7 @@ function updateAccount_(accountId, action, actor) {
       sheet.getRange(rowNumber, 11, 1, 2).setValues([[now, actorName]]);
       break;
     case 'leader':
-      if (status !== 'approved' || role !== 'member') throw new Error('Only an approved Member can become a Leader.');
+      if (status !== 'approved' || role !== 'member') throw new Error('Only an approved Member can become a Supervisor.');
       sheet.getRange(rowNumber, 7).setValue('leader'); role = 'leader';
       sheet.getRange(rowNumber, 11, 1, 2).setValues([[now, actorName]]);
       break;
@@ -1841,7 +1841,7 @@ function linkedWatchAccounts_(rollCall, accounts) {
     seen.add(callsign);
     const account = byCallsign.get(callsign);
     if (!account) continue;
-    result.push({ callsign, account_name: account.name, role: account.role === 'member' ? 'Member' : (isAdmin_(account) ? 'Commander' : 'Leader') });
+    result.push({ callsign, account_name: account.name, role: account.role === 'member' ? 'Member' : (isAdmin_(account) ? 'Commander' : 'Supervisor') });
   }
   return result;
 }
