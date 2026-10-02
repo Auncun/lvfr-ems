@@ -188,18 +188,19 @@ async function applyRosterMutationD1(db, route, data, actor) {
     return {ok:true};
   }
   else if(["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign"].includes(route)) {
-    const nextRank=route==="/api/promote"?(rankEligibility(memberFromRow(old)).next_rank):String(data.new_rank||old.rank);
+    const nextRank=route==="/api/promote"?(rankEligibility(memberFromRow(old)).next_rank):String(data.new_rank||old.rank).trim();
     let nextCs=String(data.d1_target_callsign||data.new_callsign||"").toUpperCase();
     if(!nextCs && route!=="/api/change-callsign") {
-      const available=await db.prepare("SELECT callsign FROM callsign_slots WHERE rank=? ORDER BY COALESCE(sheet_row,2147483647),callsign LIMIT 1").bind(nextRank).first();
+      const available=await db.prepare("SELECT callsign FROM callsign_slots WHERE lower(trim(rank))=lower(trim(?)) ORDER BY COALESCE(sheet_row,2147483647),callsign LIMIT 1").bind(nextRank).first();
       nextCs=String(available?.callsign||"").toUpperCase();
     }
-    if(!nextCs||nextCs===old.callsign) throw new Error("A destination Callsign is required.");
+    if(!nextCs||nextCs===old.callsign) throw new Error("No empty Callsign slot is available for " + nextRank + ". Run Sync now to refresh the available slots.");
     const slot=await db.prepare("SELECT rank FROM callsign_slots WHERE upper(callsign)=?").bind(nextCs).first();
     if(!slot) throw new Error("That Callsign is not an available roster slot. Run Sync now and try again.");
-    if(route!=="/api/change-callsign" && slot.rank!==nextRank) throw new Error("The destination Callsign does not match the selected rank.");
-    if(route==="/api/change-callsign" && !admin && slot.rank!==old.rank) throw new Error("Supervisors may only change a Callsign while keeping the member’s current rank.");
-    if(route==="/api/change-callsign" && admin && slot.rank!==old.rank && !data.force) throw new Error("The Callsign belongs to a different rank. Confirm a rank change first.");
+    const slotRank=String(slot.rank||"").trim().toLowerCase();
+    if(route!=="/api/change-callsign" && slotRank!==nextRank.toLowerCase()) throw new Error("The destination Callsign does not match the selected rank.");
+    if(route==="/api/change-callsign" && !admin && slotRank!==String(old.rank||"").trim().toLowerCase()) throw new Error("Supervisors may only change a Callsign while keeping the member’s current rank.");
+    if(route==="/api/change-callsign" && admin && slotRank!==String(old.rank||"").trim().toLowerCase() && !data.force) throw new Error("The Callsign belongs to a different rank. Confirm a rank change first.");
     if(old.do_not_promote && (RANK_LEVEL[nextRank]||0)>(RANK_LEVEL[old.rank]||0)) throw new Error("This member is on the Do not Promote list.");
     if(route==="/api/force-promote" && (RANK_LEVEL[nextRank]||0)<=(RANK_LEVEL[old.rank]||0)) throw new Error("You can only promote to a higher rank.");
     if(route==="/api/demote" && (RANK_LEVEL[nextRank]||0)>=(RANK_LEVEL[old.rank]||0)) throw new Error("You can only demote to a lower rank.");
