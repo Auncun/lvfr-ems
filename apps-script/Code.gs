@@ -99,6 +99,8 @@ function dispatch_(route, method, params, data, user) {
     return listMembers_(String(params.search || ''));
   }
   if (route === '/api/eligible' && method === 'GET') { requireLeader_(user); return eligibleMembers_(); }
+  if (route === '/api/do-not-promote' && method === 'GET') { requireAdmin_(user); return listDoNotPromote_(); }
+  if (route === '/api/do-not-promote' && method === 'POST') { requireAdmin_(user); return setDoNotPromote_(data, user); }
   if (route === '/api/inactive' && method === 'GET') { requireAdmin_(user); return inactiveMembers_(); }
   if (route === '/api/sync-status' && method === 'GET') { requireLeader_(user); return syncStatus_(); }
   if (route === '/api/sync' && method === 'POST') {
@@ -628,6 +630,7 @@ function notificationVisibleTo_(row, user) {
 }
 
 function listNotifications_(user) {
+  if (String(user.role || '').toLowerCase() === 'member') return { items: [], unread_count: 0 };
   const sheets = notificationSheets_();
   sheets.accounts = accountsSheet_();
   syncNotifications_(user, sheets);
@@ -645,6 +648,7 @@ function listNotifications_(user) {
 }
 
 function markNotificationsRead_(data, user) {
+  if (String(user.role || '').toLowerCase() === 'member') return { ok: true };
   const sheets = notificationSheets_();
   const requested = new Set((Array.isArray(data.ids) ? data.ids : []).map(value => String(Number(value))).filter(value => value !== 'NaN'));
   const rows = sheets.notifications.getLastRow() > 1
@@ -875,6 +879,7 @@ function readRosterMembers_() {
   const colors = sheet.getRange(2, 6, count, 4).getBackgrounds();
   const hertByName = hertDirectory_(spreadsheet);
   const instructorsByName = new Map(instructorDirectory_(spreadsheet).map(item => [item.name.toLowerCase(), item]));
+  const doNotPromote = doNotPromoteCallsigns_();
   const rankByCallsign = Object.create(null);
   let rank = 'Probationary';
   const records = [];
@@ -905,7 +910,8 @@ function readRosterMembers_() {
       has_supervisor_exam: hasColor_(colors[index][0]),
       has_hert: Boolean(hertByName.get(name.toLowerCase())),
       activity: activityFromColor_(colors[index][3]),
-      instructor_type: (instructorsByName.get(name.toLowerCase()) || {}).type || ''
+      instructor_type: (instructorsByName.get(name.toLowerCase()) || {}).type || '',
+      do_not_promote: doNotPromote.has(callsign)
     };
     records.push(item);
   });
@@ -926,6 +932,7 @@ function memberProfile_(callsign, user) {
     eligible: eligibility.eligible,
     eligibility_reason: eligibility.reason,
     next_rank: eligibility.next_rank,
+    do_not_promote: Boolean(member.do_not_promote),
     instructor_type: isCommand_(user) ? member.instructor_type : '',
     instructor_date: ''
   });
@@ -984,6 +991,7 @@ function eligibility_(member) {
     'Volunteer': { rank: 'Senior Volunteer', days: 14, trainings: [], exams: [] }
   };
   const rule = requirements[member.rank];
+  if (member.do_not_promote) return { eligible: false, reason: "Can't be promoted (DO NOT PROMOTE list)", next_rank: rule ? rule.rank : '' };
   if (!rule || ['Probationary', 'Probationary Volunteer'].includes(member.rank)) return { eligible: false, reason: 'No automatic promotion available', next_rank: '' };
   const missing = [];
   if (Number(member.days_in_rank || 0) < rule.days) missing.push((rule.days - Number(member.days_in_rank || 0)) + ' more day(s)');
@@ -1003,6 +1011,62 @@ function eligibleMembers_() {
     member.eligibility_reason = eligibility.reason;
     return true;
   });
+}
+
+const DO_NOT_PROMOTE_TAB = 'DO NOT PROMOTE';
+const DO_NOT_PROMOTE_HEADERS = ['Callsign', 'Name', 'Added At', 'Added By'];
+
+function doNotPromoteSheet_() {
+  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+  let sheet = spreadsheet.getSheetByName(DO_NOT_PROMOTE_TAB);
+  if (!sheet) sheet = spreadsheet.insertSheet(DO_NOT_PROMOTE_TAB);
+  if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, DO_NOT_PROMOTE_HEADERS.length).setValues([DO_NOT_PROMOTE_HEADERS]);
+  return sheet;
+}
+
+function doNotPromoteCallsigns_() {
+  const cache = CacheService.getScriptCache(), key = 'members:do-not-promote:v1';
+  const cached = cache.get(key);
+  if (cached) { try { return new Set(JSON.parse(cached)); } catch (ignored) {} }
+  const sheet = doNotPromoteSheet_(), count = Math.max(0, sheet.getLastRow() - 1);
+  const callsigns = count ? sheet.getRange(2, 1, count, 1).getDisplayValues()
+    .map(row => String(row[0] || '').trim().toUpperCase()).filter(Boolean) : [];
+  try { cache.put(key, JSON.stringify(callsigns), 300); } catch (ignored) {}
+  return new Set(callsigns);
+}
+
+function listDoNotPromote_() {
+  const sheet = doNotPromoteSheet_(), count = Math.max(0, sheet.getLastRow() - 1);
+  return count ? sheet.getRange(2, 1, count, DO_NOT_PROMOTE_HEADERS.length).getDisplayValues()
+    .filter(row => row[0])
+    .map(row => ({ callsign: row[0], name: row[1], added_at: row[2], added_by: row[3] })) : [];
+}
+
+function setDoNotPromote_(data, user) {
+  if (typeof data.blocked !== 'boolean') throw new Error('Choose whether to add or remove this member from DO NOT PROMOTE.');
+  const member = memberByCallsign_(data.callsign);
+  const blocked = data.blocked;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = doNotPromoteSheet_(), count = Math.max(0, sheet.getLastRow() - 1);
+    const rows = count ? sheet.getRange(2, 1, count, DO_NOT_PROMOTE_HEADERS.length).getDisplayValues() : [];
+    const index = rows.findIndex(row => String(row[0] || '').trim().toUpperCase() === member.callsign);
+    if (blocked && index < 0) sheet.appendRow([member.callsign, member.name, new Date().toISOString(), actorName_(user)]);
+    else if (!blocked && index >= 0) sheet.deleteRow(index + 2);
+    CacheService.getScriptCache().remove('members:do-not-promote:v1');
+    invalidateRosterCache_();
+    return { ok: true, callsign: member.callsign, blocked, changed: blocked ? index < 0 : index >= 0 };
+  } finally { lock.releaseLock(); }
+}
+
+function moveDoNotPromoteCallsign_(oldCallsign, newCallsign, name) {
+  const sheet = doNotPromoteSheet_(), count = Math.max(0, sheet.getLastRow() - 1);
+  if (!count) return;
+  const rows = sheet.getRange(2, 1, count, DO_NOT_PROMOTE_HEADERS.length).getDisplayValues();
+  const index = rows.findIndex(row => String(row[0] || '').trim().toUpperCase() === oldCallsign);
+  if (index >= 0) sheet.getRange(index + 2, 1, 1, 2).setValues([[newCallsign, name]]);
+  CacheService.getScriptCache().remove('members:do-not-promote:v1');
 }
 
 function inactiveMembers_() {
@@ -1234,6 +1298,7 @@ function changeMemberRank_(data, user, operation) {
   const rank = String(data.new_rank || '').trim();
   if (!rank || !LVFR.ranks.includes(rank)) throw new Error('Choose a valid rank.');
   const oldLevel = rankLevel_(old.rank), newLevel = rankLevel_(rank);
+  if (old.do_not_promote && newLevel > oldLevel) throw new Error('This member is on the DO NOT PROMOTE list.');
   if (operation === 'FORCE' && !(newLevel > oldLevel)) throw new Error('You can only promote to a higher rank.');
   if (operation === 'DEMOTION' && !(newLevel < oldLevel)) throw new Error('You can only demote to a lower rank.');
   if (operation === 'CHANGE_RANK' && ![
@@ -1249,6 +1314,7 @@ function changeMemberCallsign_(data, user) {
   const next = String(data.new_callsign || '').trim().toUpperCase();
   if (!next || next === old.callsign || LVFR.ignoredCallsigns.has(next)) throw new Error('Enter a different valid Callsign.');
   const rank = rankFromCallsign_(next);
+  if (old.do_not_promote && rank && rankLevel_(rank) > rankLevel_(old.rank)) throw new Error('This member is on the DO NOT PROMOTE list.');
   if (!isAdmin_(user) && (data.force || rank !== old.rank)) throw new Error('Leaders may only change a Callsign while keeping the member’s current rank.');
   if (isAdmin_(user) && rank && rank !== old.rank && !data.force) throw new Error('The Callsign belongs to a different rank. Confirm a rank change first.');
   const target = emptyRowForCallsign_(next);
@@ -1284,6 +1350,7 @@ function moveMember_(member, target, newRank, user, operation) {
   sheet.getRange(member.row, 3, 1, 7).clearContent().setBackground('#ffffff');
   sheet.getRange(member.row, 11, 1, 3).clearContent().setBackground('#ffffff');
   sheet.getRange(member.row, 2).setValue(oldCallsign);
+  if (member.do_not_promote) moveDoNotPromoteCallsign_(oldCallsign, target.callsign, member.name);
   const event = operation === 'DEMOTION' ? 'Demoted' : operation === 'CALLSIGN_CHANGE' ? 'Callsign Changed' : operation === 'CHANGE_RANK' ? 'Rank Changed' : 'Promoted';
   const timestamp = new Date().toISOString();
   appendArchiveLog_({ timestamp, event, member: member.name, callsign: target.callsign, old_callsign: oldCallsign, new_callsign: target.callsign, old_rank: oldRank, new_rank: newRank, details: '', actor: actorName_(user), actor_callsign: user.callsign });

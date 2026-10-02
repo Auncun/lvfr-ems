@@ -404,6 +404,8 @@ document.addEventListener("click", event => {
     switch (action) {
         case "profile": profile(callsign); break;
         case "promote": promote(callsign); break;
+        case "do-not-promote": setMemberPromotionBlock(callsign, control.dataset.blocked === "true"); break;
+        case "do-not-promote-remove": setMemberPromotionBlock(callsign, false); break;
         case "open-manage": openManage(callsign); break;
         case "terminate": terminate(callsign); break;
         case "training-add": training(callsign, false); break;
@@ -1013,6 +1015,7 @@ function calculateEligibleFromCache(members) {
         "Volunteer": ["Senior Volunteer", 14, false, false, false]
     };
     return members.flatMap(member => {
+        if (member.do_not_promote) return [];
         const rule = rules[member.rank];
         if (!rule || Number(member.days_in_rank || 0) < rule[1]) return [];
         if (rule[2] && !member.has_basic_firefighting) return [];
@@ -1033,6 +1036,9 @@ function calculateMemberEligibility(member) {
         "Probationary Volunteer": { next_rank: "Volunteer", days: 7 },
         "Volunteer": { next_rank: "Senior Volunteer", days: 14 }
     };
+    if (member.do_not_promote) {
+        return { eligible: false, eligibility_reason: "Can't be promoted (DO NOT PROMOTE list)", next_rank: rules[member.rank]?.next_rank || "" };
+    }
     const rule = rules[member.rank];
     if (!rule || ["Probationary", "Probationary Volunteer"].includes(member.rank)) {
         return { eligible: false, eligibility_reason: "No automatic promotion available", next_rank: "" };
@@ -2605,7 +2611,7 @@ async function profile(
                 <div class="actions">
 
 
-                    ${(currentUserIsAdmin || (m.eligible && String(m.rank || "").trim().toLowerCase() === "emt" && String(m.next_rank || "").trim().toLowerCase() === "aemt")) ? `<button
+                    ${(currentUserIsAdmin && !m.do_not_promote || (m.eligible && String(m.rank || "").trim().toLowerCase() === "emt" && String(m.next_rank || "").trim().toLowerCase() === "aemt")) ? `<button
                         type="button"
                         class="primary"
                         data-action="promote"
@@ -2614,6 +2620,12 @@ async function profile(
                         Promote
                     </button>
                     ` : ""}
+
+                    ${currentUserIsAdmin ? `<button type="button" class="${m.do_not_promote ? "danger" : ""}"
+                        data-action="do-not-promote" data-blocked="${m.do_not_promote ? "false" : "true"}"
+                        data-callsign="${esc(m.callsign)}">
+                        ${m.do_not_promote ? "Remove from DO NOT PROMOTE" : "Add to DO NOT PROMOTE"}
+                    </button>` : ""}
 
 
                     <button
@@ -4065,6 +4077,7 @@ document
                     if (b.dataset.tab === "leaders") {
                         loadLeaders();
                     }
+                    if (b.dataset.tab === "doNotPromote") loadDoNotPromote();
 
                 }
             );
@@ -4451,12 +4464,54 @@ function applyAccountUser(user) {
     if (callsignDisplay) callsignDisplay.textContent = `Current callsign: ${user.callsign || ""}`;
     const leadersTab = $("#leadersTab");
     if (leadersTab) leadersTab.style.display = user.is_admin ? "" : "none";
+    const doNotPromoteTab = $("#doNotPromoteTab");
+    if (doNotPromoteTab) doNotPromoteTab.style.display = user.is_admin ? "" : "none";
     const inactiveTab = $("#inactiveTab");
     if (inactiveTab) inactiveTab.style.display = (user.is_admin || user.is_command) ? "" : "none";
     const terminationLogTab = $("#terminationLogTab");
     if (terminationLogTab) terminationLogTab.style.display = user.is_admin ? "" : "none";
     const instructorLogTab = $("#instructorLogTab");
     if (instructorLogTab) instructorLogTab.style.display = user.is_admin ? "" : "none";
+}
+
+let doNotPromoteRows = [];
+
+async function loadDoNotPromote() {
+    try {
+        doNotPromoteRows = await api("/api/do-not-promote");
+        renderDoNotPromote();
+    } catch (error) { toast(error.message); }
+}
+
+function renderDoNotPromote() {
+    const container = $("#doNotPromoteTable");
+    if (!container) return;
+    container.innerHTML = doNotPromoteRows.length ? `
+        <table><thead><tr><th>Callsign</th><th>Name</th><th>Added At</th><th>Added By</th><th></th></tr></thead>
+        <tbody>${doNotPromoteRows.map(member => `
+            <tr>
+                <td>${esc(member.callsign)}</td><td>${esc(member.name)}</td>
+                <td>${esc(member.added_at)}</td><td>${esc(member.added_by)}</td>
+                <td><button type="button" data-action="profile" data-callsign="${esc(member.callsign)}">View</button>
+                    <button type="button" class="danger" data-action="do-not-promote-remove" data-callsign="${esc(member.callsign)}">Remove</button></td>
+            </tr>`).join("")}</tbody></table>` : empty("The DO NOT PROMOTE list is empty.");
+}
+
+async function setMemberPromotionBlock(callsign, blocked) {
+    if (blocked && !confirm(`Add ${callsign} to DO NOT PROMOTE? They will be excluded from Eligible and cannot be promoted.`)) return;
+    try {
+        await api("/api/do-not-promote", { method: "POST", body: JSON.stringify({ callsign, blocked }) });
+        apiReadCache.clear();
+        await loadMembers(true);
+        if (activeProfileMember?.callsign?.toUpperCase() === String(callsign).toUpperCase()) {
+            const fresh = await api(`/api/member/${encodeURIComponent(callsign)}`);
+            memberCache.set(String(callsign).toUpperCase(), fresh);
+            profile(callsign, true, fresh);
+        }
+        if ($(".tab.active")?.dataset.tab === "eligible") await loadEligible();
+        if ($(".tab.active")?.dataset.tab === "doNotPromote") await loadDoNotPromote();
+        toast(blocked ? `${callsign} added to DO NOT PROMOTE.` : `${callsign} removed from DO NOT PROMOTE.`);
+    } catch (error) { toast(error.message); }
 }
 
 async function loadAccount() {
@@ -4489,6 +4544,7 @@ async function loadAccount() {
         currentUserIsCommand = Boolean(cachedUser.is_command);
         if ($("#accountName")) $("#accountName").textContent = cachedUser.name || "";
         if ($("#leadersTab")) $("#leadersTab").style.display = cachedUser.is_admin ? "" : "none";
+        if ($("#doNotPromoteTab")) $("#doNotPromoteTab").style.display = cachedUser.is_admin ? "" : "none";
         if ($("#inactiveTab")) $("#inactiveTab").style.display = (cachedUser.is_admin || cachedUser.is_command) ? "" : "none";
         if ($("#terminationLogTab")) $("#terminationLogTab").style.display = cachedUser.is_admin ? "" : "none";
         if ($("#instructorLogTab")) $("#instructorLogTab").style.display = cachedUser.is_admin ? "" : "none";
