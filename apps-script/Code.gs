@@ -105,8 +105,8 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/sync-status' && method === 'GET') { requireLeader_(user); return syncStatus_(); }
   if (route === '/api/sync' && method === 'POST') {
     requireLeader_(user);
-    const result = syncRosterSnapshot_('manual');
-    return { ok: true, members: result.members, available_callsigns: availableCallsigns_(), callsign_slots: availableCallsignInventory_(), synced_at: result.synced_at, message: 'Roster synchronized' };
+    const result = syncRosterSnapshotToD1_('manual');
+    return Object.assign({}, result, { message: result.skipped ? 'Roster already synchronized' : 'Roster synchronized' });
   }
   if (route === '/api/notifications' && method === 'GET') { requireApproved_(user); return listNotifications_(user); }
   if (route === '/api/notifications/read' && method === 'POST') { requireApproved_(user); return markNotificationsRead_(data, user); }
@@ -1060,20 +1060,56 @@ function syncRosterToD1OnChange_(event) {
   syncRosterSnapshotToD1_();
 }
 
-function syncRosterSnapshotToD1_() {
+function syncRosterSnapshotToD1_(source) {
   const workerUrl = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_SYNC_URL') || '').trim();
   const workerSecret = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
   if (!workerUrl || !workerSecret) throw new Error('Configure LVFR_D1_SYNC_URL and LVFR_D1_WORKER_SECRET in Script Properties.');
-  invalidateRosterCache_();
-  CacheService.getScriptCache().removeAll(['instructor-directory:v1', 'members:do-not-promote:v1', 'members:do-not-promote:list:v1']);
-  const members = readRosterMembers_();
-  const response = UrlFetchApp.fetch(workerUrl.replace(/\/$/, '') + '/internal/members/sync', {
-    method: 'post', contentType: 'application/json',
-    headers: { 'X-LVFR-Worker-Secret': workerSecret },
-    payload: JSON.stringify({ members, available_callsigns: availableCallsigns_(), callsign_slots: availableCallsignInventory_() }), muteHttpExceptions: true
-  });
-  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
-    throw new Error('D1 roster sync failed: HTTP ' + response.getResponseCode() + ' ' + response.getContentText());
+  // Serialize snapshot reads, D1 writes, and fingerprint commits. Without this
+  // lock an older concurrent sync could finish last and overwrite a newer hash.
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    invalidateRosterCache_();
+    CacheService.getScriptCache().removeAll(['instructor-directory:v1', 'members:do-not-promote:v1', 'members:do-not-promote:list:v1']);
+    const members = readRosterMembers_();
+    const callsign_slots = availableCallsignInventory_();
+    const available_callsigns = availableCallsigns_();
+    const payload = { members, available_callsigns, callsign_slots };
+    // Stable key ordering and stable array ordering make the fingerprint
+    // describe roster content rather than incidental serialization order.
+    const canonicalPayload = {
+      available_callsigns: Object.keys(available_callsigns).sort().reduce((out, key) => { out[key] = available_callsigns[key]; return out; }, {}),
+      callsign_slots: callsign_slots.slice().sort((a, b) => String(a.rank).localeCompare(String(b.rank)) || Number(a.row || 0) - Number(b.row || 0) || String(a.callsign).localeCompare(String(b.callsign))),
+      members: members.slice().sort((a, b) => String(a.callsign).localeCompare(String(b.callsign)))
+    };
+    const fingerprint = Utilities.base64EncodeWebSafe(Utilities.computeDigest(
+      Utilities.DigestAlgorithm.SHA_256, JSON.stringify(canonicalPayload)
+    )).replace(/=+$/, '');
+    const properties = PropertiesService.getScriptProperties();
+    const fingerprintKey = 'LVFR_D1_ROSTER_SNAPSHOT_SHA256';
+    if (properties.getProperty(fingerprintKey) === fingerprint) {
+      console.log('Roster snapshot unchanged → skipped (' + (source || 'trigger') + ').');
+      return { ok: true, skipped: true, reason: 'Roster snapshot unchanged', members: members.length };
+    }
+
+    console.log('Roster snapshot changed → syncing (' + (source || 'trigger') + ').');
+    const response = UrlFetchApp.fetch(workerUrl.replace(/\/$/, '') + '/internal/members/sync', {
+      method: 'post', contentType: 'application/json',
+      headers: { 'X-LVFR-Worker-Secret': workerSecret },
+      payload: JSON.stringify(payload), muteHttpExceptions: true
+    });
+    const responseBody = response.getContentText();
+    let syncResult = null;
+    try { syncResult = JSON.parse(responseBody); } catch (ignored) {}
+    if (response.getResponseCode() < 200 || response.getResponseCode() >= 300 || !syncResult || syncResult.ok !== true) {
+      console.error('D1 sync failed → hash not saved. HTTP ' + response.getResponseCode());
+      throw new Error('D1 roster sync failed: HTTP ' + response.getResponseCode() + ' ' + responseBody);
+    }
+    properties.setProperty(fingerprintKey, fingerprint);
+    console.log('D1 sync successful → hash saved (' + fingerprint + ').');
+    return { ok: true, skipped: false, members: members.length, synced_at: new Date().toISOString() };
+  } finally {
+    lock.releaseLock();
   }
 }
 

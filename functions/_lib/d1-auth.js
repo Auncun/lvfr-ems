@@ -69,6 +69,12 @@ async function syncMembersFromAppsScript(db, env, token = "", forceFresh = false
   const snapshot = forceFresh
     ? await gasCall(env, "/api/sync", "POST", {}, token)
     : await gasCall(env, "/api/members", "GET", {}, token);
+  // /api/sync is executed by Apps Script, which now posts the authoritative
+  // Sheet snapshot to D1 and returns whether it synced or skipped.
+  if (forceFresh) {
+    if (!snapshot || snapshot.ok !== true) throw new Error("Apps Script returned an invalid sync result.");
+    return snapshot;
+  }
   const members = Array.isArray(snapshot) ? snapshot : snapshot && snapshot.members;
 
   if (!Array.isArray(members)) {
@@ -500,7 +506,7 @@ export async function handleD1(context) {
     if(route==="/api/sync" && method==="POST") {
       if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can synchronize the roster."),{status:403});
       const result=await syncMembersFromAppsScript(db,env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET),true);
-      return json({...result,message:"Roster synchronized from Google Sheets"});
+      return json({...result,message:result.skipped?"Roster snapshot unchanged; sync skipped":"Roster synchronized from Google Sheets"});
     }
     const instructorWrite=route.match(/^\/api\/member\/([^/]+)\/instructor$/);
     if(method==="POST" && (MEMBER_WRITE_ROUTES.has(route)||instructorWrite)) {
