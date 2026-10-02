@@ -189,13 +189,17 @@ async function applyRosterMutationD1(db, route, data, actor) {
   }
   else if(["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign"].includes(route)) {
     const nextRank=route==="/api/promote"?(rankEligibility(memberFromRow(old)).next_rank):String(data.new_rank||old.rank).trim();
-    let nextCs=String(data.d1_target_callsign||data.new_callsign||"").toUpperCase();
-    if(!nextCs && route!=="/api/change-callsign") {
-      const available=await db.prepare("SELECT callsign FROM callsign_slots WHERE lower(trim(rank))=lower(trim(?)) ORDER BY COALESCE(sheet_row,2147483647),callsign LIMIT 1").bind(nextRank).first();
-      nextCs=String(available?.callsign||"").toUpperCase();
+    let nextCs=String(data.d1_target_callsign||data.new_callsign||"").trim().toUpperCase();
+    let slot;
+    if(route!=="/api/change-callsign") {
+      slot=await db.prepare("SELECT rank,callsign,sheet_row FROM callsign_slots WHERE lower(trim(rank))=lower(trim(?)) ORDER BY CASE WHEN sheet_row IS NULL THEN 1 ELSE 0 END,sheet_row,callsign LIMIT 1").bind(nextRank).first();
+      const firstCallsign=String(slot?.callsign||"").trim().toUpperCase();
+      if(!firstCallsign) throw new Error("No empty Callsign slot is recorded for " + nextRank + ". Please run Sync now.");
+      if(nextCs && nextCs!==firstCallsign) throw new Error("The first empty Callsign in the roster has changed. Please run Sync now and retry.");
+      nextCs=firstCallsign;
     }
     if(!nextCs||nextCs===old.callsign) throw new Error("No empty Callsign slot is available for " + nextRank + ". Run Sync now to refresh the available slots.");
-    const slot=await db.prepare("SELECT rank FROM callsign_slots WHERE upper(callsign)=?").bind(nextCs).first();
+    if(!slot) slot=await db.prepare("SELECT rank,callsign,sheet_row FROM callsign_slots WHERE upper(callsign)=?").bind(nextCs).first();
     if(!slot) throw new Error("That Callsign is not an available roster slot. Run Sync now and try again.");
     const slotRank=String(slot.rank||"").trim().toLowerCase();
     if(route!=="/api/change-callsign" && slotRank!==nextRank.toLowerCase()) throw new Error("The destination Callsign does not match the selected rank.");
@@ -208,7 +212,7 @@ async function applyRosterMutationD1(db, route, data, actor) {
     if(route==="/api/change-rank" && !["EMT|AEMT","AEMT|Senior Volunteer","EMT|Volunteer","Senior Volunteer|AEMT","Volunteer|EMT"].includes(old.rank+"|"+nextRank)) throw new Error("This rank change is not supported.");
     const finalRank=route==="/api/change-callsign"?(admin?slot.rank:old.rank):nextRank;
     const date=route==="/api/change-callsign"?old.date:now.slice(0,10);
-    await db.batch([db.prepare("DELETE FROM callsign_slots WHERE callsign=?").bind(nextCs),db.prepare("DELETE FROM members WHERE callsign=?").bind(old.callsign),db.prepare(`INSERT INTO members(callsign,name,rank,date,rank_assigned_date,days_in_rank,discord_id,notes,has_basic_firefighting,has_advanced_firefighting,has_supervisor_exam,has_hert,activity,instructor_type,do_not_promote,sheet_row,synced_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(nextCs,old.name,finalRank,date,date,0,old.discord_id,old.notes,old.has_basic_firefighting,old.has_advanced_firefighting,old.has_supervisor_exam,old.has_hert,old.activity,old.instructor_type,old.do_not_promote,null,now),db.prepare("INSERT OR IGNORE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(rankForCallsign(old.callsign),old.callsign,old.sheet_row,now)]);
+    await db.batch([db.prepare("DELETE FROM callsign_slots WHERE callsign=?").bind(nextCs),db.prepare("DELETE FROM members WHERE callsign=?").bind(old.callsign),db.prepare(`INSERT INTO members(callsign,name,rank,date,rank_assigned_date,days_in_rank,discord_id,notes,has_basic_firefighting,has_advanced_firefighting,has_supervisor_exam,has_hert,activity,instructor_type,do_not_promote,sheet_row,synced_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(nextCs,old.name,finalRank,date,date,0,old.discord_id,old.notes,old.has_basic_firefighting,old.has_advanced_firefighting,old.has_supervisor_exam,old.has_hert,old.activity,old.instructor_type,old.do_not_promote,slot.sheet_row||null,now),db.prepare("INSERT OR IGNORE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(rankForCallsign(old.callsign),old.callsign,old.sheet_row,now)]);
     return {ok:true,new_callsign:nextCs,new_rank:finalRank};
   }
   const assignments=Object.keys(cols).filter(k=>k!=="callsign").map(k=>`${k}=?`).join(",");
@@ -412,7 +416,7 @@ export async function handleD1(context) {
     }
     if(route==="/api/config" && method==="GET") {
       await ensureCallsignSlotsTable(db);
-      const slots=await db.prepare("SELECT rank,callsign,sheet_row AS row FROM callsign_slots ORDER BY rank,callsign").all();
+      const slots=await db.prepare("SELECT rank,callsign,sheet_row AS row FROM callsign_slots ORDER BY CASE WHEN sheet_row IS NULL THEN 1 ELSE 0 END,sheet_row,callsign").all();
       const available={}; for(const x of slots.results||[]) if(!available[x.rank]) available[x.rank]=x.callsign;
       return json({ranks:["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer"],available_callsigns:available,trainings:["Basic Firefighting","Advanced Firefighting","Hert"],activities:["Active","Semi Active","Inactive","Can Be Terminated"],exams:["Supervisor Exam"]});
     }

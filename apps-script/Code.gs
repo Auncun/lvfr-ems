@@ -1339,9 +1339,7 @@ function nextEmptyCallsign_(rank) {
   const rows = count ? sheet.getRange(2, 2, count, 2).getDisplayValues() : [];
   const candidates = rows.map((row, i) => ({ callsign: String(row[0] || '').trim().toUpperCase(), name: String(row[1] || '').trim(), row: i + 2 }))
     .filter(item => item.callsign.startsWith(prefix + '-') && !item.name && rankFromCallsign_(item.callsign) === (rank === 'Advanced EMT' ? 'AEMT' : rank))
-    .map(item => ({ ...item, number: Number(item.callsign.slice(prefix.length + 1)) }))
-    .filter(item => Number.isFinite(item.number))
-    .sort((a, b) => a.number - b.number);
+    .sort((a, b) => a.row - b.row);
   if (!candidates.length) throw new Error('No existing empty callsign available for rank ' + rank);
   return candidates[0];
 }
@@ -1556,8 +1554,7 @@ function availableCallsigns_() {
       callsign: String(row[0] || '').trim().toUpperCase(),
       name: String(row[1] || '').trim(), row: index + 2
     })).filter(item => item.callsign.startsWith(prefix + '-') && !item.name && rankFromCallsign_(item.callsign) === rank)
-      .map(item => ({ ...item, number: Number(item.callsign.slice(prefix.length + 1)) }))
-      .filter(item => Number.isFinite(item.number)).sort((a, b) => a.number - b.number);
+      .sort((a, b) => a.row - b.row);
     if (candidates.length) result[rank] = candidates[0].callsign;
   });
   try { cache.put(key, JSON.stringify(result), 300); } catch (ignored) {}
