@@ -4494,11 +4494,11 @@ async function loadAccount() {
         if ($("#instructorLogTab")) $("#instructorLogTab").style.display = cachedUser.is_admin ? "" : "none";
     }
     try {
-        await loadAccount();
+        // Start rendering from the browser snapshot (when available) and
+        // refresh the roster before waiting for the account/profile request.
         const rosterLoad = loadMembers();
-        // A prior visit's roster is rendered synchronously by loadMembers;
-        // refresh it in the background without reusing the browser's API cache.
         if (allMembersCache) void loadMembers(true, true);
+        await loadAccount();
         await Promise.all([
             loadNotifications(),
             loadConfig(),
