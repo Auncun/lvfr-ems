@@ -409,7 +409,6 @@ window.addEventListener("lvfr:background-updated", event => {
             }
         }
     }
-    const route = String(event.detail?.route || "");
     // Keep the optimistic roster display until the user refreshes. The next
     // page load reads the already-committed D1 snapshot.
     void loadConfig();
