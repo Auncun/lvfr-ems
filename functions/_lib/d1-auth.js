@@ -82,9 +82,20 @@ async function syncMembersFromAppsScript(db, env, token = "", forceFresh = false
   return result;
 }
 async function saveCallsignSlots(db, slots) {
+  await ensureCallsignSlotsTable(db);
   const items=Array.isArray(slots)?slots:Object.entries(slots||{}).map(([rank,v])=>typeof v==="string"?({rank,callsign:v}):({rank,...v}));
   const rows=items.filter(v=>v&&v.callsign).map(v=>db.prepare("INSERT INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?) ON CONFLICT(rank,callsign) DO UPDATE SET sheet_row=excluded.sheet_row,synced_at=excluded.synced_at").bind(String(v.rank||""),String(v.callsign).toUpperCase(),Number(v.row)||null,new Date().toISOString()));
   await db.prepare("DELETE FROM callsign_slots").run(); if(rows.length) await db.batch(rows);
+}
+async function ensureCallsignSlotsTable(db) {
+  await db.prepare(`CREATE TABLE IF NOT EXISTS callsign_slots (
+    rank TEXT NOT NULL,
+    callsign TEXT NOT NULL,
+    sheet_row INTEGER,
+    synced_at TEXT NOT NULL,
+    PRIMARY KEY (rank, callsign),
+    UNIQUE (callsign)
+  )`).run();
 }
 async function replaceMembers(db, members, syncedAt = new Date().toISOString()) {
   const statements = [db.prepare("DELETE FROM members")];
@@ -143,6 +154,7 @@ const RANK_PREFIX = { Commissioners:"COM", Chief:"CHIEF", "County Command":"B", 
 function rankForCallsign(cs) { const p=String(cs||"").match(/^[A-Z]+/); if(!p)return ""; if(p[0]==="V") return [1,2,3,4,5,6,7,8,9,14,21,22,23,24,25,26,27,28,29,36,37,38,39,40].includes(Number(cs.split("-")[1]))?"Probationary Volunteer":"Volunteer"; return ({COM:"Commissioners",CHIEF:"Chief",B:"County Command",DIV:"Division Commander",C:"Captain",E:"Lieutenant",L:"Lead Paramedic",M:"Paramedic",A:"AEMT",R:"EMT",P:"Probationary",S:"Senior Volunteer"})[p[0]]||""; }
 const RANK_LEVEL = { "Probationary Volunteer":1, "Probationary":1, EMR:1, "EMR/Volunteer":1, Volunteer:2, "Senior Volunteer":3, EMT:4, AEMT:5, "Advanced EMT":5, Paramedic:6, "Lead Paramedic":7, Lieutenant:8, Captain:9, "Division Commander":10, "County Command":11, Chief:12, Commissioners:13 };
 async function applyRosterMutationD1(db, route, data, actor) {
+  await ensureCallsignSlotsTable(db);
   const admin=["admin","commander"].includes(String(actor.role||""));
   const cs=String(data.callsign||"").trim().toUpperCase(), old=await db.prepare("SELECT * FROM members WHERE upper(callsign)=?").bind(cs).first();
   if(!old) throw Object.assign(new Error("Member not found."),{status:404});
@@ -151,8 +163,21 @@ async function applyRosterMutationD1(db, route, data, actor) {
   if(route==="/api/activity") { const val=String(data.activity||""); if(!["Active","Semi Active","Inactive","Can Be Terminated"].includes(val)) throw new Error("Invalid activity status."); cols.activity=val; }
   else if(route==="/api/note") { const action=String(data.action||""), entered=String(data.note||"").trim(); if(action==="Add"&&old.notes) throw new Error("This member already has a note. Choose Edit or Delete."); if(action==="Edit"&&!old.notes) throw new Error("This member has no note to edit. Choose Add."); if(action==="Delete") cols.notes=""; else if(["Add","Edit"].includes(action)){if(!entered) throw new Error("Enter a note before saving it.");cols.notes=entered;} else throw new Error("Invalid note action."); result.note=cols.notes; }
   else if(route==="/api/date") { const m=String(data.date_str||"").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if(!m) throw new Error("Enter a date in MM/DD/YYYY format."); const d=new Date(+m[3],+m[1]-1,+m[2]); if(d.getFullYear()!==+m[3]||d.getMonth()!==+m[1]-1||d.getDate()!==+m[2]) throw new Error("Enter a valid date."); cols.date=cols.rank_assigned_date=`${m[1].padStart(2,"0")}/${m[2].padStart(2,"0")}/${m[3]}`; cols.days_in_rank=0; }
-  else if(route==="/api/training") { const key=String(data.training||"").toLowerCase()==="hert"?"has_hert":data.training==="Basic Firefighting"?"has_basic_firefighting":data.training==="Advanced Firefighting"?"has_advanced_firefighting":""; if(!key) throw new Error("Unknown training."); cols[key]=data.remove?0:1; }
-  else if(route==="/api/exam") cols.has_supervisor_exam=data.remove?0:1;
+  else if(route==="/api/training") {
+    const training=String(data.training||"");
+    const key=training.toLowerCase()==="hert"?"has_hert":training==="Basic Firefighting"?"has_basic_firefighting":training==="Advanced Firefighting"?"has_advanced_firefighting":"";
+    if(!key) throw new Error("Unknown training.");
+    const present=Boolean(Number(old[key]||0)), remove=Boolean(data.remove);
+    if(present===!remove) return {ok:false,changed:false,status:remove?"already_removed":"already_completed",message:remove?"Training already removed":"Already certified"};
+    cols[key]=remove?0:1;
+    result={ok:true,changed:true,status:remove?"removed":"added",message:remove?"Training removed":"Training added"};
+  }
+  else if(route==="/api/exam") {
+    const present=Boolean(Number(old.has_supervisor_exam||0)), remove=Boolean(data.remove);
+    if(present===!remove) return {ok:false,changed:false,status:remove?"already_removed":"already_passed",message:remove?"Exam already removed":"Already passed the exam"};
+    cols.has_supervisor_exam=remove?0:1;
+    result={ok:true,changed:true,status:remove?"removed":"added",message:remove?"Exam removed":"Exam added"};
+  }
   else if(route==="/api/member/"+cs+"/instructor") { const type=String(data.instructor_type||"").toUpperCase(); if(!["HERT","FORT"].includes(type)) throw new Error("Choose HERT or FORT."); const set=new Set(String(old.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(Boolean)); if(data.assigned)set.add(type);else set.delete(type); cols.instructor_type=[...set].sort().join(" / "); }
   else if(route==="/api/do-not-promote") cols.do_not_promote=data.blocked?1:0;
   else if(route==="/api/terminate") {
@@ -381,6 +406,7 @@ export async function handleD1(context) {
       return json({synced_at:snapshot?.synced_at||null,members:Number(snapshot?.members||0),sync_running:false,sync_last_source:"",sync_last_success:snapshot?.synced_at||null,sync_error:null,auto_sync_enabled:false,auto_sync_interval_seconds:0,google_write:{running:false,pending:0,last_error:null,last_success:snapshot?.synced_at||null},archive:{enabled:true,status:"idle",pending:0,last_error:null,last_success:snapshot?.synced_at||null}});
     }
     if(route==="/api/config" && method==="GET") {
+      await ensureCallsignSlotsTable(db);
       const slots=await db.prepare("SELECT rank,callsign,sheet_row AS row FROM callsign_slots ORDER BY rank,callsign").all();
       const available={}; for(const x of slots.results||[]) if(!available[x.rank]) available[x.rank]=x.callsign;
       return json({ranks:["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer"],available_callsigns:available,trainings:["Basic Firefighting","Advanced Firefighting","Hert"],activities:["Active","Semi Active","Inactive","Can Be Terminated"],exams:["Supervisor Exam"]});
@@ -446,10 +472,12 @@ export async function handleD1(context) {
       if(instructorWrite) mutationData.callsign=decodeURIComponent(instructorWrite[1]).toUpperCase();
       if(["/api/promote","/api/force-promote","/api/demote","/api/change-rank"].includes(route)&&!mutationData.d1_target_callsign) throw new Error("No available destination Callsign was supplied. Reload the roster and try again.");
       const result=await applyRosterMutationD1(db,route,mutationData,user);
-      const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
-      const { proxyToAppsScript } = await import("../[[path]].js");
-      const bg=(async()=>{ try { const response=await proxyToAppsScript(context,route,url,assertion,mutationData); if(!response.ok) console.error("Background Sheet write failed after D1 commit:",await response.text()); } catch(error) { console.error("Background Sheet write failed after D1 commit:",error); } })();
-      context.waitUntil(bg);
+      if(result.changed!==false) {
+        const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
+        const { proxyToAppsScript } = await import("../[[path]].js");
+        const bg=(async()=>{ try { const response=await proxyToAppsScript(context,route,url,assertion,mutationData); if(!response.ok) console.error("Background Sheet write failed after D1 commit:",await response.text()); } catch(error) { console.error("Background Sheet write failed after D1 commit:",error); } })();
+        context.waitUntil(bg);
+      }
       return json(result);
     }
     await db.prepare("INSERT INTO account_presence(account_id,last_seen) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET last_seen=excluded.last_seen").bind(user.account_id,nowSeconds()).run();
