@@ -15,8 +15,9 @@ restored.
    `LVFR_D1_WORKER_SECRET`, `LVFR_D1_AUTH_BRIDGE_SECRET`, and `GAS_WEB_APP_URL`
    configured. `LVFR_D1_WORKER_SECRET` must match the Apps Script property of
    the same name. Deploy the latest Pages Functions code, including the
-   `/internal/` route in `functions/[[path]].js`; direct Sheet edits send their
-   snapshots to `/internal/members/sync` using POST.
+   `/internal/` route in `functions/[[path]].js` and the `/internal/*` entries
+   in `static/_routes.json`; direct Sheet edits send their snapshots to
+   `/internal/members/sync` using POST.
 3. In Apps Script Script Properties, set `LVFR_D1_SYNC_URL` to the deployed
    Cloudflare site origin, `https://lvfr-ems.pages.dev` (no `/internal` path),
    and set `LVFR_D1_WORKER_SECRET` to the same secret used by the Worker.
@@ -32,3 +33,14 @@ restored.
 Changes made by the website do not rely on edit triggers: the Worker refreshes
 D1 after Apps Script confirms the Sheets write. If that refresh fails, the
 response explains that Sheets was updated but the D1 cache needs **Sync now**.
+
+## Troubleshooting HTTP 405 from the edit trigger
+
+The edit trigger posts to `/internal/members/sync`. If Apps Script reports an
+empty HTTP 405 response, confirm Cloudflare deployed the Pages **Functions**
+from this repository, not just the static `dist/` assets. The Pages project
+root must include the `functions/` directory and its `[[path]].js` catch-all.
+In Cloudflare Pages, open the latest deployment's build log and confirm
+Functions were built for the `lvfr-ems` project. Redeploy from the connected
+Git repository (or with Wrangler from the repository root), then retry a
+manual cell edit. Do not use a static-only drag-and-drop upload for this app.
