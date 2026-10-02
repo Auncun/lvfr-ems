@@ -1037,7 +1037,7 @@ function calculateMemberEligibility(member) {
         "Volunteer": { next_rank: "Senior Volunteer", days: 14 }
     };
     if (member.do_not_promote) {
-        return { eligible: false, eligibility_reason: "Can't be promoted (DO NOT PROMOTE list)", next_rank: rules[member.rank]?.next_rank || "" };
+        return { eligible: false, eligibility_reason: "Can't be promoted (Do not Promote list)", next_rank: rules[member.rank]?.next_rank || "" };
     }
     const rule = rules[member.rank];
     if (!rule || ["Probationary", "Probationary Volunteer"].includes(member.rank)) {
@@ -1307,9 +1307,8 @@ async function refreshOnlineCount() {
 async function loadLeaders() {
     const pending = $("#pendingLeadersTable");
     const all = $("#allLeadersTable");
-    const instructors = $("#instructorsTable");
     const audit = $("#leaderAuditTable");
-    if (!pending && !all && !instructors && !audit) return;
+    if (!pending && !all && !audit) return;
 
     let hadCachedData = false;
     try {
@@ -1317,7 +1316,6 @@ async function loadLeaders() {
         const cached = JSON.parse(sessionStorage.getItem(leaderCacheKey) || "null");
         if (cached?.data && Date.now() - cached.savedAt < 10 * 60 * 1000) {
             leaderRows = cached.data;
-            instructorRows = cached.instructors || [];
             leaderAuditRows = Array.isArray(leaderRows.audit) ? leaderRows.audit : [];
             renderLeaders();
             hadCachedData = true;
@@ -1326,30 +1324,23 @@ async function loadLeaders() {
     if (!hadCachedData) {
         if (pending) pending.innerHTML = '<div class="empty">Loading...</div>';
         if (all) all.innerHTML = '<div class="empty">Loading...</div>';
-        if (instructors) instructors.innerHTML = '<div class="empty">Loading...</div>';
         if (audit) audit.innerHTML = '<div class="empty">Loading...</div>';
     }
 
     try {
-        const [accounts, instructorsData] = await Promise.all([
-            api("/api/leaders"),
-            api("/api/instructors").catch(() => [])
-        ]);
+        const accounts = await api("/api/leaders");
         leaderRows = accounts;
         setOnlineCount(accounts.online_count);
-        instructorRows = Array.isArray(instructorsData) ? instructorsData : [];
         leaderAuditRows = Array.isArray(leaderRows.audit) ? leaderRows.audit : [];
-        try { sessionStorage.setItem(`lvfr.leaders.${currentUserAccountId}.v1`, JSON.stringify({ data: leaderRows, instructors: instructorRows, savedAt: Date.now() })); } catch {}
+        try { sessionStorage.setItem(`lvfr.leaders.${currentUserAccountId}.v1`, JSON.stringify({ data: leaderRows, savedAt: Date.now() })); } catch {}
         renderLeaders();
     } catch (e) {
         if (hadCachedData) return;
         leaderRows = { approved: [], pending: [], deactivated: [] };
-        instructorRows = [];
         leaderAuditRows = [];
         const message = empty("Failed to load Leaders: " + e.message);
         if (pending) pending.innerHTML = message;
         if (all) all.innerHTML = message;
-        if (instructors) instructors.innerHTML = message;
         if (audit) audit.innerHTML = message;
     }
 }
@@ -1479,6 +1470,35 @@ function renderLeaders() {
 }
 
 
+async function loadInstructors() {
+    const content = $("#membersLogContent"), view = $("#instructorsView"), table = $("#instructorsTable");
+    if (content) content.style.display = "none";
+    if (view) view.style.display = "block";
+    if (table) table.innerHTML = '<div class="empty">Loading...</div>';
+    try {
+        const result = await api("/api/instructors");
+        instructorRows = Array.isArray(result) ? result : [];
+        renderInstructors();
+    } catch (error) {
+        if (table) table.innerHTML = empty("Failed to load instructors: " + error.message);
+    }
+}
+
+function renderInstructors() {
+    const table = $("#instructorsTable");
+    if (!table) return;
+    const typeFilter = $("#instructorTypeFilter")?.value || "all";
+    const search = String($("#instructorSearch")?.value || "").trim().toLocaleLowerCase();
+    const rows = instructorRows.filter(row =>
+        (typeFilter === "all" || String(row.type || "").toUpperCase().split("/").map(type => type.trim()).includes(typeFilter)) &&
+        (!search || [row.name, row.type, row.date].some(value => String(value || "").toLocaleLowerCase().includes(search)))
+    );
+    table.innerHTML = rows.length ? `
+        <table><thead><tr><th>Instructor</th><th>Type</th><th>Since</th></tr></thead>
+        <tbody>${rows.map(row => `<tr><td><strong>${esc(row.name)}</strong></td><td>${esc(row.type)}</td><td>${esc(row.date || "—")}</td></tr>`).join("")}</tbody></table>
+    ` : empty("No instructors found.");
+}
+
 async function resolveLeader(discordId, decision) {
     try {
         await api(`/api/leaders/${encodeURIComponent(discordId)}/${decision}`, { method: "POST" });
@@ -1550,7 +1570,6 @@ document.querySelectorAll(".leader-view-tab").forEach(button => {
         const views = {
             pending: $("#pendingLeadersView"),
             all: $("#allLeadersView"),
-            instructors: $("#instructorsView"),
             audit: $("#leaderAuditView")
         };
         Object.entries(views).forEach(([name, view]) => {
@@ -1563,13 +1582,13 @@ document.querySelectorAll(".leader-view-tab").forEach(button => {
 const leaderRoleFilter = $("#leaderRoleFilter");
 if (leaderRoleFilter) leaderRoleFilter.addEventListener("change", renderLeaders);
 const instructorTypeFilter = $("#instructorTypeFilter");
-if (instructorTypeFilter) instructorTypeFilter.addEventListener("change", renderLeaders);
+if (instructorTypeFilter) instructorTypeFilter.addEventListener("change", renderInstructors);
 const instructorSearch = $("#instructorSearch");
-if (instructorSearch) instructorSearch.addEventListener("input", renderLeaders);
+if (instructorSearch) instructorSearch.addEventListener("input", renderInstructors);
 const clearInstructorSearch = $("#clearInstructorSearch");
 if (clearInstructorSearch) clearInstructorSearch.addEventListener("click", () => {
     if (instructorSearch) instructorSearch.value = "";
-    renderLeaders();
+    renderInstructors();
     instructorSearch?.focus();
 });
 
@@ -1609,6 +1628,9 @@ async function loadMembersLog(
 ) {
 
     currentLogType = type;
+    const logContent = $("#membersLogContent"), instructorsView = $("#instructorsView");
+    if (logContent) logContent.style.display = "";
+    if (instructorsView) instructorsView.style.display = "none";
 
     document.querySelectorAll(".log-tab:not(.leader-view-tab)").forEach(button => {
         button.classList.toggle("active", button.dataset.log === type);
@@ -1616,8 +1638,7 @@ async function loadMembersLog(
 
     updateLogFilters(type);
 
-    const container =
-        $("#membersLogTable");
+    const container = type === "instructor" ? $("#instructorLogTable") : $("#membersLogTable");
 
     if (!container) {
         return;
@@ -1745,16 +1766,14 @@ function matchesLogCategory(row) {
 
 function renderMembersLog() {
 
-    const container =
-        $("#membersLogTable");
+    const container = currentLogType === "instructor" ? $("#instructorLogTable") : $("#membersLogTable");
 
     if (!container) {
         return;
     }
 
 
-    const searchElement =
-        $("#membersLogSearch");
+    const searchElement = currentLogType === "instructor" ? $("#instructorLogSearch") : $("#membersLogSearch");
 
     const search =
         (
@@ -2624,7 +2643,7 @@ async function profile(
                     ${currentUserIsAdmin ? `<button type="button" class="${m.do_not_promote ? "danger" : ""}"
                         data-action="do-not-promote" data-blocked="${m.do_not_promote ? "false" : "true"}"
                         data-callsign="${esc(m.callsign)}">
-                        ${m.do_not_promote ? "Remove from DO NOT PROMOTE" : "Add to DO NOT PROMOTE"}
+                        ${m.do_not_promote ? "Remove from Do not Promote" : "Add to Do not Promote"}
                     </button>` : ""}
 
 
@@ -4068,9 +4087,7 @@ document
                         "membersLog"
                     ) {
 
-                        loadMembersLog(
-                            currentLogType
-                        );
+                        loadMembersLog("promotion");
                     }
 
 
@@ -4078,6 +4095,7 @@ document
                         loadLeaders();
                     }
                     if (b.dataset.tab === "doNotPromote") loadDoNotPromote();
+                    if (b.dataset.tab === "instructorLog") loadMembersLog("instructor");
 
                 }
             );
@@ -4100,7 +4118,7 @@ document
                 () => {
 
                     document
-                        .querySelectorAll(".log-tab")
+                        .querySelectorAll("#membersLog .log-tab")
                         .forEach(
                             x =>
                                 x.classList.remove(
@@ -4113,11 +4131,11 @@ document
                         "active"
                     );
 
-                    updateLogFilters(b.dataset.log);
-
-                    loadMembersLog(
-                        b.dataset.log
-                    );
+                    if (b.dataset.log === "instructors") {
+                        loadInstructors();
+                    } else {
+                        loadMembersLog(b.dataset.log);
+                    }
 
                 }
             );
@@ -4357,6 +4375,15 @@ if (inactiveClear) {
 const membersLogSearch =
     $("#membersLogSearch");
 
+const instructorLogSearch = $("#instructorLogSearch");
+if (instructorLogSearch) instructorLogSearch.addEventListener("input", renderMembersLog);
+const instructorLogClear = $("#instructorLogClearBtn");
+if (instructorLogClear) instructorLogClear.addEventListener("click", () => {
+    if (instructorLogSearch) instructorLogSearch.value = "";
+    instructorLogSearch?.focus();
+    renderMembersLog();
+});
+
 ["#promotionFilter", "#trainingFilter", "#noteFilter"].forEach(id => {
     const filter = $(id);
     if (filter) filter.addEventListener("change", renderMembersLog);
@@ -4472,6 +4499,8 @@ function applyAccountUser(user) {
     if (terminationLogTab) terminationLogTab.style.display = user.is_admin ? "" : "none";
     const instructorLogTab = $("#instructorLogTab");
     if (instructorLogTab) instructorLogTab.style.display = user.is_admin ? "" : "none";
+    const instructorsDirectoryTab = $("#instructorsDirectoryTab");
+    if (instructorsDirectoryTab) instructorsDirectoryTab.style.display = user.is_admin ? "" : "none";
 }
 
 let doNotPromoteRows = [];
@@ -4494,11 +4523,11 @@ function renderDoNotPromote() {
                 <td>${esc(member.added_at)}</td><td>${esc(member.added_by)}</td>
                 <td><button type="button" data-action="profile" data-callsign="${esc(member.callsign)}">View</button>
                     <button type="button" class="danger" data-action="do-not-promote-remove" data-callsign="${esc(member.callsign)}">Remove</button></td>
-            </tr>`).join("")}</tbody></table>` : empty("The DO NOT PROMOTE list is empty.");
+            </tr>`).join("")}</tbody></table>` : empty("The Do not Promote list is empty.");
 }
 
 async function setMemberPromotionBlock(callsign, blocked) {
-    if (blocked && !confirm(`Add ${callsign} to DO NOT PROMOTE? They will be excluded from Eligible and cannot be promoted.`)) return;
+    if (blocked && !confirm(`Add ${callsign} to Do not Promote? They will be excluded from Eligible and cannot be promoted.`)) return;
     try {
         await api("/api/do-not-promote", { method: "POST", body: JSON.stringify({ callsign, blocked }) });
         apiReadCache.clear();
@@ -4510,7 +4539,7 @@ async function setMemberPromotionBlock(callsign, blocked) {
         }
         if ($(".tab.active")?.dataset.tab === "eligible") await loadEligible();
         if ($(".tab.active")?.dataset.tab === "doNotPromote") await loadDoNotPromote();
-        toast(blocked ? `${callsign} added to DO NOT PROMOTE.` : `${callsign} removed from DO NOT PROMOTE.`);
+        toast(blocked ? `${callsign} added to Do not Promote.` : `${callsign} removed from Do not Promote.`);
     } catch (error) { toast(error.message); }
 }
 
@@ -4548,6 +4577,7 @@ async function loadAccount() {
         if ($("#inactiveTab")) $("#inactiveTab").style.display = (cachedUser.is_admin || cachedUser.is_command) ? "" : "none";
         if ($("#terminationLogTab")) $("#terminationLogTab").style.display = cachedUser.is_admin ? "" : "none";
         if ($("#instructorLogTab")) $("#instructorLogTab").style.display = cachedUser.is_admin ? "" : "none";
+        if ($("#instructorsDirectoryTab")) $("#instructorsDirectoryTab").style.display = cachedUser.is_admin ? "" : "none";
     }
     try {
         // Start rendering from the browser snapshot (when available) and

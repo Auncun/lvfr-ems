@@ -630,7 +630,6 @@ function notificationVisibleTo_(row, user) {
 }
 
 function listNotifications_(user) {
-  if (String(user.role || '').toLowerCase() === 'member') return { items: [], unread_count: 0 };
   const sheets = notificationSheets_();
   sheets.accounts = accountsSheet_();
   syncNotifications_(user, sheets);
@@ -648,7 +647,6 @@ function listNotifications_(user) {
 }
 
 function markNotificationsRead_(data, user) {
-  if (String(user.role || '').toLowerCase() === 'member') return { ok: true };
   const sheets = notificationSheets_();
   const requested = new Set((Array.isArray(data.ids) ? data.ids : []).map(value => String(Number(value))).filter(value => value !== 'NaN'));
   const rows = sheets.notifications.getLastRow() > 1
@@ -856,11 +854,9 @@ function writeRosterCache_(cache, cacheKey, records) {
   if (count > 32) return;
   try {
     for (let part = 0; part < count; part++) {
-      // The roster is explicitly invalidated after PWA mutations and Sync, so
-      // keep the shared snapshot warm longer between those operations.
-      cache.put(cacheKey + ':' + part, serialized.slice(part * chunkSize, (part + 1) * chunkSize), 900);
+      cache.put(cacheKey + ':' + part, serialized.slice(part * chunkSize, (part + 1) * chunkSize), 300);
     }
-    cache.put(cacheKey, JSON.stringify({ chunks: count }), 900);
+    cache.put(cacheKey, JSON.stringify({ chunks: count }), 300);
   } catch (ignored) {
     cache.remove(cacheKey);
   }
@@ -991,7 +987,7 @@ function eligibility_(member) {
     'Volunteer': { rank: 'Senior Volunteer', days: 14, trainings: [], exams: [] }
   };
   const rule = requirements[member.rank];
-  if (member.do_not_promote) return { eligible: false, reason: "Can't be promoted (DO NOT PROMOTE list)", next_rank: rule ? rule.rank : '' };
+  if (member.do_not_promote) return { eligible: false, reason: "Can't be promoted (Do not Promote list)", next_rank: rule ? rule.rank : '' };
   if (!rule || ['Probationary', 'Probationary Volunteer'].includes(member.rank)) return { eligible: false, reason: 'No automatic promotion available', next_rank: '' };
   const missing = [];
   if (Number(member.days_in_rank || 0) < rule.days) missing.push((rule.days - Number(member.days_in_rank || 0)) + ' more day(s)');
@@ -1013,12 +1009,16 @@ function eligibleMembers_() {
   });
 }
 
-const DO_NOT_PROMOTE_TAB = 'DO NOT PROMOTE';
+const DO_NOT_PROMOTE_TAB = 'Do not Promote';
 const DO_NOT_PROMOTE_HEADERS = ['Callsign', 'Name', 'Added At', 'Added By'];
 
 function doNotPromoteSheet_() {
   const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
   let sheet = spreadsheet.getSheetByName(DO_NOT_PROMOTE_TAB);
+  if (!sheet) {
+    sheet = spreadsheet.getSheetByName('DO NOT PROMOTE');
+    if (sheet) sheet.setName(DO_NOT_PROMOTE_TAB);
+  }
   if (!sheet) sheet = spreadsheet.insertSheet(DO_NOT_PROMOTE_TAB);
   if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, DO_NOT_PROMOTE_HEADERS.length).setValues([DO_NOT_PROMOTE_HEADERS]);
   return sheet;
@@ -1043,20 +1043,18 @@ function listDoNotPromote_() {
 }
 
 function setDoNotPromote_(data, user) {
-  if (typeof data.blocked !== 'boolean') throw new Error('Choose whether to add or remove this member from DO NOT PROMOTE.');
-  const member = memberByCallsign_(data.callsign);
-  const blocked = data.blocked;
-  const lock = LockService.getScriptLock();
+  if (typeof data.blocked !== 'boolean') throw new Error('Choose whether to add or remove this member from Do not Promote.');
+  const member = memberByCallsign_(data.callsign), lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
     const sheet = doNotPromoteSheet_(), count = Math.max(0, sheet.getLastRow() - 1);
     const rows = count ? sheet.getRange(2, 1, count, DO_NOT_PROMOTE_HEADERS.length).getDisplayValues() : [];
     const index = rows.findIndex(row => String(row[0] || '').trim().toUpperCase() === member.callsign);
-    if (blocked && index < 0) sheet.appendRow([member.callsign, member.name, new Date().toISOString(), actorName_(user)]);
-    else if (!blocked && index >= 0) sheet.deleteRow(index + 2);
+    if (data.blocked && index < 0) sheet.appendRow([member.callsign, member.name, new Date().toISOString(), actorName_(user)]);
+    else if (!data.blocked && index >= 0) sheet.deleteRow(index + 2);
     CacheService.getScriptCache().remove('members:do-not-promote:v1');
     invalidateRosterCache_();
-    return { ok: true, callsign: member.callsign, blocked, changed: blocked ? index < 0 : index >= 0 };
+    return { ok: true, callsign: member.callsign, blocked: data.blocked, changed: data.blocked ? index < 0 : index >= 0 };
   } finally { lock.releaseLock(); }
 }
 
@@ -1298,7 +1296,7 @@ function changeMemberRank_(data, user, operation) {
   const rank = String(data.new_rank || '').trim();
   if (!rank || !LVFR.ranks.includes(rank)) throw new Error('Choose a valid rank.');
   const oldLevel = rankLevel_(old.rank), newLevel = rankLevel_(rank);
-  if (old.do_not_promote && newLevel > oldLevel) throw new Error('This member is on the DO NOT PROMOTE list.');
+  if (old.do_not_promote && newLevel > oldLevel) throw new Error('This member is on the Do not Promote list.');
   if (operation === 'FORCE' && !(newLevel > oldLevel)) throw new Error('You can only promote to a higher rank.');
   if (operation === 'DEMOTION' && !(newLevel < oldLevel)) throw new Error('You can only demote to a lower rank.');
   if (operation === 'CHANGE_RANK' && ![
@@ -1314,7 +1312,7 @@ function changeMemberCallsign_(data, user) {
   const next = String(data.new_callsign || '').trim().toUpperCase();
   if (!next || next === old.callsign || LVFR.ignoredCallsigns.has(next)) throw new Error('Enter a different valid Callsign.');
   const rank = rankFromCallsign_(next);
-  if (old.do_not_promote && rank && rankLevel_(rank) > rankLevel_(old.rank)) throw new Error('This member is on the DO NOT PROMOTE list.');
+  if (old.do_not_promote && rank && rankLevel_(rank) > rankLevel_(old.rank)) throw new Error('This member is on the Do not Promote list.');
   if (!isAdmin_(user) && (data.force || rank !== old.rank)) throw new Error('Leaders may only change a Callsign while keeping the member’s current rank.');
   if (isAdmin_(user) && rank && rank !== old.rank && !data.force) throw new Error('The Callsign belongs to a different rank. Confirm a rank change first.');
   const target = emptyRowForCallsign_(next);
