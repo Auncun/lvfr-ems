@@ -189,7 +189,11 @@ async function applyRosterMutationD1(db, route, data, actor) {
   }
   else if(["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign"].includes(route)) {
     const nextRank=route==="/api/promote"?(rankEligibility(memberFromRow(old)).next_rank):String(data.new_rank||old.rank);
-    const nextCs=String(data.d1_target_callsign||data.new_callsign||"").toUpperCase();
+    let nextCs=String(data.d1_target_callsign||data.new_callsign||"").toUpperCase();
+    if(!nextCs && route!=="/api/change-callsign") {
+      const available=await db.prepare("SELECT callsign FROM callsign_slots WHERE rank=? ORDER BY COALESCE(sheet_row,2147483647),callsign LIMIT 1").bind(nextRank).first();
+      nextCs=String(available?.callsign||"").toUpperCase();
+    }
     if(!nextCs||nextCs===old.callsign) throw new Error("A destination Callsign is required.");
     const slot=await db.prepare("SELECT rank FROM callsign_slots WHERE upper(callsign)=?").bind(nextCs).first();
     if(!slot) throw new Error("That Callsign is not an available roster slot. Run Sync now and try again.");
@@ -470,7 +474,6 @@ export async function handleD1(context) {
       if(route==="/api/exam"&&!admin&&!/^(E|C|DIV|B|CHIEF|COM)-/.test(user.callsign)) throw Object.assign(new Error("Command rank is required for this action."),{status:403});
       const mutationData={...data};
       if(instructorWrite) mutationData.callsign=decodeURIComponent(instructorWrite[1]).toUpperCase();
-      if(["/api/promote","/api/force-promote","/api/demote","/api/change-rank"].includes(route)&&!mutationData.d1_target_callsign) throw new Error("No available destination Callsign was supplied. Reload the roster and try again.");
       const result=await applyRosterMutationD1(db,route,mutationData,user);
       if(result.changed!==false) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
