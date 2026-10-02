@@ -4528,19 +4528,71 @@ function renderDoNotPromote() {
 
 async function setMemberPromotionBlock(callsign, blocked) {
     if (blocked && !confirm(`Add ${callsign} to Do not Promote? They will be excluded from Eligible and cannot be promoted.`)) return;
+    const key = String(callsign).trim().toUpperCase();
+    const rosterMember = memberCache.get(key) || allMembersCache?.find(member => String(member.callsign || "").toUpperCase() === key);
+    const oldBlocked = Boolean(rosterMember?.do_not_promote);
+    const previousRows = doNotPromoteRows;
+    if (rosterMember) {
+        rosterMember.do_not_promote = blocked;
+        const eligibility = calculateMemberEligibility(rosterMember);
+        rosterMember.eligible = eligibility.eligible;
+        rosterMember.eligibility_reason = eligibility.eligibility_reason;
+        rosterMember.next_rank = eligibility.next_rank;
+    }
+    if (Array.isArray(allMembersCache)) {
+        allMembersCache = allMembersCache.map(member => String(member.callsign || "").toUpperCase() === key
+            ? { ...member, do_not_promote: blocked } : member);
+        allMembersCacheAt = Date.now();
+        memberListRenderKey = "";
+        try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(allMembersCache)); } catch {}
+    }
+    if (blocked) {
+        if (!doNotPromoteRows.some(member => String(member.callsign || "").toUpperCase() === key)) {
+            doNotPromoteRows = [{ callsign: key, name: rosterMember?.name || "", added_at: new Date().toLocaleString(), added_by: "You" }, ...doNotPromoteRows];
+        }
+        removeEligibleRow(key);
+    } else {
+        doNotPromoteRows = doNotPromoteRows.filter(member => String(member.callsign || "").toUpperCase() !== key);
+    }
+    renderDoNotPromote();
+    if (rosterMember) {
+        memberCache.set(key, rosterMember);
+        if (activeProfileMember?.callsign?.toUpperCase() === key) void profile(key, true, rosterMember);
+    }
+    void loadMembers(false);
+    toast(blocked ? `${key} added to Do not Promote.` : `${key} removed from Do not Promote.`);
     try {
         await api("/api/do-not-promote", { method: "POST", body: JSON.stringify({ callsign, blocked }) });
         apiReadCache.clear();
-        await loadMembers(true);
+        void loadMembers(true, true);
         if (activeProfileMember?.callsign?.toUpperCase() === String(callsign).toUpperCase()) {
-            const fresh = await api(`/api/member/${encodeURIComponent(callsign)}`);
-            memberCache.set(String(callsign).toUpperCase(), fresh);
-            profile(callsign, true, fresh);
+            void api(`/api/member/${encodeURIComponent(callsign)}`).then(fresh => {
+                memberCache.set(String(callsign).toUpperCase(), fresh);
+                profile(callsign, true, fresh);
+            }).catch(() => {});
         }
-        if ($(".tab.active")?.dataset.tab === "eligible") await loadEligible();
-        if ($(".tab.active")?.dataset.tab === "doNotPromote") await loadDoNotPromote();
-        toast(blocked ? `${callsign} added to Do not Promote.` : `${callsign} removed from Do not Promote.`);
-    } catch (error) { toast(error.message); }
+        if ($(".tab.active")?.dataset.tab === "eligible") void loadEligible();
+        if ($(".tab.active")?.dataset.tab === "doNotPromote") void loadDoNotPromote();
+    } catch (error) {
+        doNotPromoteRows = previousRows;
+        if (rosterMember) {
+            rosterMember.do_not_promote = oldBlocked;
+            const eligibility = calculateMemberEligibility(rosterMember);
+            rosterMember.eligible = eligibility.eligible;
+            rosterMember.eligibility_reason = eligibility.eligibility_reason;
+            rosterMember.next_rank = eligibility.next_rank;
+        }
+        if (Array.isArray(allMembersCache)) {
+            allMembersCache = allMembersCache.map(member => String(member.callsign || "").toUpperCase() === key
+                ? { ...member, do_not_promote: oldBlocked } : member);
+            allMembersCacheAt = Date.now();
+            memberListRenderKey = "";
+        }
+        renderDoNotPromote();
+        void loadMembers(false);
+        if ($(".tab.active")?.dataset.tab === "eligible") void loadEligible();
+        toast(error.message);
+    }
 }
 
 async function loadAccount() {
