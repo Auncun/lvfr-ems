@@ -6,6 +6,9 @@ let overview = { approved: [], pending: [], deactivated: [], audit: [] };
 let selectedStatus = 'all';
 let currentUser = null;
 let notificationItems = [];
+let notificationLoadPromise = null;
+const cachedNotificationUser = window.lvfrCachedUser?.();
+const notificationCacheKey = `lvfr.portal.notifications.v1:${cachedNotificationUser?.account_id || cachedNotificationUser?.id || 'current'}`;
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -125,17 +128,23 @@ function renderNotifications(unreadCount = null) {
     </button>`).join('') : '<div class="empty">No notifications.</div>';
 }
 async function loadNotifications() {
-  try {
-    const result = await api('/api/notifications');
-    notificationItems = Array.isArray(result.items) ? result.items : [];
-    renderNotifications(Number(result.unread_count || 0));
-  } catch (error) {
-    document.querySelector('#notificationList').innerHTML = `<div class="empty">${esc(error.message)}</div>`;
-  }
+  if (notificationLoadPromise) return notificationLoadPromise;
+  notificationLoadPromise = (async () => {
+    try {
+      const result = await api('/api/notifications');
+      notificationItems = Array.isArray(result.items) ? result.items : [];
+      try { localStorage.setItem(notificationCacheKey, JSON.stringify(notificationItems)); } catch {}
+      renderNotifications(Number(result.unread_count || 0));
+    } catch (error) {
+      if (!notificationItems.length) document.querySelector('#notificationList').innerHTML = `<div class="empty">${esc(error.message)}</div>`;
+    } finally { notificationLoadPromise = null; }
+  })();
+  return notificationLoadPromise;
 }
 async function markNotificationsRead(ids = []) {
   const selected = new Set(ids.map(Number));
   notificationItems = notificationItems.map(item => !selected.size || selected.has(Number(item.id)) ? { ...item, is_read: 1 } : item);
+  try { localStorage.setItem(notificationCacheKey, JSON.stringify(notificationItems)); } catch {}
   renderNotifications();
   void api('/api/notifications/read', { method: 'POST', body: JSON.stringify({ ids }) }).catch(error => {
     if (String(error?.message || error) === 'BACKGROUND_SAVE_PENDING') return;
@@ -236,6 +245,10 @@ document.querySelector('#logoutButton').addEventListener('click', () => {
   window.lvfrLogout?.();
 });
 loadAccounts();
+try {
+  const cached = JSON.parse(localStorage.getItem(notificationCacheKey) || 'null');
+  if (Array.isArray(cached)) { notificationItems = cached; renderNotifications(); }
+} catch {}
 loadNotifications();
-window.setInterval(() => { if (!document.hidden) void loadNotifications(); }, 15000);
+window.setInterval(() => { if (!document.hidden) void loadNotifications(); }, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) void loadNotifications(); });

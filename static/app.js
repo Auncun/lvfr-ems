@@ -542,6 +542,7 @@ function toast(msg) {
 
 let notificationItems = [];
 let notificationLoadPromise = null;
+let notificationCacheHydrated = false;
 
 function renderNotifications() {
     const list = $("#notificationList");
@@ -567,11 +568,24 @@ function renderNotifications() {
 
 
 async function loadNotifications(silent = true) {
+    if (!notificationCacheHydrated && currentUserAccountId) {
+        notificationCacheHydrated = true;
+        try {
+            const cached = JSON.parse(localStorage.getItem(`lvfr.portal.notifications.v1:${currentUserAccountId}`) || "null");
+            if (Array.isArray(cached)) {
+                notificationItems = cached;
+                renderNotifications();
+            }
+        } catch {}
+    }
     if (notificationLoadPromise) return notificationLoadPromise;
     notificationLoadPromise = (async () => {
         try {
             const result = await api("/api/notifications");
             notificationItems = Array.isArray(result.items) ? result.items : [];
+            try {
+                if (currentUserAccountId) localStorage.setItem(`lvfr.portal.notifications.v1:${currentUserAccountId}`, JSON.stringify(notificationItems));
+            } catch {}
             renderNotifications();
         } catch (error) {
             if (!silent) toast(`Could not load notifications: ${error.message}`);
@@ -4850,7 +4864,7 @@ setInterval(refreshOnlineCount, 30000);
 setInterval(() => { if (!document.hidden) syncStatus(); }, 60000);
 setInterval(() => {
     if (!document.hidden) loadNotifications();
-}, 15000);
+}, 60000);
 document.addEventListener("visibilitychange", () => {
     if (!document.hidden) void loadNotifications();
 });

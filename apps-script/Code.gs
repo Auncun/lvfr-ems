@@ -548,6 +548,9 @@ function appendNotification_(sheet, kind, title, message, callsign, targetRank, 
 }
 
 function syncNotifications_(user, sheets) {
+  const syncCacheKey = 'notifications:sync:v1:' + (isCommand_(user) ? 'command' : 'standard') + ':' + (isAdmin_(user) ? 'admin' : 'nonadmin');
+  const syncCache = CacheService.getScriptCache();
+  if (syncCache.get(syncCacheKey)) return;
   // Gather the read-only source snapshots before taking the write lock. These
   // helpers may need the same script lock while building the cold roster cache.
   const eligible = new Map();
@@ -616,6 +619,7 @@ function syncNotifications_(user, sheets) {
       });
     }
     saveNotificationState_(sheets.state, state);
+    syncCache.put(syncCacheKey, '1', 20);
   } finally {
     lock.releaseLock();
   }
@@ -630,6 +634,10 @@ function notificationVisibleTo_(row, user) {
 }
 
 function listNotifications_(user) {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = notificationResponseCacheKey_(user.accountId);
+  const cached = cache.get(cacheKey);
+  if (cached) { try { return JSON.parse(cached); } catch (ignored) {} }
   const sheets = notificationSheets_();
   sheets.accounts = accountsSheet_();
   syncNotifications_(user, sheets);
@@ -643,7 +651,15 @@ function listNotifications_(user) {
     id: Number(row[0]), kind: row[1], title: row[2], message: row[3], callsign: row[4],
     created_at: row[6], is_read: reads.has(String(row[0])) ? 1 : 0
   }));
-  return { items, unread_count: items.filter(item => !item.is_read).length };
+  const result = { items, unread_count: items.filter(item => !item.is_read).length };
+  try { cache.put(cacheKey, JSON.stringify(result), 15); } catch (ignored) {}
+  return result;
+}
+
+function notificationResponseCacheKey_(accountId) {
+  return 'notifications:response:v1:' + Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(accountId || ''))
+  ).replace(/=+$/, '');
 }
 
 function markNotificationsRead_(data, user) {
@@ -661,6 +677,7 @@ function markNotificationsRead_(data, user) {
     additions.push([user.accountId, id, now]);
   });
   if (additions.length) sheets.reads.getRange(sheets.reads.getLastRow() + 1, 1, additions.length, 3).setValues(additions);
+  CacheService.getScriptCache().remove(notificationResponseCacheKey_(user.accountId));
   return { ok: true };
 }
 
