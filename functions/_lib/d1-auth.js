@@ -63,6 +63,98 @@ async function rosterIdentity(env, name) {
   if (!member || !member.name || !member.callsign) throw new Error("Name was not found on the LVFR roster.");
   return member;
 }
+async function syncMembersFromAppsScript(db, env, token = "") {
+  const members = await gasCall(env, "/api/members", "GET", {}, token);
+
+  if (!Array.isArray(members)) {
+    throw new Error("Apps Script returned an invalid roster.");
+  }
+
+  const syncedAt = new Date().toISOString();
+
+  return await replaceMembers(db, members, syncedAt);
+}
+async function replaceMembers(db, members, syncedAt = new Date().toISOString()) {
+  const statements = [db.prepare("DELETE FROM members")];
+
+  for (const member of members) {
+    statements.push(
+      db.prepare(`
+        INSERT INTO members (
+          callsign,
+          name,
+          rank,
+          date,
+          rank_assigned_date,
+          days_in_rank,
+          discord_id,
+          notes,
+          has_basic_firefighting,
+          has_advanced_firefighting,
+          has_supervisor_exam,
+          has_hert,
+          activity,
+          instructor_type,
+          do_not_promote,
+          sheet_row,
+          synced_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        String(member.callsign || "").trim().toUpperCase(),
+        String(member.name || "").trim(),
+        String(member.rank || ""),
+        String(member.date || ""),
+        String(member.rank_assigned_date || ""),
+        Number(member.days_in_rank || 0),
+        String(member.discord_id || ""),
+        String(member.notes || ""),
+        member.has_basic_firefighting ? 1 : 0,
+        member.has_advanced_firefighting ? 1 : 0,
+        member.has_supervisor_exam ? 1 : 0,
+        member.has_hert ? 1 : 0,
+        String(member.activity || "Active"),
+        String(member.instructor_type || ""),
+        member.do_not_promote ? 1 : 0,
+        Number(member.sheet_row || member.row || 0) || null,
+        syncedAt
+      )
+    );
+  }
+
+  await db.batch(statements);
+
+  return { ok: true, members: members.length, synced_at: syncedAt };
+}
+const MEMBER_WRITE_ROUTES = new Set(["/api/activity", "/api/note", "/api/date", "/api/training", "/api/exam", "/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign", "/api/terminate", "/api/do-not-promote"]);
+function memberFromRow(row) {
+  const assigned=String(row.rank_assigned_date||row.date||"");
+  const us=assigned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const assignedTime=us?Date.UTC(Number(us[3]),Number(us[1])-1,Number(us[2])):Date.parse(assigned);
+  const days=Number.isFinite(assignedTime)?Math.max(0,Math.floor((Date.now()-assignedTime)/86400000)):Number(row.days_in_rank||0);
+  return { ...row, row: row.sheet_row, has_basic_firefighting: !!row.has_basic_firefighting,
+    has_advanced_firefighting: !!row.has_advanced_firefighting, has_supervisor_exam: !!row.has_supervisor_exam,
+    has_hert: !!row.has_hert, do_not_promote: !!row.do_not_promote, days_in_rank: days };
+}
+async function readMembers(db, search = "", env = null, token = "") {
+  const current=await db.prepare("SELECT COUNT(*) AS n FROM members").first();
+  if(!Number(current?.n||0) && env) await syncMembersFromAppsScript(db,env,token);
+  const q = String(search || "").trim().toLowerCase();
+  const result = q
+    ? await db.prepare("SELECT * FROM members WHERE lower(callsign) LIKE ? OR lower(name) LIKE ? OR lower(rank) LIKE ? ORDER BY rank,name").bind(`%${q}%`,`%${q}%`,`%${q}%`).all()
+    : await db.prepare("SELECT * FROM members ORDER BY rank,name").all();
+  const rankOrder=["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer"];
+  return (result.results || []).map(memberFromRow).sort((a,b)=>(rankOrder.indexOf(a.rank)<0?999:rankOrder.indexOf(a.rank))-(rankOrder.indexOf(b.rank)<0?999:rankOrder.indexOf(b.rank)) || a.callsign.localeCompare(b.callsign));
+}
+function rankEligibility(member) {
+  const rules = { EMR:["EMT",7,[],[]], Probationary:["EMT",7,[],[]], EMT:["AEMT",14,["has_basic_firefighting"],[]], AEMT:["Paramedic",21,["has_basic_firefighting","has_advanced_firefighting"],["has_supervisor_exam"]], "Advanced EMT":["Paramedic",21,["has_basic_firefighting","has_advanced_firefighting"],["has_supervisor_exam"]], "EMR/Volunteer":["Volunteer",7,[],[]], "Probationary Volunteer":["Volunteer",7,[],[]], Volunteer:["Senior Volunteer",14,[],[]] };
+  const rule=rules[member.rank];
+  if(member.do_not_promote) return {eligible:false,reason:"Can't be promoted (Do not Promote list)",next_rank:rule?.[0]||""};
+  if(!rule || ["Probationary","Probationary Volunteer"].includes(member.rank)) return {eligible:false,reason:"No automatic promotion available",next_rank:""};
+  const missing=[]; if(Number(member.days_in_rank||0)<rule[1]) missing.push(`${rule[1]-Number(member.days_in_rank||0)} more day(s)`);
+  for(const key of [...rule[2],...rule[3]]) if(!member[key]) missing.push(key.replaceAll("_"," "));
+  return {eligible:!missing.length,reason:missing.length?`Missing: ${missing.join(", ")}`:"Eligible for promotion",next_rank:rule[0]};
+}
 async function appendAudit(db, account, action, actor) {
   await db.prepare(`INSERT INTO account_audit(created_at,account_id,name,callsign,action,actor_name)
     VALUES(?,?,?,?,?,?)`).bind(new Date().toISOString(), account.account_id, account.name, account.callsign, action, actor || "").run();
@@ -181,6 +273,12 @@ export async function handleD1(context) {
   try {
     if (!db) return json({ detail:"LVFR_DB D1 binding is missing." },503);
     let data={}; if(!["GET","HEAD"].includes(method)) data=await request.json().catch(()=>({}));
+    if (route === "/internal/members/sync" && method === "POST") {
+      const expected=String(env.LVFR_D1_WORKER_SECRET||"");
+      if(!expected || request.headers.get("X-LVFR-Worker-Secret") !== expected) return json({detail:"Worker authentication failed."},403);
+      if(!Array.isArray(data.members)) return json({detail:"Members payload is invalid."},400);
+      return json(await replaceMembers(db,data.members));
+    }
     const session=await accountForRequest(db,request), token=session.token, authRoute=route.startsWith("/auth/");
     if (route==="/api/health" && method==="GET") return json({ok:true,backend:"Cloudflare D1",auth_store:"D1"});
     if (route==="/auth/signup" && method==="POST") return json(await signup(db,env,data));
@@ -210,6 +308,54 @@ export async function handleD1(context) {
     if(!token) return json({detail:"No session token or login cookie reached the API."},401);
     if(!user) return json({detail:"Session token was not found or has expired in D1."},401);
     if(user.status!=="approved") return json({detail:"This D1 account is not approved."},401);
+    if(route==="/api/members" && method==="GET") {
+      if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can view the roster."),{status:403});
+      return json(await readMembers(db,url.searchParams.get("search")||"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET)));
+    }
+    if(route==="/api/eligible" && method==="GET") {
+      if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can view eligibility."),{status:403});
+      const rows=await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET)); return json(rows.filter(row=>!['Probationary','Probie','Probationary Volunteer','Probie Volunteer'].includes(row.rank) && rankEligibility(row).eligible).map(row=>({...row,eligible:true,next_rank:rankEligibility(row).next_rank,eligibility_reason:rankEligibility(row).reason})));
+    }
+    if(route==="/api/inactive" && method==="GET") { await requireAdmin(db,token); return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.activity==="Can Be Terminated").map(({callsign,name})=>({callsign,name}))); }
+    if(route==="/api/do-not-promote" && method==="GET") { await requireAdmin(db,token); return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.do_not_promote).map(({callsign,name})=>({callsign,name,added_at:"",added_by:""}))); }
+    if(route==="/api/instructors" && method==="GET") { await requireAdmin(db,token); return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.instructor_type).map(({name,instructor_type})=>({name,type:instructor_type,date:""}))); }
+    const memberRoute=route.match(/^\/api\/member\/([^/]+)$/);
+    if(route==="/api/account/profile" && method==="GET") {
+      const rows=await readMembers(db,user.callsign,env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
+      const member=rows.find(row=>row.callsign.toUpperCase()===user.callsign.toUpperCase());
+      if(!member) return json({detail:"Member not found."},404);
+      const eligible=rankEligibility(member);
+      member.trainings=[...(member.has_basic_firefighting?["basic_firefighting"]:[]),...(member.has_advanced_firefighting?["advanced_firefighting"]:[])];
+      member.exams=member.has_supervisor_exam?["supervisor_exam"]:[]; member.hert=member.has_hert; member.eligible=eligible.eligible;
+      member.eligibility_reason=eligible.reason; member.next_rank=eligible.next_rank; member.instructor_type=""; member.instructor_date="";
+      return json(member);
+    }
+    if(memberRoute && method==="GET") {
+      if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can view member profiles."),{status:403});
+      const rows=await readMembers(db,decodeURIComponent(memberRoute[1]),env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
+      const member=rows.find(row=>row.callsign.toUpperCase()===decodeURIComponent(memberRoute[1]).trim().toUpperCase());
+      if(!member) return json({detail:"Member not found."},404);
+      const eligible=rankEligibility(member);
+      member.trainings=[...(member.has_basic_firefighting?["basic_firefighting"]:[]),...(member.has_advanced_firefighting?["advanced_firefighting"]:[])];
+      member.exams=member.has_supervisor_exam?["supervisor_exam"]:[]; member.hert=member.has_hert;
+      member.eligible=eligible.eligible; member.eligibility_reason=eligible.reason; member.next_rank=eligible.next_rank;
+      if(!["admin","commander"].includes(user.role) && !/^(E|C|DIV|B|CHIEF|COM)-/.test(user.callsign)) member.instructor_type="";
+      member.instructor_date="";
+      return json(member);
+    }
+    if(route==="/api/watch-command/members" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).map(({callsign,name,rank})=>({callsign,name,rank})));
+    const watchMember=route.match(/^\/api\/watch-command\/member\/([^/]+)$/);
+    if(watchMember && method==="GET") {
+      const callsign=decodeURIComponent(watchMember[1]).trim().toUpperCase();
+      const rows=await readMembers(db,callsign,env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
+      const member=rows.find(row=>row.callsign===callsign);
+      return member?json({callsign:member.callsign,name:member.name,rank:member.rank}):json({detail:"Callsign was not found on the roster."},404);
+    }
+    if(route==="/api/sync" && method==="POST") {
+      if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can synchronize the roster."),{status:403});
+      const result=await syncMembersFromAppsScript(db,env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
+      return json({...result,message:"Roster synchronized from Google Sheets"});
+    }
     await db.prepare("INSERT INTO account_presence(account_id,last_seen) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET last_seen=excluded.last_seen").bind(user.account_id,nowSeconds()).run();
     if (route==="/api/presence" && method==="POST") return json({ok:true});
     if (route==="/api/presence/summary" && method==="GET") { const r=await db.prepare("SELECT COUNT(*) AS online_count FROM account_presence p JOIN accounts a ON a.account_id=p.account_id WHERE a.status='approved' AND p.last_seen>?").bind(nowSeconds()-90).first(); return json({online_count:r.online_count}); }
@@ -231,6 +377,11 @@ export async function handleD1(context) {
     if(!env.LVFR_D1_AUTH_BRIDGE_SECRET) return json({detail:"D1 Apps Script bridge is not configured."},503);
     const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
     const { proxyToAppsScript } = await import("../[[path]].js");
-    return await proxyToAppsScript(context,route,url,assertion,data);
+    const response=await proxyToAppsScript(context,route,url,assertion,data);
+    if(method==="POST" && (MEMBER_WRITE_ROUTES.has(route) || /^\/api\/member\/[^/]+\/instructor$/.test(route)) && response.ok) {
+      try { await syncMembersFromAppsScript(db,env,assertion); }
+      catch(error) { console.error("Roster was saved in Sheets but the D1 refresh failed:",error); return json({detail:"The change was saved in Google Sheets, but D1 could not be refreshed. Use Sync now and try again."},503); }
+    }
+    return response;
   } catch(error) { console.error("D1 API request failed:",error); return json({detail:error.message||"Request failed."},error.status||400); }
 }

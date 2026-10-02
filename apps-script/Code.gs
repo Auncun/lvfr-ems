@@ -1009,6 +1009,40 @@ function eligibleMembers_() {
   });
 }
 
+// Run installRosterD1SyncTriggers once from the Apps Script editor. The
+// installable trigger mirrors direct edits of roster source tabs to D1.
+function installRosterD1SyncTriggers() {
+  const ids = [requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'), requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')];
+  ScriptApp.getProjectTriggers().filter(trigger => trigger.getHandlerFunction() === 'syncRosterToD1OnEdit_')
+    .forEach(trigger => ScriptApp.deleteTrigger(trigger));
+  ids.filter((id, index) => ids.indexOf(id) === index).forEach(id => ScriptApp.newTrigger('syncRosterToD1OnEdit_').forSpreadsheet(id).onEdit().create());
+}
+
+function syncRosterToD1OnEdit_(event) {
+  if (!event || !event.range) return;
+  const sheet = event.range.getSheet(), name = sheet.getName();
+  const rosterId = requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID');
+  const privateId = requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID');
+  const allowed = event.source.getId() === rosterId
+    ? [LVFR.rosterTab, 'HERT Certified', 'FIREFIGHTER CERT'].includes(name)
+    : event.source.getId() === privateId && name === 'Do not Promote';
+  if (!allowed || event.range.getRow() === 1) return;
+  const workerUrl = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_SYNC_URL') || '').trim();
+  const workerSecret = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
+  if (!workerUrl || !workerSecret) throw new Error('Configure LVFR_D1_SYNC_URL and LVFR_D1_WORKER_SECRET in Script Properties.');
+  invalidateRosterCache_();
+  CacheService.getScriptCache().removeAll(['instructor-directory:v1', 'members:do-not-promote:v1', 'members:do-not-promote:list:v1']);
+  const members = readRosterMembers_();
+  const response = UrlFetchApp.fetch(workerUrl.replace(/\/$/, '') + '/internal/members/sync', {
+    method: 'post', contentType: 'application/json',
+    headers: { 'X-LVFR-Worker-Secret': workerSecret },
+    payload: JSON.stringify({ members }), muteHttpExceptions: true
+  });
+  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
+    throw new Error('D1 roster sync failed: HTTP ' + response.getResponseCode() + ' ' + response.getContentText());
+  }
+}
+
 const DO_NOT_PROMOTE_TAB = 'Do not Promote';
 const DO_NOT_PROMOTE_HEADERS = ['Callsign', 'Name', 'Added At', 'Added By'];
 
