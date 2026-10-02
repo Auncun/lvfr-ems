@@ -164,10 +164,14 @@ async function appendAudit(db, account, action, actor) {
   await db.prepare(`INSERT INTO account_audit(created_at,account_id,name,callsign,action,actor_name)
     VALUES(?,?,?,?,?,?)`).bind(new Date().toISOString(), account.account_id, account.name, account.callsign, action, actor || "").run();
 }
-async function publicUser(account) {
+async function publicUser(db, account) {
+  const member = account.callsign
+    ? await db.prepare("SELECT instructor_type FROM members WHERE upper(callsign)=upper(?)").bind(account.callsign).first()
+    : null;
   return { account_id: account.account_id, id: account.account_id, name: account.name, callsign: account.callsign,
     role: account.role, status: account.status, is_admin: ["admin", "commander"].includes(account.role),
-    is_command: ["admin", "commander"].includes(account.role) || /^(E|C|DIV|B|CHIEF|COM)-/.test(account.callsign), instructor_type: "" };
+    is_command: ["admin", "commander"].includes(account.role) || /^(E|C|DIV|B|CHIEF|COM)-/.test(account.callsign),
+    instructor_type: String(member?.instructor_type || "") };
 }
 async function login(db, data) {
   const name = nameKey(data.username || data.name), password = String(data.password || "");
@@ -187,7 +191,7 @@ async function login(db, data) {
   const lifetime = data.remember_me === true || String(data.remember_me || "").toLowerCase() === "on" ? 30 * 86400 : 6 * 3600;
   await db.prepare("INSERT INTO auth_sessions(token_hash,account_id,expires_at,created_at,remember_me) VALUES(?,?,?,?,?)")
     .bind(await sha256(token), account.account_id, now + lifetime, now, lifetime > 21600 ? 1 : 0).run();
-  return { token, user: await publicUser(account), max_age: lifetime };
+  return { token, user: await publicUser(db,account), max_age: lifetime };
 }
 async function signup(db, env, data) {
   const setup = await db.prepare("SELECT value FROM account_migration_state WHERE migration_key='initial_commander_created'").first();
@@ -298,7 +302,7 @@ export async function handleD1(context) {
     if (route==="/auth/me" && method==="GET") {
       const a=session.account;
       if(!a) return json({detail:token ? "Session token was not found or has expired in D1." : "No session token or login cookie reached the API."},401);
-      return json(await publicUser(a));
+      return json(await publicUser(db,a));
     }
     const signupStatus = route.match(/^\/auth\/signup-status\/([^/]+)$/);
     if (signupStatus && method==="GET") {

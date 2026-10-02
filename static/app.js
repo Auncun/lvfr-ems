@@ -109,12 +109,6 @@ function startBackgroundMutation(url, options) {
     const rollbackMember = previous ? { ...previous, optimistic_target: optimisticTarget } : null;
     const noChange = previous && (
         (path === "/api/activity" && previous.activity === payload.activity) ||
-        (path === "/api/exam" && Boolean(previous.has_supervisor_exam) === !payload.remove) ||
-        (path === "/api/training" && (
-            String(payload.training || "").toLowerCase() === "hert" ? Boolean(previous.has_hert) === !payload.remove :
-            payload.training === "Basic Firefighting" ? Boolean(previous.has_basic_firefighting) === !payload.remove :
-            payload.training === "Advanced Firefighting" ? Boolean(previous.has_advanced_firefighting) === !payload.remove : false
-        )) ||
         (/^\/api\/member\/[^/]+\/instructor$/.test(path) &&
             String(previous.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes(String(payload.instructor_type || "").toUpperCase()) === Boolean(payload.assigned))
     );
@@ -130,8 +124,6 @@ function startBackgroundMutation(url, options) {
     else if (path === "/api/demote") toast(`DEMOTED TO ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
     else if (path === "/api/change-callsign") toast(`Callsign changed to ${optimisticTarget}`);
     else if (path === "/api/activity") toast(`Activity changed to ${payload.activity}.`);
-    else if (path === "/api/training") toast(`${payload.training} ${payload.remove ? "removed" : "added"}.`);
-    else if (path === "/api/exam") toast(`Supervisor Exam ${payload.remove ? "removed" : "added"}.`);
     else if (/^\/api\/member\/[^/]+\/instructor$/.test(path)) toast(`${payload.instructor_type} Instructor ${payload.assigned ? "added" : "removed"}.`);
     else if (path === "/api/terminate") toast("Member terminated.");
     else if (path === "/api/note") toast("Member note updated.");
@@ -152,7 +144,9 @@ function startBackgroundMutation(url, options) {
             throw new Error("Your session expired. Please sign in again.");
         }
         if (!response.ok) throw new Error(result.detail || result.error || "Save failed.");
-        window.dispatchEvent(new CustomEvent("lvfr:background-updated", { detail: { route: path, callsign, result, optimisticCallsign: optimisticTarget } }));
+        if (path === "/api/training") toast(result.message || `${payload.training} ${result.changed ? (payload.remove ? "removed" : "added") : "already in that state"}.`);
+        else if (path === "/api/exam") toast(result.message || `Supervisor Exam ${result.changed ? (payload.remove ? "removed" : "added") : "already in that state"}.`);
+        window.dispatchEvent(new CustomEvent("lvfr:background-updated", { detail: { route: path, callsign, payload, result, optimisticCallsign: optimisticTarget } }));
         return result;
     }).catch(error => {
         if (path.startsWith("/api/leaders/")) void loadLeaders();
@@ -305,6 +299,49 @@ function removeEligibleRow(callsign) {
     button?.closest("tr")?.remove();
 }
 
+function rosterMatchesMutation(rows, detail) {
+    const route = String(detail?.route || "");
+    const payload = detail?.payload || {};
+    const oldCallsign = String(detail?.callsign || "").trim().toUpperCase();
+    const newCallsign = String(detail?.result?.new_callsign || payload.new_callsign || "").trim().toUpperCase();
+    const find = callsign => rows.find(member => String(member.callsign || "").trim().toUpperCase() === callsign);
+    if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(route)) {
+        const member = find(newCallsign);
+        return Boolean(member && member.rank === detail.result?.new_rank && !find(oldCallsign));
+    }
+    if (route === "/api/change-callsign") return Boolean(find(newCallsign) && !find(oldCallsign));
+    const member = find(oldCallsign);
+    if (route === "/api/terminate") return !member;
+    if (!member) return false;
+    if (route === "/api/activity") return member.activity === payload.activity;
+    if (route === "/api/note") return member.notes === (payload.action === "Delete" ? "" : String(payload.note || ""));
+    if (route === "/api/date") return member.date === payload.date_str || member.rank_assigned_date === payload.date_str;
+    if (route === "/api/exam") return Boolean(member.has_supervisor_exam) === !payload.remove;
+    if (route === "/api/training") {
+        const key = String(payload.training || "").toLowerCase() === "hert" ? "has_hert"
+            : payload.training === "Basic Firefighting" ? "has_basic_firefighting"
+            : payload.training === "Advanced Firefighting" ? "has_advanced_firefighting" : "";
+        return Boolean(key && member[key]) === !payload.remove;
+    }
+    if (/^\/api\/member\/[^/]+\/instructor$/.test(route)) {
+        const types = String(member.instructor_type || "").toUpperCase().split(/\s*\/\s*/);
+        return types.includes(String(payload.instructor_type || "").toUpperCase()) === Boolean(payload.assigned);
+    }
+    return true;
+}
+
+async function refreshRosterAfterMutation(detail) {
+    // Site writes acknowledge the Sheet save before their background D1
+    // refresh finishes. Retry uncached reads until that D1 snapshot arrives.
+    for (const delay of [250, 700, 1400, 2600, 4500]) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        try {
+            await loadMembers(true, true);
+            if (Array.isArray(allMembersCache) && rosterMatchesMutation(allMembersCache, detail)) return;
+        } catch {}
+    }
+}
+
 function paintCachedMemberRow(member, oldCallsign) {
     const button = [...document.querySelectorAll('#membersTable [data-action="profile"]')]
         .find(item => item.dataset.callsign?.toUpperCase() === String(oldCallsign || "").toUpperCase()
@@ -356,7 +393,13 @@ window.addEventListener("lvfr:background-updated", event => {
             }
         }
     }
-    loadMembers(true);
+    const route = String(event.detail?.route || "");
+    if (["/api/activity", "/api/note", "/api/date", "/api/training", "/api/exam", "/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign", "/api/terminate"].includes(route)
+        || /^\/api\/member\/[^/]+\/instructor$/.test(route)) {
+        void refreshRosterAfterMutation(event.detail);
+    } else if (!route.startsWith("/api/leaders/")) {
+        loadMembers(true);
+    }
     void loadConfig();
     syncStatus();
     const activeTab = $(".tab.active")?.dataset.tab;
@@ -3188,7 +3231,7 @@ async function training(
 
     const trainingName = String($("#training")?.value || "").trim().toLowerCase();
     const requiredType = trainingName === "hert" ? "HERT" : "FORT";
-    if (!currentInstructorTypes.includes(requiredType)) {
+    if (!currentUserIsAdmin && !currentInstructorTypes.includes(requiredType)) {
         toast(`Only a ${requiredType} Instructor can add or delete this training.`);
         return;
     }
