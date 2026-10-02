@@ -453,7 +453,14 @@ export async function handleD1(context) {
     if(route==="/api/eligible" && method==="GET") {
       if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can view eligibility."),{status:403});
       const rows=await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
-      return json(rows.filter(row=>!['Probationary','Probie','Probationary Volunteer','Probie Volunteer'].includes(row.rank) && rankEligibility(row).eligible && (admin || (row.rank==="EMT" && rankEligibility(row).next_rank==="AEMT"))).map(row=>({...row,eligible:true,next_rank:rankEligibility(row).next_rank,eligibility_reason:rankEligibility(row).reason)));
+      const admin=["admin","commander"].includes(user.role);
+      return json(rows.reduce((eligibleRows,row)=>{
+        if(["Probationary","Probie","Probationary Volunteer","Probie Volunteer"].includes(row.rank)) return eligibleRows;
+        const eligibility=rankEligibility(row);
+        if(!eligibility.eligible || (!admin && (row.rank!=="EMT" || eligibility.next_rank!=="AEMT"))) return eligibleRows;
+        eligibleRows.push({...row,eligible:true,next_rank:eligibility.next_rank,eligibility_reason:eligibility.reason});
+        return eligibleRows;
+      },[]));
     }
     if(route==="/api/inactive" && method==="GET") { await requireAdmin(db,token); return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.activity==="Can Be Terminated").map(({callsign,name})=>({callsign,name}))); }
     if(route==="/api/do-not-promote" && method==="GET") { await requireAdmin(db,token); return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.do_not_promote).map(({callsign,name})=>({callsign,name,added_at:"",added_by:""}))); }
