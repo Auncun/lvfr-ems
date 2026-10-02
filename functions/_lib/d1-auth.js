@@ -152,6 +152,21 @@ async function replaceMembers(db, members, syncedAt = new Date().toISOString()) 
 const MEMBER_WRITE_ROUTES = new Set(["/api/activity", "/api/note", "/api/date", "/api/training", "/api/exam", "/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign", "/api/terminate", "/api/do-not-promote"]);
 const RANK_PREFIX = { Commissioners:"COM", Chief:"CHIEF", "County Command":"B", "Division Commander":"DIV", Captain:"C", Lieutenant:"E", "Lead Paramedic":"L", Paramedic:"M", AEMT:"A", EMT:"R", Probationary:"P", EMR:"P", "Senior Volunteer":"S", Volunteer:"V", "Probationary Volunteer":"V", "EMR/Volunteer":"P" };
 function rankForCallsign(cs) { const p=String(cs||"").match(/^[A-Z]+/); if(!p)return ""; if(p[0]==="V") return [1,2,3,4,5,6,7,8,9,14,21,22,23,24,25,26,27,28,29,36,37,38,39,40].includes(Number(cs.split("-")[1]))?"Probationary Volunteer":"Volunteer"; return ({COM:"Commissioners",CHIEF:"Chief",B:"County Command",DIV:"Division Commander",C:"Captain",E:"Lieutenant",L:"Lead Paramedic",M:"Paramedic",A:"AEMT",R:"EMT",P:"Probationary",S:"Senior Volunteer"})[p[0]]||""; }
+let orderedMembersViewReady = false;
+async function ensureOrderedMembersView(db) {
+  if(orderedMembersViewReady) return;
+  await db.prepare(`CREATE VIEW IF NOT EXISTS members_roster_ordered AS
+    SELECT * FROM members
+    ORDER BY CASE substr(upper(callsign),1,instr(callsign,'-')-1)
+      WHEN 'COM' THEN 0 WHEN 'CHIEF' THEN 1 WHEN 'B' THEN 2 WHEN 'DIV' THEN 3
+      WHEN 'C' THEN 4 WHEN 'E' THEN 5 WHEN 'L' THEN 6 WHEN 'M' THEN 7
+      WHEN 'A' THEN 8 WHEN 'R' THEN 9 WHEN 'P' THEN 10 WHEN 'S' THEN 11
+      WHEN 'V' THEN CASE WHEN CAST(substr(callsign,instr(callsign,'-')+1) AS INTEGER) IN (1,2,3,4,5,6,7,8,9,14,21,22,23,24,25,26,27,28,29,36,37,38,39,40) THEN 13 ELSE 12 END
+      ELSE 999 END,
+      CAST(substr(callsign,instr(callsign,'-')+1) AS INTEGER),
+      callsign COLLATE NOCASE`).run();
+  orderedMembersViewReady = true;
+}
 const RANK_LEVEL = { "Probationary Volunteer":1, "Probationary":1, EMR:1, "EMR/Volunteer":1, Volunteer:2, "Senior Volunteer":3, EMT:4, AEMT:5, "Advanced EMT":5, Paramedic:6, "Lead Paramedic":7, Lieutenant:8, Captain:9, "Division Commander":10, "County Command":11, Chief:12, Commissioners:13 };
 async function applyRosterMutationD1(db, route, data, actor) {
   await ensureCallsignSlotsTable(db);
@@ -236,10 +251,11 @@ function compareCallsigns(a, b) {
 }
 async function readMembers(db, search = "", env = null, token = "") {
   // Do not seed an empty D1 database from Sheet during a read. Run Sync now.
+  await ensureOrderedMembersView(db);
   const q = String(search || "").trim().toLowerCase();
   const result = q
-    ? await db.prepare("SELECT * FROM members WHERE lower(callsign) LIKE ? OR lower(name) LIKE ? OR lower(rank) LIKE ? ORDER BY rank,name").bind(`%${q}%`,`%${q}%`,`%${q}%`).all()
-    : await db.prepare("SELECT * FROM members ORDER BY rank,name").all();
+    ? await db.prepare("SELECT * FROM members_roster_ordered WHERE lower(callsign) LIKE ? OR lower(name) LIKE ? OR lower(rank) LIKE ?").bind(`%${q}%`,`%${q}%`,`%${q}%`).all()
+    : await db.prepare("SELECT * FROM members_roster_ordered").all();
   const rankOrder=["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer"];
   const sortRank = member => {
     const fromCallsign=rankForCallsign(member.callsign);

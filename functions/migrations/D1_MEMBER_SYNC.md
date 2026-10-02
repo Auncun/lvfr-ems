@@ -33,6 +33,11 @@ members and Callsign slots to D1 through the installed Apps Script triggers.
 5. Apply `0004_callsign_slots.sql`. Before the first Commander bootstrap, run
    `initializeRosterD1Sync` once from the Apps Script editor; this seeds D1 and
    available Callsigns. Later, use the site's **Sync now** action to refresh.
+6. Apply `0005_ordered_members_view.sql` to add the `members_roster_ordered`
+   view. In the D1 console, query `SELECT * FROM members_roster_ordered` to see
+   members grouped by Callsign rank and ordered numerically within each group
+   (for example, M-02 immediately after M-01). The base `members` table itself
+   has no guaranteed row order.
 
 Website changes write D1 first and Sheet in the background; they do not trigger
 a Sheet read or a D1 replacement. **Sync now** synchronously rewrites D1 from

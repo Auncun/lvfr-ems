@@ -973,7 +973,7 @@ async function loadMembers(silent = false, forceFresh = false) {
             return searchMatches && rankMatches && hertMatches && fortInstructorMatches && hertInstructorMatches
                 && basicMatches && advancedMatches
                 && supervisorMatches && activityMatches;
-        });
+        }).sort(compareRosterMembers);
 
         const memberCount =
             $("#memberCount");
