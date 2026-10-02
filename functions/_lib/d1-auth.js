@@ -63,8 +63,13 @@ async function rosterIdentity(env, name) {
   if (!member || !member.name || !member.callsign) throw new Error("Name was not found on the LVFR roster.");
   return member;
 }
-async function syncMembersFromAppsScript(db, env, token = "") {
-  const members = await gasCall(env, "/api/members", "GET", {}, token);
+async function syncMembersFromAppsScript(db, env, token = "", forceFresh = false) {
+  // A manual/after-write refresh must bypass the Apps Script roster cache.
+  // Its /api/sync endpoint invalidates that cache before reading Sheets.
+  const snapshot = forceFresh
+    ? await gasCall(env, "/api/sync", "POST", {}, token)
+    : await gasCall(env, "/api/members", "GET", {}, token);
+  const members = Array.isArray(snapshot) ? snapshot : snapshot && snapshot.members;
 
   if (!Array.isArray(members)) {
     throw new Error("Apps Script returned an invalid roster.");
@@ -353,7 +358,7 @@ export async function handleD1(context) {
     }
     if(route==="/api/sync" && method==="POST") {
       if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can synchronize the roster."),{status:403});
-      const result=await syncMembersFromAppsScript(db,env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
+      const result=await syncMembersFromAppsScript(db,env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET),true);
       return json({...result,message:"Roster synchronized from Google Sheets"});
     }
     await db.prepare("INSERT INTO account_presence(account_id,last_seen) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET last_seen=excluded.last_seen").bind(user.account_id,nowSeconds()).run();
@@ -385,7 +390,7 @@ export async function handleD1(context) {
       const refresh = (async () => {
         try {
           const freshAssertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
-          await syncMembersFromAppsScript(db,env,freshAssertion);
+          await syncMembersFromAppsScript(db,env,freshAssertion,true);
         } catch(error) {
           console.error("Roster was saved in Sheets but the background D1 refresh failed; use Sync now:",error);
         }

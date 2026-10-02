@@ -8,7 +8,10 @@ applied by Apps Script to Sheets first; Cloudflare starts the D1 refresh in the
 background, so the site can report the Sheets save without waiting for a full
 roster read and D1 rewrite. D1 may lag briefly while that refresh runs. If the
 background refresh fails, Cloudflare logs the error and an operator can use
-**Sync now** to refresh the cache.
+**Sync now** to refresh the cache. A forced refresh calls Apps Script
+`/api/sync`, which invalidates its roster cache before reading the current
+Sheet values and status colors; ordinary D1 cache seeding can still use the
+cached read endpoint.
 
 ## Setup
 
