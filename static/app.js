@@ -112,9 +112,7 @@ function startBackgroundMutation(url, options) {
     }
     const rollbackMember = previous ? { ...previous, optimistic_target: optimisticTarget } : null;
     const noChange = previous && (
-        (path === "/api/activity" && previous.activity === payload.activity) ||
-        (/^\/api\/member\/[^/]+\/instructor$/.test(path) &&
-            String(previous.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes(String(payload.instructor_type || "").toUpperCase()) === Boolean(payload.assigned))
+        path === "/api/activity" && previous.activity === payload.activity
     );
     if (noChange) {
         toast(path === "/api/activity" ? `Already ${payload.activity}.` : "No change needed; this value is already set.");

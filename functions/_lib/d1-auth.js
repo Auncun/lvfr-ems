@@ -518,7 +518,8 @@ export async function handleD1(context) {
       const mutationData={...data};
       if(instructorWrite) mutationData.callsign=decodeURIComponent(instructorWrite[1]).toUpperCase();
       const result=await applyRosterMutationD1(db,route,mutationData,user);
-      if(result.changed!==false) {
+      const isHertTraining=route==="/api/training" && String(mutationData.training||"").trim().toLowerCase()==="hert";
+      if(result.changed!==false || isHertTraining) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
         const { proxyToAppsScript } = await import("../[[path]].js");
         const bg=(async()=>{ try { const response=await proxyToAppsScript(context,route,url,assertion,mutationData); if(!response.ok) console.error("Background Sheet write failed after D1 commit:",await response.text()); } catch(error) { console.error("Background Sheet write failed after D1 commit:",error); } })();
