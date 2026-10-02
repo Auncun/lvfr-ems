@@ -1010,12 +1010,16 @@ function eligibleMembers_() {
 }
 
 // Run installRosterD1SyncTriggers once from the Apps Script editor. The
-// installable trigger mirrors direct edits of roster source tabs to D1.
+// installable edit trigger mirrors value changes; the change trigger mirrors
+// formatting changes such as activity, training, exam, and instructor colors.
 function installRosterD1SyncTriggers() {
   const ids = [requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'), requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')];
-  ScriptApp.getProjectTriggers().filter(trigger => trigger.getHandlerFunction() === 'syncRosterToD1OnEdit_')
+  const handlers = ['syncRosterToD1OnEdit_', 'syncRosterToD1OnChange_'];
+  ScriptApp.getProjectTriggers().filter(trigger => handlers.includes(trigger.getHandlerFunction()))
     .forEach(trigger => ScriptApp.deleteTrigger(trigger));
   ids.filter((id, index) => ids.indexOf(id) === index).forEach(id => ScriptApp.newTrigger('syncRosterToD1OnEdit_').forSpreadsheet(id).onEdit().create());
+  ScriptApp.newTrigger('syncRosterToD1OnChange_')
+    .forSpreadsheet(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')).onChange().create();
 }
 
 function syncRosterToD1OnEdit_(event) {
@@ -1027,6 +1031,19 @@ function syncRosterToD1OnEdit_(event) {
     ? [LVFR.rosterTab, 'HERT Certified', 'FIREFIGHTER CERT'].includes(name)
     : event.source.getId() === privateId && name === 'Do not Promote';
   if (!allowed || event.range.getRow() === 1) return;
+  syncRosterSnapshotToD1_();
+}
+
+// Activity, training, exam, and instructor states are encoded as cell colors.
+// A user changing only a cell's format does not produce an onEdit event, so
+// mirror FORMAT changes through an installable spreadsheet onChange trigger.
+function syncRosterToD1OnChange_(event) {
+  if (!event || !event.source || String(event.changeType || '').toUpperCase() !== 'FORMAT') return;
+  if (event.source.getId() !== requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')) return;
+  syncRosterSnapshotToD1_();
+}
+
+function syncRosterSnapshotToD1_() {
   const workerUrl = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_SYNC_URL') || '').trim();
   const workerSecret = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
   if (!workerUrl || !workerSecret) throw new Error('Configure LVFR_D1_SYNC_URL and LVFR_D1_WORKER_SECRET in Script Properties.');

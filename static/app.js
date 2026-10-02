@@ -855,6 +855,8 @@ async function syncStatus() {
 
 let memberListRequestInFlight = false;
 let memberListReloadQueued = false;
+let lastRosterVersion = "";
+let rosterVersionCheckInFlight = false;
 let memberListRenderKey = "";
 const memberCache = new Map();
 let allMembersCache = (() => {
@@ -874,6 +876,15 @@ async function loadMembers(silent = false, forceFresh = false) {
     memberListRequestInFlight = true;
 
     try {
+
+        // Establish the server snapshot version before the first roster read.
+        // Later checks can then detect real changes without downloading rows.
+        if (!lastRosterVersion) {
+            try {
+                const snapshot = await api("/api/members/version");
+                lastRosterVersion = String(snapshot.version || "");
+            } catch {}
+        }
 
         const searchElement =
             $("#search");
@@ -899,6 +910,12 @@ async function loadMembers(silent = false, forceFresh = false) {
         renderStatistics();
         try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(loadedRows)); } catch {}
         loadedRows.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
+        const signedInMember = loadedRows.find(member => String(member.callsign || "").trim().toUpperCase() === currentUserCallsign);
+        if (signedInMember && (forceFresh || !currentInstructorTypes.length)) {
+            currentInstructorTypes = String(signedInMember.instructor_type || "")
+                .split("/").map(value => value.trim().toUpperCase()).filter(Boolean);
+            updateTrainingPermission();
+        }
         const profileCallsign = String(activeProfileMember?.callsign || "").trim().toUpperCase();
         if (profileCallsign && !$("#modal")?.classList.contains("hidden")) {
             const latestProfileRow = loadedRows.find(member => String(member.callsign || "").trim().toUpperCase() === profileCallsign);
@@ -1545,6 +1562,29 @@ async function loadInstructors() {
         renderInstructors();
     } catch (error) {
         if (table) table.innerHTML = empty("Failed to load instructors: " + error.message);
+    }
+}
+
+async function checkRosterVersion() {
+    if (rosterVersionCheckInFlight || document.hidden
+        || $(".tab.active")?.dataset.tab !== "members") return;
+    rosterVersionCheckInFlight = true;
+    try {
+        const snapshot = await api(`/api/members/version?_v=${Date.now()}`);
+        const version = String(snapshot.version || "");
+        if (!version) return;
+        if (!lastRosterVersion) {
+            lastRosterVersion = version;
+            return;
+        }
+        if (version !== lastRosterVersion) {
+            lastRosterVersion = version;
+            await loadMembers(true, true);
+        }
+    } catch {
+        // A transient version check failure should not interrupt roster use.
+    } finally {
+        rosterVersionCheckInFlight = false;
     }
 }
 
@@ -2522,6 +2562,7 @@ let profileRenderToken = 0;
 let currentUserIsAdmin = false;
 let currentUserAccountId = String(window.lvfrCachedUser?.()?.account_id || window.lvfrCachedUser?.()?.id || "");
 let currentInstructorTypes = [];
+let currentUserCallsign = String(window.lvfrCachedUser?.()?.callsign || "").trim().toUpperCase();
 let currentUserIsCommand = false;
 
 
@@ -3204,17 +3245,16 @@ async function setInstructor(cs, assigned) {
 
 
 function updateTrainingPermission() {
-    const selected = String($("#training")?.value || "").trim().toLowerCase();
-    const requiredType = selected === "hert" ? "HERT" : "FORT";
-    const hasInstructorCertificate = currentUserIsAdmin || currentInstructorTypes.length > 0;
-    const allowed = currentUserIsAdmin || currentInstructorTypes.includes(requiredType);
+    const selected = String($("#training")?.value || "").trim().toLowerCase() === "hert" ? "HERT" : "FORT";
+    const permissionsKnown = currentInstructorTypes.length > 0;
+    const allowed = currentUserIsAdmin || !permissionsKnown || currentInstructorTypes.includes(selected);
     const trainingField = $("#trainingField");
-    if (trainingField) trainingField.style.display = hasInstructorCertificate ? "" : "none";
+    if (trainingField) trainingField.style.display = "";
     ["#addTrainingButton", "#deleteTrainingButton"].forEach(selector => {
         const button = $(selector);
         if (!button) return;
         button.style.display = allowed ? "" : "none";
-        button.title = allowed ? "" : `Only a ${requiredType} Instructor can change this training.`;
+        button.title = allowed ? "" : `Your account does not have ${selected} Instructor access.`;
     });
     const trainingActions = $("#addTrainingButton")?.closest(".training-actions");
     if (trainingActions) trainingActions.style.display = allowed ? "" : "none";
@@ -3229,10 +3269,10 @@ async function training(
     remove
 ) {
 
-    const trainingName = String($("#training")?.value || "").trim().toLowerCase();
-    const requiredType = trainingName === "hert" ? "HERT" : "FORT";
-    if (!currentUserIsAdmin && !currentInstructorTypes.includes(requiredType)) {
-        toast(`Only a ${requiredType} Instructor can add or delete this training.`);
+    const trainingName = String($("#training")?.value || "").trim();
+    const requiredType = trainingName.toLowerCase() === "hert" ? "HERT" : "FORT";
+    if (!currentUserIsAdmin && currentInstructorTypes.length && !currentInstructorTypes.includes(requiredType)) {
+        toast(`Your account does not have ${requiredType} Instructor access.`);
         return;
     }
 
@@ -4635,6 +4675,7 @@ function applyAccountUser(user) {
     }
     currentUserIsAdmin = Boolean(user.is_admin);
     currentUserAccountId = String(user.account_id || user.id || "");
+    currentUserCallsign = String(user.callsign || "").trim().toUpperCase();
     currentUserIsCommand = Boolean(user.is_command);
     const commandSyncPanel = $("#commandSyncPanel");
     if (commandSyncPanel) commandSyncPanel.hidden = user.role === "member";
@@ -4828,6 +4869,11 @@ refreshOnlineCount();
 setInterval(refreshOnlineCount, 30000);
 
 setInterval(() => { if (!document.hidden) syncStatus(); }, 60000);
+// Check only the small D1 version marker. Download the roster again only when
+// a sync has actually changed its version.
+setInterval(() => {
+    void checkRosterVersion();
+}, 15000);
 setInterval(() => {
     if (!document.hidden) loadNotifications();
 }, 15000);

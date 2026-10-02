@@ -321,6 +321,11 @@ export async function handleD1(context) {
       if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can view the roster."),{status:403});
       return json(await readMembers(db,url.searchParams.get("search")||"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET)));
     }
+    if(route==="/api/members/version" && method==="GET") {
+      if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can view roster status."),{status:403});
+      const version=await db.prepare("SELECT COUNT(*) AS count, COALESCE(MAX(synced_at),'') AS synced_at FROM members").first();
+      return json({version:`${version?.count||0}:${version?.synced_at||""}`});
+    }
     if(route==="/api/eligible" && method==="GET") {
       if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can view eligibility."),{status:403});
       const rows=await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET)); return json(rows.filter(row=>!['Probationary','Probie','Probationary Volunteer','Probie Volunteer'].includes(row.rank) && rankEligibility(row).eligible).map(row=>({...row,eligible:true,next_rank:rankEligibility(row).next_rank,eligibility_reason:rankEligibility(row).reason})));

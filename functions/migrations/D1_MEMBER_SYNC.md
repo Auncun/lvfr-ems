@@ -26,20 +26,22 @@ cached read endpoint.
 3. In Apps Script Script Properties, set `LVFR_D1_SYNC_URL` to the deployed
    Cloudflare site origin, `https://lvfr-ems.pages.dev` (no `/internal` path),
    and set `LVFR_D1_WORKER_SECRET` to the same secret used by the Worker.
-4. In the Apps Script editor, run `installRosterD1SyncTriggers` once and grant
-   its requested spreadsheet and external-request permissions. It installs
-   edit triggers for the roster and private spreadsheets. Direct edits to the
-   roster, HERT/FORT certification sheets, and Do not Promote sheet then send
-   a fresh roster snapshot to D1. Script Properties are private; never put the
-   worker secret in the site bundle.
+4. After updating `apps-script/Code.gs`, run `installRosterD1SyncTriggers`
+   again in the Apps Script editor and grant its requested permissions. It
+   installs edit triggers for roster/private sheet value edits and a change
+   trigger for formatting changes in the roster spreadsheet. The formatting
+   trigger is needed because activity, training, exam, and instructor status
+   are stored as cell colors; direct color changes do not fire `onEdit`.
+   Script Properties are private; never put the worker secret in the site
+   bundle.
 5. Use the site's **Sync now** action once after deployment to initialize or
    refresh D1.
 
 Changes made by the website do not rely on edit triggers: after Apps Script
 confirms the Sheets write, the Worker uses Pages `waitUntil()` to refresh D1 in
 the background. **Sync now** remains synchronous and waits until the roster is
-refreshed. Direct edits in Google Sheets continue to use the Apps Script edit
-trigger and `/internal/members/sync` endpoint.
+refreshed. Direct edits in Google Sheets use the Apps Script edit/change
+triggers and `/internal/members/sync` endpoint.
 
 ## Troubleshooting HTTP 405 from the edit trigger
 
