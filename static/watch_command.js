@@ -400,7 +400,7 @@ function renderLog(log) {
   }
   const activeUnit = String(log.active_unit || '').trim();
   const activeEms = String(log.active_ems || '').trim();
-  if (log.active_merged) addLogField(opening, 'ACTIVE UNIT', [activeUnit, activeEms ? `Personnel:\n${activeEms}` : ''].filter(Boolean).join('\n'));
+  if (log.active_merged) addLogField(opening, 'ACTIVE UNIT', mergedActiveUnitDisplay(activeUnit, activeEms));
   else {
     addLogField(opening, 'ACTIVE UNIT', activeUnit);
     addLogField(opening, 'ACTIVE EMS', activeEms);
@@ -698,10 +698,11 @@ function refreshActivePresence() {
       const activeMembers = assignment.members.filter(member => member.active);
       if (!activeMembers.length) continue;
       const key = `${sector}|${assignment.unit}`;
-      if (!units.has(key)) units.set(key, { sector, unit: assignment.unit });
+      if (!units.has(key)) units.set(key, { sector, unit: assignment.unit, callsigns: [] });
       for (const member of activeMembers) {
         const personKey = member.callsign.toUpperCase();
         const rosterMember = memberNameCache.get(personKey);
+        units.get(key).callsigns.push(personKey);
         people.set(personKey, `${personKey}${rosterMember?.name ? ` ${rosterMember.name}` : ''} — ${assignment.unit}`);
       }
     }
@@ -712,12 +713,28 @@ function refreshActivePresence() {
   form.elements.active_ems.value = personLines.join('\n');
   const merged = form.elements.active_merged.value === 'true';
   activeUnitSummary.value = merged
-    ? [unitLines.length ? unitLines.join('\n') : '', personLines.length ? `Personnel:\n${personLines.join('\n')}` : ''].filter(Boolean).join('\n')
+    ? [...units.values()].map(item => `${item.unit} : ${item.callsigns.join(' | ')}`).join('\n')
     : unitLines.join('\n');
   activeEmsSummary.value = personLines.join('\n');
   activeEmsWrap.hidden = merged;
   activeMergeButton.textContent = merged ? 'SEPARATE' : 'MERGE';
   activeMergeButton.setAttribute('aria-pressed', String(merged));
+}
+function mergedActiveUnitDisplay(activeUnit, activeEms) {
+  const callsignsByUnit = new Map();
+  for (const line of String(activeEms || '').split('\n')) {
+    const match = line.match(/^\s*([A-Z]+-\d+)\b.*?\s+—\s+(.+?)\s*$/i);
+    if (!match) continue;
+    const callsigns = callsignsByUnit.get(match[2]) || [];
+    callsigns.push(match[1].toUpperCase());
+    callsignsByUnit.set(match[2], callsigns);
+  }
+  return String(activeUnit || '').split('\n').map(line => {
+    const separator = line.indexOf(':');
+    const unit = (separator >= 0 ? line.slice(separator + 1) : line).trim();
+    const callsigns = callsignsByUnit.get(unit) || [];
+    return callsigns.length ? `${unit} : ${callsigns.join(' | ')}` : unit;
+  }).filter(Boolean).join('\n');
 }
 activeMergeButton?.addEventListener('click', () => {
   form.elements.active_merged.value = form.elements.active_merged.value === 'true' ? 'false' : 'true';
