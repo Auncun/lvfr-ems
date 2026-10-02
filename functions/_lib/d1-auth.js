@@ -241,7 +241,15 @@ async function readMembers(db, search = "", env = null, token = "") {
     ? await db.prepare("SELECT * FROM members WHERE lower(callsign) LIKE ? OR lower(name) LIKE ? OR lower(rank) LIKE ? ORDER BY rank,name").bind(`%${q}%`,`%${q}%`,`%${q}%`).all()
     : await db.prepare("SELECT * FROM members ORDER BY rank,name").all();
   const rankOrder=["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer"];
-  return (result.results || []).map(memberFromRow).sort((a,b)=>(rankOrder.indexOf(a.rank)<0?999:rankOrder.indexOf(a.rank))-(rankOrder.indexOf(b.rank)<0?999:rankOrder.indexOf(b.rank)) || compareCallsigns(a.callsign,b.callsign));
+  const sortRank = member => {
+    const fromCallsign=rankForCallsign(member.callsign);
+    if(fromCallsign) return rankOrder.indexOf(fromCallsign)<0?999:rankOrder.indexOf(fromCallsign);
+    const stored=String(member.rank||"").trim().toLowerCase();
+    const canonical=rankOrder.find(rank=>rank.toLowerCase()===stored);
+    const index=rankOrder.indexOf(canonical);
+    return index<0?999:index;
+  };
+  return (result.results || []).map(memberFromRow).sort((a,b)=>sortRank(a)-sortRank(b) || compareCallsigns(a.callsign,b.callsign));
 }
 function rankEligibility(member) {
   const rules = { EMR:["EMT",7,[],[]], Probationary:["EMT",7,[],[]], EMT:["AEMT",14,["has_basic_firefighting"],[]], AEMT:["Paramedic",21,["has_basic_firefighting","has_advanced_firefighting"],["has_supervisor_exam"]], "Advanced EMT":["Paramedic",21,["has_basic_firefighting","has_advanced_firefighting"],["has_supervisor_exam"]], "EMR/Volunteer":["Volunteer",7,[],[]], "Probationary Volunteer":["Volunteer",7,[],[]], Volunteer:["Senior Volunteer",14,[],[]] };

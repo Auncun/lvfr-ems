@@ -187,7 +187,22 @@ function isBackgroundPending(error) {
 function rankForCallsign(callsign) {
     const prefix = String(callsign || "").toUpperCase().match(/^[A-Z]+/);
     const map = { COM: "Commissioners", CHIEF: "Chief", B: "County Command", DIV: "Division Commander", C: "Captain", E: "Lieutenant", L: "Lead Paramedic", M: "Paramedic", A: "AEMT", R: "EMT", P: "Probationary", S: "Senior Volunteer", V: "Volunteer" };
+    if (prefix?.[0] === "V") {
+        const number = Number(String(callsign || "").split("-", 2)[1]);
+        const probationary = [1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 21, 22, 23, 24, 25, 26, 27, 28, 29, 36, 37, 38, 39, 40];
+        return probationary.includes(number) ? "Probationary Volunteer" : "Volunteer";
+    }
     return prefix ? map[prefix[0]] || "" : "";
+}
+
+function compareRosterMembers(a, b) {
+    const rankOrder = ["Commissioners", "Chief", "County Command", "Division Commander", "Captain", "Lieutenant", "Lead Paramedic", "Paramedic", "AEMT", "EMT", "Probationary", "Senior Volunteer", "Volunteer", "Probationary Volunteer", "EMR", "EMR/Volunteer"];
+    const rankOf = member => rankForCallsign(member.callsign) || rankOrder.find(rank => rank.toLowerCase() === String(member.rank || "").trim().toLowerCase());
+    const rankA = rankOrder.indexOf(rankOf(a));
+    const rankB = rankOrder.indexOf(rankOf(b));
+    const rankDelta = (rankA < 0 ? 999 : rankA) - (rankB < 0 ? 999 : rankB);
+    if (rankDelta) return rankDelta;
+    return String(a.callsign || "").localeCompare(String(b.callsign || ""), undefined, { numeric: true, sensitivity: "base" });
 }
 
 function applyOptimisticMutation(route, payload, callsign) {
@@ -234,8 +249,7 @@ function applyOptimisticMutation(route, payload, callsign) {
             if (Array.isArray(allMembersCache)) {
                 allMembersCache = allMembersCache.filter(member => String(member.callsign || "").toUpperCase() !== key);
                 allMembersCache.push(updated);
-                const rankOrder = ["Commissioners", "Chief", "County Command", "Division Commander", "Captain", "Lieutenant", "Lead Paramedic", "Paramedic", "AEMT", "EMT", "Probationary", "Senior Volunteer", "Volunteer", "Probationary Volunteer", "EMR", "EMR/Volunteer"];
-                allMembersCache.sort((a, b) => (rankOrder.indexOf(a.rank) < 0 ? 999 : rankOrder.indexOf(a.rank)) - (rankOrder.indexOf(b.rank) < 0 ? 999 : rankOrder.indexOf(b.rank)) || String(a.callsign).localeCompare(String(b.callsign), undefined, { numeric: true }));
+                allMembersCache.sort(compareRosterMembers);
                 allMembersCacheAt = Date.now();
                 memberListRenderKey = "";
                 void loadMembers();
@@ -894,6 +908,7 @@ async function loadMembers(silent = false, forceFresh = false) {
             allMembersCache = loadedRows;
             allMembersCacheAt = Date.now();
         }
+        loadedRows.sort(compareRosterMembers);
         renderStatistics();
         try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(loadedRows)); } catch {}
         loadedRows.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
