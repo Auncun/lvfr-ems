@@ -1,6 +1,10 @@
 const $ = s => document.querySelector(s);
 
 let config = {};
+try {
+    const cachedConfig = JSON.parse(sessionStorage.getItem("lvfr.config.v1") || "null");
+    if (cachedConfig && Array.isArray(cachedConfig.ranks)) config = cachedConfig;
+} catch {}
 // Keep brief deduplication for rapid repeat reads while allowing polling to
 // pick up a change from another client without waiting on a stale browser copy.
 const API_READ_CACHE_MS = 5000;
@@ -682,7 +686,10 @@ async function loadConfig() {
         const cached = JSON.parse(sessionStorage.getItem("lvfr.config.v1") || "null");
         if (cached && Array.isArray(cached.ranks)) config = cached;
     } catch {}
-    if (config.ranks) renderRankFilter();
+    if (config.ranks) {
+        renderRankFilter();
+        renderStatisticsRankFilters();
+    }
     const fresh = await api("/api/config");
     config = fresh;
     try { sessionStorage.setItem("lvfr.config.v1", JSON.stringify(fresh)); } catch {}
@@ -814,6 +821,10 @@ let allMembersCache = (() => {
     } catch { return null; }
 })();
 let allMembersCacheAt = allMembersCache ? Date.now() : 0;
+if (allMembersCache) {
+    if (config.ranks) renderStatisticsRankFilters();
+    else renderStatistics();
+}
 
 async function loadMembers(silent = false, forceFresh = false) {
     if (memberListRequestInFlight) { memberListReloadQueued = true; return; }
@@ -841,8 +852,8 @@ async function loadMembers(silent = false, forceFresh = false) {
             if (!loadedRows) throw new Error("The roster response was invalid. Refresh the page and try again.");
             allMembersCache = loadedRows;
             allMembersCacheAt = Date.now();
-        renderStatistics();
         }
+        renderStatistics();
         try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(loadedRows)); } catch {}
         loadedRows.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
 
@@ -1485,20 +1496,40 @@ async function loadInstructors() {
 }
 
 function renderStatisticsRankFilters() {
-    const options = (config.ranks || []).map(rank => `<option value="${esc(rank)}">${esc(rank)}</option>`).join("");
     ["#statisticsIncludeRanks", "#statisticsExcludeRanks"].forEach(selector => {
-        const select = $(selector);
-        if (select) select.innerHTML = options;
+        const picker = $(selector);
+        if (!picker) return;
+        const selected = new Set(Array.from(picker.querySelectorAll("[data-stat-rank]:checked"))
+            .map(input => input.value.toLowerCase()));
+        const options = picker.querySelector(".statistics-rank-options");
+        if (options) options.innerHTML = (config.ranks || []).map(rank => {
+            const aliases = rank.toLowerCase().startsWith("probationary") ? " probie" : "";
+            return `
+            <label data-rank-option data-rank-search-terms="${esc(rank.toLowerCase() + aliases)}">
+                <input type="checkbox" data-stat-rank value="${esc(rank)}" ${selected.has(rank.toLowerCase()) ? "checked" : ""}>
+                <span>${esc(rank)}</span>
+            </label>
+        `;
+        }).join("");
+        updateStatisticsRankSummary(picker);
     });
     renderStatistics();
+}
+
+function updateStatisticsRankSummary(picker) {
+    const summary = picker?.querySelector("summary");
+    if (!summary) return;
+    const checked = picker.querySelectorAll("[data-stat-rank]:checked").length;
+    const isInclude = picker.id === "statisticsIncludeRanks";
+    summary.textContent = checked ? `${checked} rank${checked === 1 ? "" : "s"} selected` : (isInclude ? "All ranks" : "No ranks excluded");
 }
 
 function renderStatistics() {
     const cards = $("#statisticsCards"), population = $("#statisticsPopulation");
     if (!cards || !population) return;
     const members = Array.isArray(allMembersCache) ? allMembersCache : [];
-    const selectedRanks = new Set(Array.from($("#statisticsIncludeRanks")?.selectedOptions || []).map(option => option.value.toLowerCase()));
-    const excludedRanks = new Set(Array.from($("#statisticsExcludeRanks")?.selectedOptions || []).map(option => option.value.toLowerCase()));
+    const selectedRanks = new Set(Array.from($("#statisticsIncludeRanks")?.querySelectorAll("[data-stat-rank]:checked") || []).map(input => input.value.toLowerCase()));
+    const excludedRanks = new Set(Array.from($("#statisticsExcludeRanks")?.querySelectorAll("[data-stat-rank]:checked") || []).map(input => input.value.toLowerCase()));
     const selected = members.filter(member => {
         const rank = String(member.rank || "").trim().toLowerCase();
         return (!selectedRanks.size || selectedRanks.has(rank)) && !excludedRanks.has(rank);
@@ -1529,8 +1560,24 @@ function renderStatistics() {
     cards.innerHTML = [...individual, combined].join("");
 }
 
-document.querySelectorAll("#statisticsIncludeRanks, #statisticsExcludeRanks, [data-stat-metric]")
-    .forEach(input => input.addEventListener("change", renderStatistics));
+document.querySelectorAll("#statisticsIncludeRanks, #statisticsExcludeRanks").forEach(picker => {
+    picker.addEventListener("change", event => {
+        if (event.target.matches("[data-stat-rank]")) updateStatisticsRankSummary(picker);
+        renderStatistics();
+    });
+    picker.querySelector("[data-rank-search]")?.addEventListener("input", event => {
+        const query = event.target.value.trim().toLocaleLowerCase();
+        picker.querySelectorAll("[data-rank-option]").forEach(option => {
+            option.hidden = !(option.textContent.toLocaleLowerCase() + " " + option.dataset.rankSearchTerms).includes(query);
+        });
+    });
+    picker.querySelector("[data-rank-clear]")?.addEventListener("click", () => {
+        picker.querySelectorAll("[data-stat-rank]").forEach(input => { input.checked = false; });
+        updateStatisticsRankSummary(picker);
+        renderStatistics();
+    });
+});
+document.querySelectorAll("[data-stat-metric]").forEach(input => input.addEventListener("change", renderStatistics));
 
 function renderInstructors() {
     const table = $("#instructorsTable");
@@ -4144,7 +4191,7 @@ document
                     }
                     if (b.dataset.tab === "doNotPromote") loadDoNotPromote();
                     if (b.dataset.tab === "instructorsDirectory") loadInstructors();
-                    if (b.dataset.tab === "statistics") { renderStatistics(); void loadMembers(); }
+                    if (b.dataset.tab === "statistics") renderStatistics();
 
                 }
             );
@@ -4520,6 +4567,13 @@ if (modal) {
 // INITIAL LOAD
 // ============================================================
 
+function canViewStatistics(user) {
+    return Boolean(user && (
+        user.is_admin || user.is_command ||
+        ["leader", "supervisor", "command", "commander"].includes(String(user.role || "").toLowerCase())
+    ));
+}
+
 function applyAccountUser(user) {
     window.lvfrCacheUser?.(user);
     if (user.role === "member") {
@@ -4552,7 +4606,7 @@ function applyAccountUser(user) {
     const instructorsDirectoryTab = $("#instructorsDirectoryTab");
     if (instructorsDirectoryTab) instructorsDirectoryTab.style.display = user.is_admin ? "" : "none";
     const statisticsTab = $("#statisticsTab");
-    if (statisticsTab) statisticsTab.style.display = user.role === "member" ? "none" : "";
+    if (statisticsTab) statisticsTab.style.display = canViewStatistics(user) ? "" : "none";
 }
 
 let doNotPromoteRows = [];
@@ -4696,7 +4750,7 @@ async function loadAccount() {
         if ($("#terminationLogTab")) $("#terminationLogTab").style.display = cachedUser.is_admin ? "" : "none";
         if ($("#instructorLogTab")) $("#instructorLogTab").style.display = cachedUser.is_admin ? "" : "none";
         if ($("#instructorsDirectoryTab")) $("#instructorsDirectoryTab").style.display = cachedUser.is_admin ? "" : "none";
-        if ($("#statisticsTab")) $("#statisticsTab").style.display = cachedUser.role === "member" ? "none" : "";
+        if ($("#statisticsTab")) $("#statisticsTab").style.display = canViewStatistics(cachedUser) ? "" : "none";
     }
     try {
         // Start rendering from the browser snapshot (when available) and

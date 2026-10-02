@@ -711,12 +711,28 @@
 <section id="statistics" class="panel">
     <div class="section-head"><div><h2>Statistics</h2><p>Training and instructor coverage for the selected roster.</p></div></div>
     <div class="statistics-filters">
-        <label>Include only these ranks <small>(leave empty for all ranks)</small>
-            <select id="statisticsIncludeRanks" multiple size="6" aria-label="Include selected ranks"></select>
-        </label>
-        <label>Exclude these ranks
-            <select id="statisticsExcludeRanks" multiple size="6" aria-label="Exclude selected ranks"></select>
-        </label>
+        <div class="statistics-rank-control">
+            <span>Include ranks <small>(none selected means all)</small></span>
+            <details id="statisticsIncludeRanks" class="statistics-rank-picker">
+                <summary>All ranks</summary>
+                <div class="statistics-rank-picker-menu">
+                    <input type="search" data-rank-search placeholder="Search ranks" aria-label="Search ranks to include">
+                    <button type="button" data-rank-clear>Clear selection</button>
+                    <div class="statistics-rank-options" role="group" aria-label="Ranks to include"></div>
+                </div>
+            </details>
+        </div>
+        <div class="statistics-rank-control">
+            <span>Exclude ranks</span>
+            <details id="statisticsExcludeRanks" class="statistics-rank-picker">
+                <summary>No ranks excluded</summary>
+                <div class="statistics-rank-picker-menu">
+                    <input type="search" data-rank-search placeholder="Search ranks" aria-label="Search ranks to exclude">
+                    <button type="button" data-rank-clear>Clear selection</button>
+                    <div class="statistics-rank-options" role="group" aria-label="Ranks to exclude"></div>
+                </div>
+            </details>
+        </div>
         <fieldset>
             <legend>Show statistics for</legend>
             <label><input type="checkbox" value="exam" data-stat-metric checked> Supervisor Exam</label>
