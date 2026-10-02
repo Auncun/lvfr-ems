@@ -22,6 +22,11 @@ if (!requestId) {
         message.textContent = 'Your signup was saved. A Commander must approve it before you can sign in.';
         return;
       }
+      if (result.status === 'approved') {
+        title.textContent = 'Account approved';
+        message.textContent = 'A Commander approved your account. Return to sign in to continue.';
+        return;
+      }
       if (result.status === 'failed') {
         title.textContent = 'Signup could not be saved';
         message.textContent = result.error || 'Please return to sign up and try again.';

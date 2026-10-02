@@ -197,6 +197,14 @@ export async function handleD1(context) {
       if(!a) return json({detail:token ? "Session token was not found or has expired in D1." : "No session token or login cookie reached the API."},401);
       return json(await publicUser(a));
     }
+    const signupStatus = route.match(/^\/auth\/signup-status\/([^/]+)$/);
+    if (signupStatus && method==="GET") {
+      const account = await db.prepare("SELECT status FROM accounts WHERE account_id=?").bind(decodeURIComponent(signupStatus[1])).first();
+      if (!account) return json({detail:"Signup request was not found."},404);
+      if (account.status === "pending") return json({status:"saved"});
+      if (account.status === "approved") return json({status:"approved"});
+      return json({status:"failed",error: account.status === "denied" ? "A Commander denied the account request." : "This account request is no longer active."});
+    }
     if (route==="/auth/bootstrap-commander" && method==="POST") return json(await bootstrapCommander(db,env,request,data));
     const user=session.account;
     if(!token) return json({detail:"No session token or login cookie reached the API."},401);

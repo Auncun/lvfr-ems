@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-02-d1-auth-bridge-14',
+  apiVersion: '2026-10-01-account-presence-13-performance',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -23,7 +23,7 @@ const LVFR = Object.freeze({
 });
 
 function doGet(e) {
-  return output_({ ok: true, service: 'LVFR EMS Apps Script API', version: LVFR.apiVersion, d1AuthBridge: true, postOnly: true });
+  return output_({ ok: true, service: 'LVFR EMS Apps Script API', version: LVFR.apiVersion, postOnly: true });
 }
 
 function doPost(e) {
@@ -37,8 +37,13 @@ function doPost(e) {
     if (route === '/auth/signup' && String(input.method || 'GET') === 'POST') {
       return output_({ ok: true, data: signupWithPassword_(input.data || {}) });
     }
+    // D1 calls this before it has created an account/session. Keep it above
+    // the authenticated dispatch below and require the private Worker secret.
     if (route === '/auth/roster-lookup' && String(input.method || '') === 'POST') {
-      if (!input.workerSecret || !constantTimeEquals_(String(input.workerSecret), requiredProperty_('LVFR_D1_WORKER_SECRET'))) throw new Error('Unauthorized roster lookup.');
+      const expectedWorkerSecret = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
+      if (!expectedWorkerSecret || !input.workerSecret || !constantTimeEquals_(String(input.workerSecret), expectedWorkerSecret)) {
+        throw new Error('D1 roster lookup authentication failed.');
+      }
       const member = findRosterMemberByName_(normalizeMemberName_((input.data || {}).name));
       if (!member) throw new Error('Name was not found on the LVFR roster.');
       return output_({ ok: true, data: member });
@@ -46,7 +51,14 @@ function doPost(e) {
     if (route === '/auth/login' && String(input.method || 'GET') === 'POST') return output_({ ok: true, data: loginWithPassword_(input.data || {}) });
     if (route === '/auth/logout' && String(input.method || 'GET') === 'POST') { logoutSession_(input.sessionToken); return output_({ ok: true, data: { ok: true } }); }
     const method = String(input.method || 'GET');
-    const user = requireUser_(input.sessionToken);
+
+    // Cloudflare Pages + D1 sends a short-lived, signed D1 identity instead
+    // of the old Apps Script session token. The bridge is accepted only when
+    // the private worker secret is also correct. Legacy Apps Script sessions
+    // continue to work for direct/older callers.
+    const user = input.sessionToken && String(input.sessionToken).indexOf('d1v1.') === 0
+      ? requireD1BridgeUser_(input.sessionToken, input.workerSecret)
+      : requireUser_(input.sessionToken);
     const data = dispatch_(route, method, params, input.data || {}, user);
     if (method === 'POST' && [
       '/api/activity', '/api/note', '/api/date', '/api/training', '/api/exam',
@@ -153,9 +165,77 @@ function dispatch_(route, method, params, data, user) {
   throw new Error('This API operation has not yet been migrated to Apps Script: ' + route);
 }
 
+function requireD1BridgeUser_(bridgeToken, workerSecret) {
+  const expectedWorkerSecret = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
+  if (!expectedWorkerSecret) throw new Error('D1 bridge is not configured in Apps Script.');
+  if (!workerSecret || !constantTimeEquals_(String(workerSecret), expectedWorkerSecret)) {
+    throw new Error('D1 bridge authentication failed.');
+  }
+
+  const token = String(bridgeToken || '');
+  const parts = token.split('.');
+  if (parts.length !== 3 || parts[0] !== 'd1v1' || !parts[1] || !parts[2]) {
+    throw new Error('Invalid D1 bridge token.');
+  }
+
+  const signedBody = parts[0] + '.' + parts[1];
+  const expectedSignature = Utilities.base64EncodeWebSafe(
+    Utilities.computeHmacSha256Signature(signedBody, expectedWorkerBridgeSecret_())
+  ).replace(/=+$/, '');
+  if (!constantTimeEquals_(parts[2], expectedSignature)) {
+    throw new Error('Invalid D1 bridge signature.');
+  }
+
+  let claims;
+  try {
+    const bytes = Utilities.base64DecodeWebSafe(parts[1]);
+    claims = JSON.parse(Utilities.newBlob(bytes).getDataAsString('UTF-8'));
+  } catch (error) {
+    throw new Error('Invalid D1 bridge claims.');
+  }
+
+  const expiresAt = Number(claims && claims.exp || 0);
+  if (!expiresAt || expiresAt <= Math.floor(Date.now() / 1000)) {
+    throw new Error('D1 bridge token expired.');
+  }
+
+  const accountId = String(claims && claims.sub || '').trim();
+  const name = String(claims && claims.name || '').trim();
+  const callsign = String(claims && claims.callsign || '').trim().toUpperCase();
+  const status = String(claims && claims.status || '').trim().toLowerCase();
+  const role = String(claims && claims.role || '').trim().toLowerCase();
+  if (!accountId || !name || !callsign || !status || !role) {
+    throw new Error('D1 bridge identity is incomplete.');
+  }
+
+  // Do not trust an arbitrary D1 identity beyond the signed claims. The
+  // signature + worker secret establish that this request came through the
+  // configured Cloudflare bridge. The D1 database remains the source of truth
+  // for account status/role.
+  return {
+    accountId: accountId,
+    account_id: accountId,
+    name: name,
+    callsign: callsign,
+    status: status,
+    role: role,
+    _d1Bridge: true,
+    bridge_expires_at: expiresAt
+  };
+}
+
+function expectedWorkerBridgeSecret_() {
+  // The same Script Property is deliberately used for both bridge layers:
+  // Cloudflare sends LVFR_D1_WORKER_SECRET and signs the D1 assertion with
+  // LVFR_D1_AUTH_BRIDGE_SECRET. Keep the two properties separate so the worker
+  // secret is not accidentally reused for HMAC signing.
+  const secret = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_AUTH_BRIDGE_SECRET') || '');
+  if (!secret) throw new Error('D1 auth bridge secret is not configured in Apps Script.');
+  return secret;
+}
+
 function requireUser_(sessionToken) {
   if (!sessionToken) throw new Error('Sign in with your name and password.');
-  if (String(sessionToken).indexOf('d1v1.') === 0) return verifyD1Assertion_(sessionToken);
   const cache = CacheService.getScriptCache();
   const key = sessionCacheKey_(sessionToken);
   let accountId = cache.get(key);
@@ -167,23 +247,6 @@ function requireUser_(sessionToken) {
   const account = findAccountById_(accountId);
   if (!account) { cache.remove(key); throw new Error('Account not found.'); }
   return applyCurrentRosterIdentity_(account);
-}
-
-function verifyD1Assertion_(token) {
-  const parts = String(token).split('.');
-  if (parts.length !== 3 || parts[0] !== 'd1v1') throw new Error('Your session expired. Sign in again.');
-  const secret = requiredProperty_('LVFR_D1_AUTH_BRIDGE_SECRET');
-  const expected = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(parts[0] + '.' + parts[1], secret)).replace(/=+$/, '');
-  if (!constantTimeEquals_(expected, parts[2])) throw new Error('Invalid D1 session assertion.');
-  let claims;
-  try {
-    const bytes = Utilities.base64DecodeWebSafe(parts[1]);
-    claims = JSON.parse(Utilities.newBlob(bytes).getDataAsString('UTF-8'));
-  } catch (error) { throw new Error('Invalid D1 session assertion.'); }
-  if (!claims || !claims.sub || !claims.name || !claims.callsign || !claims.exp || Number(claims.exp) <= Math.floor(Date.now() / 1000) || claims.status !== 'approved') {
-    throw new Error('Your session expired. Sign in again.');
-  }
-  return { accountId: String(claims.sub), account_id: String(claims.sub), name: String(claims.name), callsign: String(claims.callsign), status: String(claims.status), role: String(claims.role || 'member') };
 }
 
 function loginWithPassword_(data) {
