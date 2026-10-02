@@ -23,7 +23,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=portal-back-1"
+    href="/static/style.css?v=training-statistics-1"
 >
 
 <style>
@@ -254,6 +254,10 @@
 
     <button id="instructorsDirectoryTab" data-tab="instructorsDirectory" class="tab" style="display:none">
         Instructors
+    </button>
+
+    <button id="statisticsTab" data-tab="statistics" class="tab" style="display:none">
+        Statistics
     </button>
 
 
@@ -704,6 +708,29 @@
     </div>
 </section>
 
+<section id="statistics" class="panel">
+    <div class="section-head"><div><h2>Statistics</h2><p>Training and instructor coverage for the selected roster.</p></div></div>
+    <div class="statistics-filters">
+        <label>Include only these ranks <small>(leave empty for all ranks)</small>
+            <select id="statisticsIncludeRanks" multiple size="6" aria-label="Include selected ranks"></select>
+        </label>
+        <label>Exclude these ranks
+            <select id="statisticsExcludeRanks" multiple size="6" aria-label="Exclude selected ranks"></select>
+        </label>
+        <fieldset>
+            <legend>Show statistics for</legend>
+            <label><input type="checkbox" value="exam" data-stat-metric checked> Supervisor Exam</label>
+            <label><input type="checkbox" value="basic" data-stat-metric checked> Basic FORT</label>
+            <label><input type="checkbox" value="advanced" data-stat-metric checked> Advanced FORT</label>
+            <label><input type="checkbox" value="hert" data-stat-metric checked> HERT</label>
+            <label><input type="checkbox" value="fortInstructor" data-stat-metric checked> FORT Instructors</label>
+            <label><input type="checkbox" value="hertInstructor" data-stat-metric checked> HERT Instructors</label>
+        </fieldset>
+    </div>
+    <p id="statisticsPopulation" class="statistics-population" aria-live="polite"></p>
+    <div id="statisticsCards" class="statistics-cards"></div>
+</section>
+
 
 <!-- =========================================================
      ACCOUNT MANAGEMENT
@@ -797,7 +824,7 @@
 
 <script src="/static/session-auth.js?v=shared-session-4"></script>
 <script src="/static/account-settings.js?v=account-settings-5"></script>
-<script src="/static/app.js?v=manual-sync-38-supervisor-role-label"></script>
+<script src="/static/app.js?v=manual-sync-39-training-statistics"></script>
 <script src="/static/pwa.js"></script>
 
 

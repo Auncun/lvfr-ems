@@ -762,3 +762,5 @@ main {
 :root { color-scheme: dark; }
 :focus-visible { outline: 2px solid #79c0ff; outline-offset: 2px; }
 button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: not-allowed; opacity: .58; }
+
+.statistics-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px;align-items:start;margin:16px 0}.statistics-filters>label{display:grid;gap:7px}.statistics-filters small{color:#9aa4b2}.statistics-filters select{width:100%;min-height:140px}.statistics-filters fieldset{display:grid;gap:9px;margin:0;padding:12px;border:1px solid #303945;border-radius:10px}.statistics-filters fieldset label{display:flex;align-items:center;gap:8px}.statistics-filters input[type=checkbox]{width:auto}.statistics-population{color:#9aa4b2}.statistics-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}.statistics-card{display:grid;gap:8px;padding:16px;border:1px solid #303945;border-radius:12px;background:#111720}.statistics-card span{color:#b5c0ce}.statistics-card strong{font-size:28px}.statistics-card small{color:#9aa4b2}

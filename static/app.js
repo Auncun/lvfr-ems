@@ -687,6 +687,7 @@ async function loadConfig() {
     config = fresh;
     try { sessionStorage.setItem("lvfr.config.v1", JSON.stringify(fresh)); } catch {}
     renderRankFilter();
+    renderStatisticsRankFilters();
 }
 
 function renderRankFilter() {
@@ -840,6 +841,7 @@ async function loadMembers(silent = false, forceFresh = false) {
             if (!loadedRows) throw new Error("The roster response was invalid. Refresh the page and try again.");
             allMembersCache = loadedRows;
             allMembersCacheAt = Date.now();
+        renderStatistics();
         }
         try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(loadedRows)); } catch {}
         loadedRows.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
@@ -1481,6 +1483,54 @@ async function loadInstructors() {
         if (table) table.innerHTML = empty("Failed to load instructors: " + error.message);
     }
 }
+
+function renderStatisticsRankFilters() {
+    const options = (config.ranks || []).map(rank => `<option value="${esc(rank)}">${esc(rank)}</option>`).join("");
+    ["#statisticsIncludeRanks", "#statisticsExcludeRanks"].forEach(selector => {
+        const select = $(selector);
+        if (select) select.innerHTML = options;
+    });
+    renderStatistics();
+}
+
+function renderStatistics() {
+    const cards = $("#statisticsCards"), population = $("#statisticsPopulation");
+    if (!cards || !population) return;
+    const members = Array.isArray(allMembersCache) ? allMembersCache : [];
+    const selectedRanks = new Set(Array.from($("#statisticsIncludeRanks")?.selectedOptions || []).map(option => option.value.toLowerCase()));
+    const excludedRanks = new Set(Array.from($("#statisticsExcludeRanks")?.selectedOptions || []).map(option => option.value.toLowerCase()));
+    const selected = members.filter(member => {
+        const rank = String(member.rank || "").trim().toLowerCase();
+        return (!selectedRanks.size || selectedRanks.has(rank)) && !excludedRanks.has(rank);
+    });
+    const metrics = {
+        exam: { label: "Supervisor Exam", test: member => Boolean(member.has_supervisor_exam) },
+        basic: { label: "Basic FORT", test: member => Boolean(member.has_basic_firefighting) },
+        advanced: { label: "Advanced FORT", test: member => Boolean(member.has_advanced_firefighting) },
+        hert: { label: "HERT", test: member => Boolean(member.has_hert) },
+        fortInstructor: { label: "FORT Instructors", test: member => String(member.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes("FORT") },
+        hertInstructor: { label: "HERT Instructors", test: member => String(member.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes("HERT") }
+    };
+    const chosen = Array.from(document.querySelectorAll("[data-stat-metric]:checked"))
+        .map(input => metrics[input.value]).filter(Boolean);
+    population.textContent = `${selected.length} of ${members.length} members in this selection`;
+    const statCard = (label, count, total) => {
+        const percent = total ? Math.round(count / total * 1000) / 10 : 0;
+        return `<article class="statistics-card"><span>${esc(label)}</span><strong>${percent}%</strong><small>${count} of ${total} members</small></article>`;
+    };
+    if (!selected.length) {
+        cards.innerHTML = `<p class="empty">No members match these rank filters.</p>`;
+        return;
+    }
+    const individual = chosen.map(metric => statCard(metric.label, selected.filter(metric.test).length, selected.length));
+    const combined = chosen.length
+        ? statCard("All selected items", selected.filter(member => chosen.every(metric => metric.test(member))).length, selected.length)
+        : `<article class="statistics-card"><span>All selected items</span><strong>—</strong><small>Select at least one item</small></article>`;
+    cards.innerHTML = [...individual, combined].join("");
+}
+
+document.querySelectorAll("#statisticsIncludeRanks, #statisticsExcludeRanks, [data-stat-metric]")
+    .forEach(input => input.addEventListener("change", renderStatistics));
 
 function renderInstructors() {
     const table = $("#instructorsTable");
@@ -4094,6 +4144,7 @@ document
                     }
                     if (b.dataset.tab === "doNotPromote") loadDoNotPromote();
                     if (b.dataset.tab === "instructorsDirectory") loadInstructors();
+                    if (b.dataset.tab === "statistics") { renderStatistics(); void loadMembers(); }
 
                 }
             );
@@ -4182,6 +4233,7 @@ if (syncButton) {
                 if (!sourceMembers) throw new Error("The roster response was invalid. Refresh the page and try again.");
                 allMembersCache = sourceMembers;
                 allMembersCacheAt = Date.now();
+        renderStatistics();
                 try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(sourceMembers)); } catch {}
                 memberCache.clear();
                 sourceMembers.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
@@ -4499,6 +4551,8 @@ function applyAccountUser(user) {
     if (instructorLogTab) instructorLogTab.style.display = user.is_admin ? "" : "none";
     const instructorsDirectoryTab = $("#instructorsDirectoryTab");
     if (instructorsDirectoryTab) instructorsDirectoryTab.style.display = user.is_admin ? "" : "none";
+    const statisticsTab = $("#statisticsTab");
+    if (statisticsTab) statisticsTab.style.display = user.role === "member" ? "none" : "";
 }
 
 let doNotPromoteRows = [];
@@ -4551,6 +4605,7 @@ async function setMemberPromotionBlock(callsign, blocked) {
         allMembersCache = allMembersCache.map(member => String(member.callsign || "").toUpperCase() === key
             ? { ...member, do_not_promote: blocked } : member);
         allMembersCacheAt = Date.now();
+        renderStatistics();
         memberListRenderKey = "";
         try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(allMembersCache)); } catch {}
     }
@@ -4596,6 +4651,7 @@ async function setMemberPromotionBlock(callsign, blocked) {
             allMembersCache = allMembersCache.map(member => String(member.callsign || "").toUpperCase() === key
                 ? { ...member, do_not_promote: oldBlocked } : member);
             allMembersCacheAt = Date.now();
+        renderStatistics();
             memberListRenderKey = "";
         }
         renderDoNotPromote();
@@ -4640,6 +4696,7 @@ async function loadAccount() {
         if ($("#terminationLogTab")) $("#terminationLogTab").style.display = cachedUser.is_admin ? "" : "none";
         if ($("#instructorLogTab")) $("#instructorLogTab").style.display = cachedUser.is_admin ? "" : "none";
         if ($("#instructorsDirectoryTab")) $("#instructorsDirectoryTab").style.display = cachedUser.is_admin ? "" : "none";
+        if ($("#statisticsTab")) $("#statisticsTab").style.display = cachedUser.role === "member" ? "none" : "";
     }
     try {
         // Start rendering from the browser snapshot (when available) and

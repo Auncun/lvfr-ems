@@ -1,13 +1,6 @@
 const message = document.querySelector('#authMessage');
 const loginForm = document.querySelector('#loginForm');
 const signupForm = document.querySelector('#signupForm');
-document.querySelector('.auth-back')?.addEventListener('click', event => {
-  if (history.length > 1 && document.referrer && new URL(document.referrer).origin === location.origin) {
-    event.preventDefault();
-    history.back();
-  }
-});
-
 try {
   const diagnostic = JSON.parse(localStorage.getItem('lvfr.auth.last-error') || 'null');
   if (diagnostic && Date.now() - Number(diagnostic.saved_at || 0) < 10 * 60 * 1000) {
