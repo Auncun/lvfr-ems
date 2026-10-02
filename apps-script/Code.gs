@@ -98,7 +98,7 @@ function dispatch_(route, method, params, data, user) {
     requireLeader_(user);
     return listMembers_(String(params.search || ''));
   }
-  if (route === '/api/eligible' && method === 'GET') { requireLeader_(user); return eligibleMembers_(); }
+  if (route === '/api/eligible' && method === 'GET') { requireLeader_(user); return eligibleMembers_(user); }
   if (route === '/api/do-not-promote' && method === 'GET') { requireAdmin_(user); return listDoNotPromote_(); }
   if (route === '/api/do-not-promote' && method === 'POST') { requireAdmin_(user); return setDoNotPromote_(data, user); }
   if (route === '/api/inactive' && method === 'GET') { requireAdmin_(user); return inactiveMembers_(); }
@@ -1014,11 +1014,13 @@ function eligibility_(member) {
   return { eligible: missing.length === 0, reason: missing.length ? missing.join(', ') : 'Eligible for Promotion', next_rank: rule.rank };
 }
 
-function eligibleMembers_() {
+function eligibleMembers_(user) {
+  const commander = user ? isAdmin_(user) : true;
   return listMembers_('').filter(member => {
     if (['Probationary', 'Probie', 'Probationary Volunteer', 'Probie Volunteer'].includes(member.rank)) return false;
     const eligibility = eligibility_(member);
     if (!eligibility.eligible) return false;
+    if (!commander && (member.rank !== 'EMT' || eligibility.next_rank !== 'AEMT')) return false;
     member.eligible = true;
     member.next_rank = eligibility.next_rank;
     member.eligibility_reason = eligibility.reason;
