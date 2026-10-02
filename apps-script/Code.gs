@@ -1491,11 +1491,14 @@ function changeTraining_(data, user) {
     if (!sheet) throw new Error('HERT Certified sheet was not found.');
     const row = findOrCreateNamedSheetRow_(sheet, 2, member.name, !remove);
     if (!row) return { ok: false, changed: false, status: 'already_removed', message: 'Training already removed' };
-    if (!remove && String(sheet.getRange(row, 2).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, 2).setValue(member.name);
-    const cell = sheet.getRange(row, 4);
-    const already = hasColor_(cell.getBackground());
-    if (already === !remove) return { ok: false, changed: false, status: remove ? 'already_removed' : 'already_certified', message: remove ? 'Training already removed' : 'Already certified' };
-    cell.setBackground(remove ? '#ffffff' : '#00ff00');
+    if (remove) {
+      [2, 4, 6].forEach(column => sheet.getRange(row, column).clearContent().setBackground('#ffffff'));
+    } else {
+      if (String(sheet.getRange(row, 2).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, 2).setValue(member.name);
+      const cell = sheet.getRange(row, 4);
+      if (hasColor_(cell.getBackground())) return { ok: false, changed: false, status: 'already_certified', message: 'Already certified' };
+      cell.setBackground('#00ff00');
+    }
   } else {
     const columns = { 'Basic Firefighting': [7, '#9900ff'], 'Advanced Firefighting': [8, '#990000'] };
     if (!columns[training]) throw new Error('Unknown training: ' + training);
@@ -1532,16 +1535,23 @@ function changeInstructor_(callsign, data, user) {
   if (!sheet) throw new Error(title + ' sheet was not found.');
   const row = findOrCreateNamedSheetRow_(sheet, nameColumn, member.name, assigned);
   if (!row) return { ok: true, changed: false, assigned, instructor_type: type, status: 'unchanged' };
-  if (assigned && String(sheet.getRange(row, nameColumn).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, nameColumn).setValue(member.name);
+  if (!assigned) {
+    if (type === 'HERT') [2, 4, 6].forEach(column => sheet.getRange(row, column).clearContent().setBackground('#ffffff'));
+    else sheet.getRange(row, 1, 1, 5).clearContent().setBackground('#ffffff');
+    CacheService.getScriptCache().remove('instructor-directory:v1');
+    appendAppLog_({ kind: 'instructor', callsign: member.callsign, member_name: member.name, action: type + ' Instructor Removed', details: type, changed_by: actorName_(user) });
+    return { ok: true, changed: true, assigned: false, instructor_type: type, status: 'removed' };
+  }
+  if (String(sheet.getRange(row, nameColumn).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, nameColumn).setValue(member.name);
   const cell = sheet.getRange(row, statusColumn);
   const current = isGreen_(cell.getBackground());
-  if (current !== assigned) {
-    cell.setBackground(assigned ? '#00ff00' : '#ffffff');
+  if (!current) {
+    cell.setBackground('#00ff00');
     CacheService.getScriptCache().remove('instructor-directory:v1');
-    if (type === 'FORT') sheet.getRange(row, 4).setValue(assigned ? new Date() : '');
-    appendAppLog_({ kind: 'instructor', callsign: member.callsign, member_name: member.name, action: type + (assigned ? ' Instructor Assigned' : ' Instructor Removed'), details: type, changed_by: actorName_(user) });
+    if (type === 'FORT') sheet.getRange(row, 4).setValue(new Date());
+    appendAppLog_({ kind: 'instructor', callsign: member.callsign, member_name: member.name, action: type + ' Instructor Assigned', details: type, changed_by: actorName_(user) });
   }
-  return { ok: true, changed: current !== assigned, assigned, instructor_type: type, status: current !== assigned ? 'queued' : 'unchanged' };
+  return { ok: true, changed: !current, assigned: true, instructor_type: type, status: current ? 'unchanged' : 'queued' };
 }
 
 function actorName_(user) { return user.name || user.accountId || 'LVFR user'; }
