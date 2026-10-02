@@ -852,9 +852,11 @@ function writeRosterCache_(cache, cacheKey, records) {
   if (count > 32) return;
   try {
     for (let part = 0; part < count; part++) {
-      cache.put(cacheKey + ':' + part, serialized.slice(part * chunkSize, (part + 1) * chunkSize), 300);
+      // The roster is explicitly invalidated after PWA mutations and Sync, so
+      // keep the shared snapshot warm longer between those operations.
+      cache.put(cacheKey + ':' + part, serialized.slice(part * chunkSize, (part + 1) * chunkSize), 900);
     }
-    cache.put(cacheKey, JSON.stringify({ chunks: count }), 300);
+    cache.put(cacheKey, JSON.stringify({ chunks: count }), 900);
   } catch (ignored) {
     cache.remove(cacheKey);
   }

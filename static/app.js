@@ -804,10 +804,15 @@ let memberListRequestInFlight = false;
 let memberListReloadQueued = false;
 let memberListRenderKey = "";
 const memberCache = new Map();
-let allMembersCache = null;
-let allMembersCacheAt = 0;
+let allMembersCache = (() => {
+    try {
+        const cached = memberRowsFromResponse(JSON.parse(sessionStorage.getItem("lvfr.roster.snapshot.v1") || "null"));
+        return Array.isArray(cached) ? cached : null;
+    } catch { return null; }
+})();
+let allMembersCacheAt = allMembersCache ? Date.now() : 0;
 
-async function loadMembers(silent = false) {
+async function loadMembers(silent = false, forceFresh = false) {
     if (memberListRequestInFlight) { memberListReloadQueued = true; return; }
     memberListRequestInFlight = true;
 
@@ -819,10 +824,11 @@ async function loadMembers(silent = false) {
         const q = searchElement ? searchElement.value.trim().toLocaleLowerCase() : "";
 
         let loadedRows;
-        if (!silent && allMembersCache && Date.now() - allMembersCacheAt < 15000) {
+        if (!forceFresh && !silent && allMembersCache && Date.now() - allMembersCacheAt < 15000) {
             loadedRows = allMembersCache;
         } else {
-            loadedRows = memberRowsFromResponse(await api("/api/members"));
+            const membersUrl = forceFresh ? `/api/members?_fresh=${Date.now()}` : "/api/members";
+            loadedRows = memberRowsFromResponse(await api(membersUrl));
             // If a stale browser/API cache contains an unexpected payload,
             // bypass both cache layers once and recover from the live endpoint.
             if (!loadedRows) {
@@ -4490,6 +4496,9 @@ async function loadAccount() {
     try {
         await loadAccount();
         const rosterLoad = loadMembers();
+        // A prior visit's roster is rendered synchronously by loadMembers;
+        // refresh it in the background without reusing the browser's API cache.
+        if (allMembersCache) void loadMembers(true, true);
         await Promise.all([
             loadNotifications(),
             loadConfig(),
