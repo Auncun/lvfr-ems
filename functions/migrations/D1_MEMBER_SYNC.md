@@ -14,10 +14,12 @@ restored.
 2. Confirm the Pages Worker has `D1_AUTH_MODE=enabled`,
    `LVFR_D1_WORKER_SECRET`, `LVFR_D1_AUTH_BRIDGE_SECRET`, and `GAS_WEB_APP_URL`
    configured. `LVFR_D1_WORKER_SECRET` must match the Apps Script property of
-   the same name.
+   the same name. Deploy the latest Pages Functions code, including the
+   `/internal/` route in `functions/[[path]].js`; direct Sheet edits send their
+   snapshots to `/internal/members/sync` using POST.
 3. In Apps Script Script Properties, set `LVFR_D1_SYNC_URL` to the deployed
-   Cloudflare site origin (for example `https://your-site.pages.dev`) and set
-   `LVFR_D1_WORKER_SECRET` to the same secret used by the Worker.
+   Cloudflare site origin, `https://lvfr-ems.pages.dev` (no `/internal` path),
+   and set `LVFR_D1_WORKER_SECRET` to the same secret used by the Worker.
 4. In the Apps Script editor, run `installRosterD1SyncTriggers` once and grant
    its requested spreadsheet and external-request permissions. It installs
    edit triggers for the roster and private spreadsheets. Direct edits to the
