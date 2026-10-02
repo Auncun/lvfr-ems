@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-01-account-presence-13-performance',
+  apiVersion: '2026-10-02-d1-auth-bridge-14',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -23,7 +23,7 @@ const LVFR = Object.freeze({
 });
 
 function doGet(e) {
-  return output_({ ok: true, service: 'LVFR EMS Apps Script API', version: LVFR.apiVersion, postOnly: true });
+  return output_({ ok: true, service: 'LVFR EMS Apps Script API', version: LVFR.apiVersion, d1AuthBridge: true, postOnly: true });
 }
 
 function doPost(e) {
