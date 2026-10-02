@@ -1157,12 +1157,6 @@ function calculateMemberEligibility(member) {
 }
 
 function renderEligibleRows(loadedRows) {
-        if (!currentUserIsAdmin) {
-            loadedRows = loadedRows.filter(member =>
-                String(member.rank || "").trim().toLowerCase() === "emt" &&
-                String(member.next_rank || "").trim().toLowerCase() === "aemt"
-            );
-        }
         const rankFilter = $("#eligibleRankFilter")?.value || "all";
         const rows = loadedRows.filter(m => {
             const rank = String(m.rank || "").trim().toLowerCase();
