@@ -4504,10 +4504,20 @@ function applyAccountUser(user) {
 }
 
 let doNotPromoteRows = [];
+const DO_NOT_PROMOTE_CACHE_KEY = "lvfr.do-not-promote.v1";
 
 async function loadDoNotPromote() {
     try {
+        const cached = JSON.parse(localStorage.getItem(DO_NOT_PROMOTE_CACHE_KEY) || "null");
+        if (Array.isArray(cached)) {
+            doNotPromoteRows = cached;
+            renderDoNotPromote();
+        }
+    } catch {}
+    try {
+        apiReadCache.delete("/api/do-not-promote");
         doNotPromoteRows = await api("/api/do-not-promote");
+        try { localStorage.setItem(DO_NOT_PROMOTE_CACHE_KEY, JSON.stringify(doNotPromoteRows)); } catch {}
         renderDoNotPromote();
     } catch (error) { toast(error.message); }
 }
@@ -4554,6 +4564,7 @@ async function setMemberPromotionBlock(callsign, blocked) {
     } else {
         doNotPromoteRows = doNotPromoteRows.filter(member => String(member.callsign || "").toUpperCase() !== key);
     }
+    try { localStorage.setItem(DO_NOT_PROMOTE_CACHE_KEY, JSON.stringify(doNotPromoteRows)); } catch {}
     renderDoNotPromote();
     if (rosterMember) {
         memberCache.set(key, rosterMember);
@@ -4575,6 +4586,7 @@ async function setMemberPromotionBlock(callsign, blocked) {
         if ($(".tab.active")?.dataset.tab === "doNotPromote") void loadDoNotPromote();
     } catch (error) {
         doNotPromoteRows = previousRows;
+        try { localStorage.setItem(DO_NOT_PROMOTE_CACHE_KEY, JSON.stringify(doNotPromoteRows)); } catch {}
         if (rosterMember) {
             rosterMember.do_not_promote = oldBlocked;
             const eligibility = calculateMemberEligibility(rosterMember);

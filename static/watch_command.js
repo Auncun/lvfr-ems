@@ -703,12 +703,23 @@ function refreshActivePresence() {
         const personKey = member.callsign.toUpperCase();
         const rosterMember = memberNameCache.get(personKey);
         units.get(key).callsigns.push(personKey);
-        people.set(personKey, `${personKey}${rosterMember?.name ? ` ${rosterMember.name}` : ''} — ${assignment.unit}`);
+        people.set(personKey, {
+          callsign: personKey,
+          rank: String(rosterMember?.rank || '').toLowerCase(),
+          line: `${personKey}${rosterMember?.name ? ` ${rosterMember.name}` : ''} — ${assignment.unit}`
+        });
       }
     }
   }
   const unitLines = [...units.values()].map(item => `${item.sector}: ${item.unit}`);
-  const personLines = [...people.values()];
+  const rankOrder = ['commissioners', 'chief', 'county command', 'division commander', 'captain', 'lieutenant', 'lead paramedic', 'paramedic', 'aemt', 'emt', 'probationary', 'senior volunteer', 'volunteer', 'probationary volunteer', 'emr', 'emr/volunteer'];
+  const personLines = [...people.values()]
+    .sort((a, b) => {
+      const rankA = rankOrder.indexOf(a.rank), rankB = rankOrder.indexOf(b.rank);
+      return (rankA < 0 ? rankOrder.length : rankA) - (rankB < 0 ? rankOrder.length : rankB)
+        || a.callsign.localeCompare(b.callsign);
+    })
+    .map(person => person.line);
   const merged = form.elements.active_merged.value === 'true';
   const mergedLines = [...units.values()].map(item => `${item.unit} : ${item.callsigns.join(' | ')}`);
   form.elements.active_unit.value = merged ? mergedLines.join('\n') : unitLines.join('\n');

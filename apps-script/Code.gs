@@ -1036,10 +1036,15 @@ function doNotPromoteCallsigns_() {
 }
 
 function listDoNotPromote_() {
+  const cache = CacheService.getScriptCache(), cacheKey = 'members:do-not-promote:list:v1';
+  const cached = cache.get(cacheKey);
+  if (cached) { try { return JSON.parse(cached); } catch (ignored) {} }
   const sheet = doNotPromoteSheet_(), count = Math.max(0, sheet.getLastRow() - 1);
-  return count ? sheet.getRange(2, 1, count, DO_NOT_PROMOTE_HEADERS.length).getDisplayValues()
+  const result = count ? sheet.getRange(2, 1, count, DO_NOT_PROMOTE_HEADERS.length).getDisplayValues()
     .filter(row => row[0])
     .map(row => ({ callsign: row[0], name: row[1], added_at: row[2], added_by: row[3] })) : [];
+  try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (ignored) {}
+  return result;
 }
 
 function setDoNotPromote_(data, user) {
@@ -1053,6 +1058,7 @@ function setDoNotPromote_(data, user) {
     if (data.blocked && index < 0) sheet.appendRow([member.callsign, member.name, new Date().toISOString(), actorName_(user)]);
     else if (!data.blocked && index >= 0) sheet.deleteRow(index + 2);
     CacheService.getScriptCache().remove('members:do-not-promote:v1');
+    CacheService.getScriptCache().remove('members:do-not-promote:list:v1');
     invalidateRosterCache_();
     return { ok: true, callsign: member.callsign, blocked: data.blocked, changed: data.blocked ? index < 0 : index >= 0 };
   } finally { lock.releaseLock(); }
@@ -1064,7 +1070,7 @@ function moveDoNotPromoteCallsign_(oldCallsign, newCallsign, name) {
   const rows = sheet.getRange(2, 1, count, DO_NOT_PROMOTE_HEADERS.length).getDisplayValues();
   const index = rows.findIndex(row => String(row[0] || '').trim().toUpperCase() === oldCallsign);
   if (index >= 0) sheet.getRange(index + 2, 1, 1, 2).setValues([[newCallsign, name]]);
-  CacheService.getScriptCache().remove('members:do-not-promote:v1');
+  CacheService.getScriptCache().removeAll(['members:do-not-promote:v1', 'members:do-not-promote:list:v1']);
 }
 
 function inactiveMembers_() {
