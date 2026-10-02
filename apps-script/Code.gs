@@ -4,12 +4,12 @@
  * use a short-lived session token in the JSON body; passwords are salted and hashed.
  * Spreadsheet IDs and role records stay in Script Properties / the private
  * Accounts sheet and are never sent to the public PWA bundle.
- * Roster mutations write directly to Sheets; the PWA applies the immediate
- * optimistic display while this request completes. No delayed job queue runs.
+ * Website roster mutations are mirrored to Sheets by the Cloudflare worker
+ * after D1 commits. Sheet changes sync back through installable triggers.
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-01-account-presence-13-performance',
+  apiVersion: '2026-10-02-d1-roster-live-14',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -106,7 +106,7 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/sync' && method === 'POST') {
     requireLeader_(user);
     const result = syncRosterSnapshot_('manual');
-    return { ok: true, members: result.members, synced_at: result.synced_at, message: 'Roster synchronized' };
+    return { ok: true, members: result.members, available_callsigns: availableCallsigns_(), callsign_slots: availableCallsignInventory_(), synced_at: result.synced_at, message: 'Roster synchronized' };
   }
   if (route === '/api/notifications' && method === 'GET') { requireApproved_(user); return listNotifications_(user); }
   if (route === '/api/notifications/read' && method === 'POST') { requireApproved_(user); return markNotificationsRead_(data, user); }
@@ -1053,11 +1053,30 @@ function syncRosterSnapshotToD1_() {
   const response = UrlFetchApp.fetch(workerUrl.replace(/\/$/, '') + '/internal/members/sync', {
     method: 'post', contentType: 'application/json',
     headers: { 'X-LVFR-Worker-Secret': workerSecret },
-    payload: JSON.stringify({ members }), muteHttpExceptions: true
+    payload: JSON.stringify({ members, available_callsigns: availableCallsigns_(), callsign_slots: availableCallsignInventory_() }), muteHttpExceptions: true
   });
   if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
     throw new Error('D1 roster sync failed: HTTP ' + response.getResponseCode() + ' ' + response.getContentText());
   }
+}
+
+// Run once from the Apps Script editor to seed D1 before bootstrapping the
+// first Commander. Normal operation uses Sync now or spreadsheet triggers.
+function initializeRosterD1Sync() {
+  syncRosterSnapshotToD1_();
+  return { ok: true, message: 'Initial roster snapshot sent to D1.' };
+}
+
+function availableCallsignInventory_() {
+  const sheet=rosterSheet_(), count=Math.max(0,sheet.getLastRow()-1);
+  if(!count) return [];
+  return sheet.getRange(2,2,count,2).getDisplayValues().reduce((out,row,index)=>{
+    const callsign=String(row[0]||'').trim().toUpperCase();
+    if(!callsign||row[1]||LVFR.ignoredCallsigns.has(callsign)) return out;
+    const rank=rankFromCallsign_(callsign);
+    if(rank) out.push({rank,callsign,row:index+2});
+    return out;
+  },[]);
 }
 
 const DO_NOT_PROMOTE_TAB = 'Do not Promote';
@@ -1343,7 +1362,8 @@ function promoteMember_(data, user) {
   const eligibility = eligibility_(old);
   if (!eligibility.eligible) throw new Error(eligibility.reason);
   if (!isAdmin_(user) && eligibility.next_rank.toLowerCase() !== 'aemt') throw new Error('Supervisors may only promote EMT members to AEMT.');
-  const target = nextEmptyCallsign_(eligibility.next_rank);
+  const target = data.d1_target_callsign ? emptyRowForCallsign_(String(data.d1_target_callsign).trim().toUpperCase()) : nextEmptyCallsign_(eligibility.next_rank);
+  if (rankFromCallsign_(target.callsign) !== eligibility.next_rank) throw new Error('The selected destination Callsign does not match the promotion rank.');
   moveMember_(old, target, eligibility.next_rank, user, 'NORMAL');
   return { ok: true, new_callsign: target.callsign, new_rank: eligibility.next_rank };
 }
@@ -1359,7 +1379,8 @@ function changeMemberRank_(data, user, operation) {
   if (operation === 'CHANGE_RANK' && ![
     'EMT|AEMT', 'AEMT|Senior Volunteer', 'EMT|Volunteer', 'Senior Volunteer|AEMT', 'Volunteer|EMT'
   ].includes(old.rank + '|' + rank)) throw new Error('This rank change is not supported. Use Force Promote or Demote for other rank changes. Change Rank supports EMT to AEMT, EMT to Volunteer, AEMT to Senior Volunteer, and the reverse transitions.');
-  const target = nextEmptyCallsign_(rank);
+  const target = data.d1_target_callsign ? emptyRowForCallsign_(String(data.d1_target_callsign).trim().toUpperCase()) : nextEmptyCallsign_(rank);
+  if (rankFromCallsign_(target.callsign) !== rank) throw new Error('The selected destination Callsign does not match the selected rank.');
   moveMember_(old, target, rank, user, operation);
   return { ok: true, new_callsign: target.callsign, new_rank: rank };
 }

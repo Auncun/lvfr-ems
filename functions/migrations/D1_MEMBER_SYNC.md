@@ -1,17 +1,12 @@
 # Member reads and synchronization
 
-Google Sheets remains the authoritative roster. With `D1_AUTH_MODE=enabled`,
-member reads (`/api/members`, `/api/member/{callsign}`, eligibility, inactive,
-instructor, and Do not Promote lists) use the D1 `members` cache. The first
-read seeds an empty cache from Sheets. Successful site roster writes are still
-applied by Apps Script to Sheets first; Cloudflare starts the D1 refresh in the
-background, so the site can report the Sheets save without waiting for a full
-roster read and D1 rewrite. D1 may lag briefly while that refresh runs. If the
-background refresh fails, Cloudflare logs the error and an operator can use
-**Sync now** to refresh the cache. A forced refresh calls Apps Script
-`/api/sync`, which invalidates its roster cache before reading the current
-Sheet values and status colors; ordinary D1 cache seeding can still use the
-cached read endpoint.
+D1 is the live roster read store. Site roster mutations commit to D1 before
+returning; Cloudflare sends the matching Apps Script write as a background
+task. The UI keeps its immediate optimistic display and only reads D1 again on
+the user's next page refresh. D1 does not fetch roster data from Sheets during
+ordinary reads or site mutations. **Sync now** replaces D1 members and empty
+Callsign slots from a fresh Sheets snapshot. Manual Sheet edits post the latest
+members and Callsign slots to D1 through the installed Apps Script triggers.
 
 ## Setup
 
@@ -26,7 +21,8 @@ cached read endpoint.
 3. In Apps Script Script Properties, set `LVFR_D1_SYNC_URL` to the deployed
    Cloudflare site origin, `https://lvfr-ems.pages.dev` (no `/internal` path),
    and set `LVFR_D1_WORKER_SECRET` to the same secret used by the Worker.
-4. After updating `apps-script/Code.gs`, run `installRosterD1SyncTriggers`
+4. After updating `apps-script/Code.gs`, deploy the latest Apps Script web app,
+   then run `installRosterD1SyncTriggers`
    again in the Apps Script editor and grant its requested permissions. It
    installs edit triggers for roster/private sheet value edits and a change
    trigger for formatting changes in the roster spreadsheet. The formatting
@@ -34,14 +30,15 @@ cached read endpoint.
    are stored as cell colors; direct color changes do not fire `onEdit`.
    Script Properties are private; never put the worker secret in the site
    bundle.
-5. Use the site's **Sync now** action once after deployment to initialize or
-   refresh D1.
+5. Apply `0004_callsign_slots.sql`. Before the first Commander bootstrap, run
+   `initializeRosterD1Sync` once from the Apps Script editor; this seeds D1 and
+   available Callsigns. Later, use the site's **Sync now** action to refresh.
 
-Changes made by the website do not rely on edit triggers: after Apps Script
-confirms the Sheets write, the Worker uses Pages `waitUntil()` to refresh D1 in
-the background. **Sync now** remains synchronous and waits until the roster is
-refreshed. Direct edits in Google Sheets use the Apps Script edit/change
-triggers and `/internal/members/sync` endpoint.
+Website changes write D1 first and Sheet in the background; they do not trigger
+a Sheet read or a D1 replacement. **Sync now** synchronously rewrites D1 from
+the current Sheet snapshot. Direct Google Sheets edits use the installed edit
+and format triggers to update D1; the site displays that D1 data on manual page
+refresh.
 
 ## Troubleshooting HTTP 405 from the edit trigger
 

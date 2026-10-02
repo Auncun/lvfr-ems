@@ -64,7 +64,7 @@ async function rosterIdentity(env, name) {
   return member;
 }
 async function syncMembersFromAppsScript(db, env, token = "", forceFresh = false) {
-  // A manual/after-write refresh must bypass the Apps Script roster cache.
+  // A manual sync must bypass the Apps Script roster cache.
   // Its /api/sync endpoint invalidates that cache before reading Sheets.
   const snapshot = forceFresh
     ? await gasCall(env, "/api/sync", "POST", {}, token)
@@ -77,7 +77,14 @@ async function syncMembersFromAppsScript(db, env, token = "", forceFresh = false
 
   const syncedAt = new Date().toISOString();
 
-  return await replaceMembers(db, members, syncedAt);
+  const result=await replaceMembers(db, members, syncedAt);
+  if(snapshot && !Array.isArray(snapshot) && (snapshot.callsign_slots||snapshot.available_callsigns)) await saveCallsignSlots(db,snapshot.callsign_slots||snapshot.available_callsigns);
+  return result;
+}
+async function saveCallsignSlots(db, slots) {
+  const items=Array.isArray(slots)?slots:Object.entries(slots||{}).map(([rank,v])=>typeof v==="string"?({rank,callsign:v}):({rank,...v}));
+  const rows=items.filter(v=>v&&v.callsign).map(v=>db.prepare("INSERT INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?) ON CONFLICT(rank,callsign) DO UPDATE SET sheet_row=excluded.sheet_row,synced_at=excluded.synced_at").bind(String(v.rank||""),String(v.callsign).toUpperCase(),Number(v.row)||null,new Date().toISOString()));
+  await db.prepare("DELETE FROM callsign_slots").run(); if(rows.length) await db.batch(rows);
 }
 async function replaceMembers(db, members, syncedAt = new Date().toISOString()) {
   const statements = [db.prepare("DELETE FROM members")];
@@ -132,6 +139,52 @@ async function replaceMembers(db, members, syncedAt = new Date().toISOString()) 
   return { ok: true, members: members.length, synced_at: syncedAt };
 }
 const MEMBER_WRITE_ROUTES = new Set(["/api/activity", "/api/note", "/api/date", "/api/training", "/api/exam", "/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign", "/api/terminate", "/api/do-not-promote"]);
+const RANK_PREFIX = { Commissioners:"COM", Chief:"CHIEF", "County Command":"B", "Division Commander":"DIV", Captain:"C", Lieutenant:"E", "Lead Paramedic":"L", Paramedic:"M", AEMT:"A", EMT:"R", Probationary:"P", EMR:"P", "Senior Volunteer":"S", Volunteer:"V", "Probationary Volunteer":"V", "EMR/Volunteer":"P" };
+function rankForCallsign(cs) { const p=String(cs||"").match(/^[A-Z]+/); if(!p)return ""; if(p[0]==="V") return [1,2,3,4,5,6,7,8,9,14,21,22,23,24,25,26,27,28,29,36,37,38,39,40].includes(Number(cs.split("-")[1]))?"Probationary Volunteer":"Volunteer"; return ({COM:"Commissioners",CHIEF:"Chief",B:"County Command",DIV:"Division Commander",C:"Captain",E:"Lieutenant",L:"Lead Paramedic",M:"Paramedic",A:"AEMT",R:"EMT",P:"Probationary",S:"Senior Volunteer"})[p[0]]||""; }
+const RANK_LEVEL = { "Probationary Volunteer":1, "Probationary":1, EMR:1, "EMR/Volunteer":1, Volunteer:2, "Senior Volunteer":3, EMT:4, AEMT:5, "Advanced EMT":5, Paramedic:6, "Lead Paramedic":7, Lieutenant:8, Captain:9, "Division Commander":10, "County Command":11, Chief:12, Commissioners:13 };
+async function applyRosterMutationD1(db, route, data, actor) {
+  const admin=["admin","commander"].includes(String(actor.role||""));
+  const cs=String(data.callsign||"").trim().toUpperCase(), old=await db.prepare("SELECT * FROM members WHERE upper(callsign)=?").bind(cs).first();
+  if(!old) throw Object.assign(new Error("Member not found."),{status:404});
+  const now=new Date().toISOString(), cols={callsign:old.callsign,name:old.name,rank:old.rank,date:old.date,rank_assigned_date:old.rank_assigned_date,days_in_rank:old.days_in_rank,discord_id:old.discord_id,notes:old.notes,has_basic_firefighting:old.has_basic_firefighting,has_advanced_firefighting:old.has_advanced_firefighting,has_supervisor_exam:old.has_supervisor_exam,has_hert:old.has_hert,activity:old.activity,instructor_type:old.instructor_type,do_not_promote:old.do_not_promote,sheet_row:old.sheet_row,synced_at:now};
+  let result={ok:true};
+  if(route==="/api/activity") { const val=String(data.activity||""); if(!["Active","Semi Active","Inactive","Can Be Terminated"].includes(val)) throw new Error("Invalid activity status."); cols.activity=val; }
+  else if(route==="/api/note") { const action=String(data.action||""), entered=String(data.note||"").trim(); if(action==="Add"&&old.notes) throw new Error("This member already has a note. Choose Edit or Delete."); if(action==="Edit"&&!old.notes) throw new Error("This member has no note to edit. Choose Add."); if(action==="Delete") cols.notes=""; else if(["Add","Edit"].includes(action)){if(!entered) throw new Error("Enter a note before saving it.");cols.notes=entered;} else throw new Error("Invalid note action."); result.note=cols.notes; }
+  else if(route==="/api/date") { const m=String(data.date_str||"").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if(!m) throw new Error("Enter a date in MM/DD/YYYY format."); const d=new Date(+m[3],+m[1]-1,+m[2]); if(d.getFullYear()!==+m[3]||d.getMonth()!==+m[1]-1||d.getDate()!==+m[2]) throw new Error("Enter a valid date."); cols.date=cols.rank_assigned_date=`${m[1].padStart(2,"0")}/${m[2].padStart(2,"0")}/${m[3]}`; cols.days_in_rank=0; }
+  else if(route==="/api/training") { const key=String(data.training||"").toLowerCase()==="hert"?"has_hert":data.training==="Basic Firefighting"?"has_basic_firefighting":data.training==="Advanced Firefighting"?"has_advanced_firefighting":""; if(!key) throw new Error("Unknown training."); cols[key]=data.remove?0:1; }
+  else if(route==="/api/exam") cols.has_supervisor_exam=data.remove?0:1;
+  else if(route==="/api/member/"+cs+"/instructor") { const type=String(data.instructor_type||"").toUpperCase(); if(!["HERT","FORT"].includes(type)) throw new Error("Choose HERT or FORT."); const set=new Set(String(old.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(Boolean)); if(data.assigned)set.add(type);else set.delete(type); cols.instructor_type=[...set].sort().join(" / "); }
+  else if(route==="/api/do-not-promote") cols.do_not_promote=data.blocked?1:0;
+  else if(route==="/api/terminate") {
+    await db.batch([
+      db.prepare("DELETE FROM members WHERE callsign=?").bind(old.callsign),
+      db.prepare("INSERT OR REPLACE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(rankForCallsign(old.callsign),old.callsign,old.sheet_row,now)
+    ]);
+    return {ok:true};
+  }
+  else if(["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign"].includes(route)) {
+    const nextRank=route==="/api/promote"?(rankEligibility(memberFromRow(old)).next_rank):String(data.new_rank||old.rank);
+    const nextCs=String(data.d1_target_callsign||data.new_callsign||"").toUpperCase();
+    if(!nextCs||nextCs===old.callsign) throw new Error("A destination Callsign is required.");
+    const slot=await db.prepare("SELECT rank FROM callsign_slots WHERE upper(callsign)=?").bind(nextCs).first();
+    if(!slot) throw new Error("That Callsign is not an available roster slot. Run Sync now and try again.");
+    if(route!=="/api/change-callsign" && slot.rank!==nextRank) throw new Error("The destination Callsign does not match the selected rank.");
+    if(route==="/api/change-callsign" && !admin && slot.rank!==old.rank) throw new Error("Supervisors may only change a Callsign while keeping the member’s current rank.");
+    if(route==="/api/change-callsign" && admin && slot.rank!==old.rank && !data.force) throw new Error("The Callsign belongs to a different rank. Confirm a rank change first.");
+    if(old.do_not_promote && (RANK_LEVEL[nextRank]||0)>(RANK_LEVEL[old.rank]||0)) throw new Error("This member is on the Do not Promote list.");
+    if(route==="/api/force-promote" && (RANK_LEVEL[nextRank]||0)<=(RANK_LEVEL[old.rank]||0)) throw new Error("You can only promote to a higher rank.");
+    if(route==="/api/demote" && (RANK_LEVEL[nextRank]||0)>=(RANK_LEVEL[old.rank]||0)) throw new Error("You can only demote to a lower rank.");
+    if(route==="/api/promote") { const elig=rankEligibility(memberFromRow(old)); if(!elig.eligible) throw new Error(elig.reason); if(!admin&&(old.rank!=="EMT"||elig.next_rank!=="AEMT")) throw new Error("Supervisors may only promote EMT members to AEMT."); }
+    if(route==="/api/change-rank" && !["EMT|AEMT","AEMT|Senior Volunteer","EMT|Volunteer","Senior Volunteer|AEMT","Volunteer|EMT"].includes(old.rank+"|"+nextRank)) throw new Error("This rank change is not supported.");
+    const finalRank=route==="/api/change-callsign"?(admin?slot.rank:old.rank):nextRank;
+    const date=route==="/api/change-callsign"?old.date:now.slice(0,10);
+    await db.batch([db.prepare("DELETE FROM callsign_slots WHERE callsign=?").bind(nextCs),db.prepare("DELETE FROM members WHERE callsign=?").bind(old.callsign),db.prepare(`INSERT INTO members(callsign,name,rank,date,rank_assigned_date,days_in_rank,discord_id,notes,has_basic_firefighting,has_advanced_firefighting,has_supervisor_exam,has_hert,activity,instructor_type,do_not_promote,sheet_row,synced_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(nextCs,old.name,finalRank,date,date,0,old.discord_id,old.notes,old.has_basic_firefighting,old.has_advanced_firefighting,old.has_supervisor_exam,old.has_hert,old.activity,old.instructor_type,old.do_not_promote,null,now),db.prepare("INSERT OR IGNORE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(rankForCallsign(old.callsign),old.callsign,old.sheet_row,now)]);
+    return {ok:true,new_callsign:nextCs,new_rank:finalRank};
+  }
+  const assignments=Object.keys(cols).filter(k=>k!=="callsign").map(k=>`${k}=?`).join(",");
+  await db.prepare(`UPDATE members SET ${assignments} WHERE callsign=?`).bind(...Object.keys(cols).filter(k=>k!=="callsign").map(k=>cols[k]),old.callsign).run();
+  return result;
+}
 function memberFromRow(row) {
   const assigned=String(row.rank_assigned_date||row.date||"");
   const us=assigned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -142,8 +195,7 @@ function memberFromRow(row) {
     has_hert: !!row.has_hert, do_not_promote: !!row.do_not_promote, days_in_rank: days };
 }
 async function readMembers(db, search = "", env = null, token = "") {
-  const current=await db.prepare("SELECT COUNT(*) AS n FROM members").first();
-  if(!Number(current?.n||0) && env) await syncMembersFromAppsScript(db,env,token);
+  // Do not seed an empty D1 database from Sheet during a read. Run Sync now.
   const q = String(search || "").trim().toLowerCase();
   const result = q
     ? await db.prepare("SELECT * FROM members WHERE lower(callsign) LIKE ? OR lower(name) LIKE ? OR lower(rank) LIKE ? ORDER BY rank,name").bind(`%${q}%`,`%${q}%`,`%${q}%`).all()
@@ -286,7 +338,9 @@ export async function handleD1(context) {
       const expected=String(env.LVFR_D1_WORKER_SECRET||"");
       if(!expected || request.headers.get("X-LVFR-Worker-Secret") !== expected) return json({detail:"Worker authentication failed."},403);
       if(!Array.isArray(data.members)) return json({detail:"Members payload is invalid."},400);
-      return json(await replaceMembers(db,data.members));
+      const result=await replaceMembers(db,data.members);
+      if(data.callsign_slots||data.available_callsigns) await saveCallsignSlots(db,data.callsign_slots||data.available_callsigns);
+      return json(result);
     }
     const session=await accountForRequest(db,request), token=session.token, authRoute=route.startsWith("/auth/");
     if (route==="/api/health" && method==="GET") return json({ok:true,backend:"Cloudflare D1",auth_store:"D1"});
@@ -321,10 +375,15 @@ export async function handleD1(context) {
       if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can view the roster."),{status:403});
       return json(await readMembers(db,url.searchParams.get("search")||"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET)));
     }
-    if(route==="/api/members/version" && method==="GET") {
+    if(route==="/api/sync-status" && method==="GET") {
       if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can view roster status."),{status:403});
-      const version=await db.prepare("SELECT COUNT(*) AS count, COALESCE(MAX(synced_at),'') AS synced_at FROM members").first();
-      return json({version:`${version?.count||0}:${version?.synced_at||""}`});
+      const snapshot=await db.prepare("SELECT COUNT(*) AS members,COALESCE(MAX(synced_at),'') AS synced_at FROM members").first();
+      return json({synced_at:snapshot?.synced_at||null,members:Number(snapshot?.members||0),sync_running:false,sync_last_source:"",sync_last_success:snapshot?.synced_at||null,sync_error:null,auto_sync_enabled:false,auto_sync_interval_seconds:0,google_write:{running:false,pending:0,last_error:null,last_success:snapshot?.synced_at||null},archive:{enabled:true,status:"idle",pending:0,last_error:null,last_success:snapshot?.synced_at||null}});
+    }
+    if(route==="/api/config" && method==="GET") {
+      const slots=await db.prepare("SELECT rank,callsign,sheet_row AS row FROM callsign_slots ORDER BY rank,callsign").all();
+      const available={}; for(const x of slots.results||[]) if(!available[x.rank]) available[x.rank]=x.callsign;
+      return json({ranks:["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer"],available_callsigns:available,trainings:["Basic Firefighting","Advanced Firefighting","Hert"],activities:["Active","Semi Active","Inactive","Can Be Terminated"],exams:["Supervisor Exam"]});
     }
     if(route==="/api/eligible" && method==="GET") {
       if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can view eligibility."),{status:403});
@@ -370,6 +429,29 @@ export async function handleD1(context) {
       const result=await syncMembersFromAppsScript(db,env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET),true);
       return json({...result,message:"Roster synchronized from Google Sheets"});
     }
+    const instructorWrite=route.match(/^\/api\/member\/([^/]+)\/instructor$/);
+    if(method==="POST" && (MEMBER_WRITE_ROUTES.has(route)||instructorWrite)) {
+      const admin=["admin","commander"].includes(user.role), leader=admin||user.role==="leader";
+      if(["/api/activity","/api/date","/api/force-promote","/api/demote","/api/change-rank","/api/terminate","/api/exam"].includes(route)&&!admin) throw Object.assign(new Error("This account is not authorized for that roster change."),{status:403});
+      if(["/api/note","/api/promote","/api/change-callsign"].includes(route)&&!leader) throw Object.assign(new Error("This account is not authorized for EMS Operations."),{status:403});
+      if(route==="/api/do-not-promote"&&!admin) throw Object.assign(new Error("Only Commanders can perform this action."),{status:403});
+      if(instructorWrite&&!admin) throw Object.assign(new Error("Only Commanders can perform this action."),{status:403});
+      if(route==="/api/training"&&!admin) {
+        const needed=String(data.training||"").toLowerCase()==="hert"?"HERT":"FORT";
+        const instructor=await db.prepare("SELECT instructor_type FROM members WHERE upper(callsign)=upper(?)").bind(user.callsign).first();
+        if(!String(instructor?.instructor_type||"").toUpperCase().split(/\s*\/\s*/).includes(needed)) throw Object.assign(new Error(needed+" Instructor status is required for this training."),{status:403});
+      }
+      if(route==="/api/exam"&&!admin&&!/^(E|C|DIV|B|CHIEF|COM)-/.test(user.callsign)) throw Object.assign(new Error("Command rank is required for this action."),{status:403});
+      const mutationData={...data};
+      if(instructorWrite) mutationData.callsign=decodeURIComponent(instructorWrite[1]).toUpperCase();
+      if(["/api/promote","/api/force-promote","/api/demote","/api/change-rank"].includes(route)&&!mutationData.d1_target_callsign) throw new Error("No available destination Callsign was supplied. Reload the roster and try again.");
+      const result=await applyRosterMutationD1(db,route,mutationData,user);
+      const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
+      const { proxyToAppsScript } = await import("../[[path]].js");
+      const bg=(async()=>{ try { const response=await proxyToAppsScript(context,route,url,assertion,mutationData); if(!response.ok) console.error("Background Sheet write failed after D1 commit:",await response.text()); } catch(error) { console.error("Background Sheet write failed after D1 commit:",error); } })();
+      context.waitUntil(bg);
+      return json(result);
+    }
     await db.prepare("INSERT INTO account_presence(account_id,last_seen) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET last_seen=excluded.last_seen").bind(user.account_id,nowSeconds()).run();
     if (route==="/api/presence" && method==="POST") return json({ok:true});
     if (route==="/api/presence/summary" && method==="GET") { const r=await db.prepare("SELECT COUNT(*) AS online_count FROM account_presence p JOIN accounts a ON a.account_id=p.account_id WHERE a.status='approved' AND p.last_seen>?").bind(nowSeconds()-90).first(); return json({online_count:r.online_count}); }
@@ -392,20 +474,6 @@ export async function handleD1(context) {
     const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
     const { proxyToAppsScript } = await import("../[[path]].js");
     const response=await proxyToAppsScript(context,route,url,assertion,data);
-    if(method==="POST" && (MEMBER_WRITE_ROUTES.has(route) || /^\/api\/member\/[^/]+\/instructor$/.test(route)) && response.ok) {
-      // Sheets is authoritative. Return its successful write immediately and
-      // refresh the full D1 roster as a Pages background task so site actions
-      // are not held open by a second Apps Script roster read and D1 batch.
-      const refresh = (async () => {
-        try {
-          const freshAssertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
-          await syncMembersFromAppsScript(db,env,freshAssertion,true);
-        } catch(error) {
-          console.error("Roster was saved in Sheets but the background D1 refresh failed; use Sync now:",error);
-        }
-      })();
-      context.waitUntil(refresh);
-    }
     return response;
   } catch(error) { console.error("D1 API request failed:",error); return json({detail:error.message||"Request failed."},error.status||400); }
 }

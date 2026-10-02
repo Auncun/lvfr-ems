@@ -106,6 +106,10 @@ function startBackgroundMutation(url, options) {
     const optimisticTarget = path === "/api/change-callsign"
         ? String(payload.new_callsign || "").trim().toUpperCase()
         : config.available_callsigns?.[optimisticRank] || "";
+    if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(path)) payload.d1_target_callsign = optimisticTarget;
+    if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(path)) {
+        options = { ...options, body: JSON.stringify(payload) };
+    }
     const rollbackMember = previous ? { ...previous, optimistic_target: optimisticTarget } : null;
     const noChange = previous && (
         (path === "/api/activity" && previous.activity === payload.activity) ||
@@ -330,18 +334,6 @@ function rosterMatchesMutation(rows, detail) {
     return true;
 }
 
-async function refreshRosterAfterMutation(detail) {
-    // Site writes acknowledge the Sheet save before their background D1
-    // refresh finishes. Retry uncached reads until that D1 snapshot arrives.
-    for (const delay of [250, 700, 1400, 2600, 4500]) {
-        await new Promise(resolve => setTimeout(resolve, delay));
-        try {
-            await loadMembers(true, true);
-            if (Array.isArray(allMembersCache) && rosterMatchesMutation(allMembersCache, detail)) return;
-        } catch {}
-    }
-}
-
 function paintCachedMemberRow(member, oldCallsign) {
     const button = [...document.querySelectorAll('#membersTable [data-action="profile"]')]
         .find(item => item.dataset.callsign?.toUpperCase() === String(oldCallsign || "").toUpperCase()
@@ -394,12 +386,8 @@ window.addEventListener("lvfr:background-updated", event => {
         }
     }
     const route = String(event.detail?.route || "");
-    if (["/api/activity", "/api/note", "/api/date", "/api/training", "/api/exam", "/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign", "/api/terminate"].includes(route)
-        || /^\/api\/member\/[^/]+\/instructor$/.test(route)) {
-        void refreshRosterAfterMutation(event.detail);
-    } else if (!route.startsWith("/api/leaders/")) {
-        loadMembers(true);
-    }
+    // Keep the optimistic roster display until the user refreshes. The next
+    // page load reads the already-committed D1 snapshot.
     void loadConfig();
     syncStatus();
     const activeTab = $(".tab.active")?.dataset.tab;
@@ -815,8 +803,8 @@ async function syncStatus() {
 
         syncStatusElement.textContent =
             s.synced_at
-                ? `Last manual sync: ${s.synced_at} | ${s.members} members`
-                : `Roster ready: ${s.members} members | no manual sync yet`;
+                ? `Roster snapshot: ${s.synced_at} | ${s.members} members`
+                : `Roster ready: ${s.members} members | waiting for initial sync`;
 
         syncStatusElement.style.color =
             s.synced_at
@@ -825,7 +813,7 @@ async function syncStatus() {
 
         const syncActivityElement = $("#syncActivityStatus");
         if (syncActivityElement) {
-            syncActivityElement.textContent = "Roster updates only when you press Sync now";
+            syncActivityElement.textContent = "Site edits update D1 immediately; Sheet edits sync through the spreadsheet trigger";
             syncActivityElement.style.color = "#d29922";
         }
         const manualSyncButton = $("#syncBtn");
@@ -835,7 +823,7 @@ async function syncStatus() {
 
         const googleWriteStatusElement = $("#googleWriteStatus");
         if (googleWriteStatusElement) {
-            googleWriteStatusElement.textContent = "Edits save directly to Google Sheets";
+            googleWriteStatusElement.textContent = "Edits save to D1 immediately; Google Sheets updates in the background";
             googleWriteStatusElement.style.color = "#56d364";
         }
 
@@ -855,8 +843,6 @@ async function syncStatus() {
 
 let memberListRequestInFlight = false;
 let memberListReloadQueued = false;
-let lastRosterVersion = "";
-let rosterVersionCheckInFlight = false;
 let memberListRenderKey = "";
 const memberCache = new Map();
 let allMembersCache = (() => {
@@ -876,15 +862,6 @@ async function loadMembers(silent = false, forceFresh = false) {
     memberListRequestInFlight = true;
 
     try {
-
-        // Establish the server snapshot version before the first roster read.
-        // Later checks can then detect real changes without downloading rows.
-        if (!lastRosterVersion) {
-            try {
-                const snapshot = await api("/api/members/version");
-                lastRosterVersion = String(snapshot.version || "");
-            } catch {}
-        }
 
         const searchElement =
             $("#search");
@@ -1562,29 +1539,6 @@ async function loadInstructors() {
         renderInstructors();
     } catch (error) {
         if (table) table.innerHTML = empty("Failed to load instructors: " + error.message);
-    }
-}
-
-async function checkRosterVersion() {
-    if (rosterVersionCheckInFlight || document.hidden
-        || $(".tab.active")?.dataset.tab !== "members") return;
-    rosterVersionCheckInFlight = true;
-    try {
-        const snapshot = await api(`/api/members/version?_v=${Date.now()}`);
-        const version = String(snapshot.version || "");
-        if (!version) return;
-        if (!lastRosterVersion) {
-            lastRosterVersion = version;
-            return;
-        }
-        if (version !== lastRosterVersion) {
-            lastRosterVersion = version;
-            await loadMembers(true, true);
-        }
-    } catch {
-        // A transient version check failure should not interrupt roster use.
-    } finally {
-        rosterVersionCheckInFlight = false;
     }
 }
 
@@ -4847,10 +4801,9 @@ async function loadAccount() {
         if ($("#statisticsTab")) $("#statisticsTab").style.display = canViewStatistics(cachedUser) ? "" : "none";
     }
     try {
-        // Start rendering from the browser snapshot (when available) and
-        // refresh the roster before waiting for the account/profile request.
-        const rosterLoad = loadMembers();
-        if (allMembersCache) void loadMembers(true, true);
+        // Each page load reads the current D1 roster. Browser snapshots remain
+        // available for offline recovery but never replace an explicit refresh.
+        const rosterLoad = loadMembers(true, true);
         await loadAccount();
         await Promise.all([
             loadNotifications(),
@@ -4869,11 +4822,6 @@ refreshOnlineCount();
 setInterval(refreshOnlineCount, 30000);
 
 setInterval(() => { if (!document.hidden) syncStatus(); }, 60000);
-// Check only the small D1 version marker. Download the roster again only when
-// a sync has actually changed its version.
-setInterval(() => {
-    void checkRosterVersion();
-}, 15000);
 setInterval(() => {
     if (!document.hidden) loadNotifications();
 }, 15000);

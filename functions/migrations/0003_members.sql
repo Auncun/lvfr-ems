@@ -1,5 +1,5 @@
--- Fast read cache for the operational roster.
--- Google Sheets remains the source of truth.
+-- Operational roster read/write store for the PWA.
+-- Google Sheets is synchronized on demand or after direct Sheet edits.
 
 CREATE TABLE IF NOT EXISTS members (
   callsign TEXT PRIMARY KEY,
