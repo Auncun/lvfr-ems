@@ -1469,6 +1469,19 @@ function terminateMember_(data, user) {
   return { ok: true };
 }
 
+function findOrCreateNamedSheetRow_(sheet, nameColumn, name, create) {
+  const maxRows = sheet.getMaxRows();
+  const names = sheet.getRange(2, nameColumn, Math.max(0, maxRows - 1), 1).getDisplayValues();
+  const normalizedName = String(name || '').trim().toLowerCase();
+  const existingIndex = names.findIndex(row => String(row[0] || '').trim().toLowerCase() === normalizedName);
+  if (existingIndex >= 0) return existingIndex + 2;
+  if (!create) return 0;
+  const emptyIndex = names.findIndex(row => !String(row[0] || '').trim());
+  if (emptyIndex >= 0) return emptyIndex + 2;
+  sheet.insertRowAfter(maxRows);
+  return maxRows + 1;
+}
+
 function changeTraining_(data, user) {
   const member = memberByCallsign_(data.callsign);
   const training = String(data.training || '').trim();
@@ -1476,16 +1489,10 @@ function changeTraining_(data, user) {
   if (training === 'Hert') {
     const sheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')).getSheetByName('HERT Certified');
     if (!sheet) throw new Error('HERT Certified sheet was not found.');
-    const last = Math.max(sheet.getLastRow(), 2);
-    const values = sheet.getRange(2, 2, last - 1, 1).getDisplayValues();
-    let index = values.findIndex(row => row[0].trim().toLowerCase() === member.name.toLowerCase());
-    if (index < 0 && !remove) {
-      index = values.findIndex(row => !row[0].trim());
-      if (index < 0) throw new Error('No empty HERT row available.');
-      sheet.getRange(index + 2, 2).setValue(member.name);
-    }
-    if (index < 0) return { ok: false, changed: false, status: 'already_removed', message: 'Training already removed' };
-    const cell = sheet.getRange(index + 2, 4);
+    const row = findOrCreateNamedSheetRow_(sheet, 2, member.name, !remove);
+    if (!row) return { ok: false, changed: false, status: 'already_removed', message: 'Training already removed' };
+    if (!remove && String(sheet.getRange(row, 2).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, 2).setValue(member.name);
+    const cell = sheet.getRange(row, 4);
     const already = hasColor_(cell.getBackground());
     if (already === !remove) return { ok: false, changed: false, status: remove ? 'already_removed' : 'already_certified', message: remove ? 'Training already removed' : 'Already certified' };
     cell.setBackground(remove ? '#ffffff' : '#00ff00');
@@ -1523,21 +1530,15 @@ function changeInstructor_(callsign, data, user) {
   const statusColumn = type === 'HERT' ? 6 : 2;
   const sheet = spreadsheet.getSheetByName(title);
   if (!sheet) throw new Error(title + ' sheet was not found.');
-  const last = Math.max(sheet.getLastRow(), 2);
-  const names = sheet.getRange(2, nameColumn, last - 1, 1).getDisplayValues();
-  let index = names.findIndex(row => row[0].trim().toLowerCase() === member.name.toLowerCase());
-  if (index < 0 && assigned) {
-    index = names.findIndex(row => !row[0].trim());
-    if (index < 0) { index = names.length; sheet.insertRowAfter(last); }
-    sheet.getRange(index + 2, nameColumn).setValue(member.name);
-  }
-  if (index < 0) return { ok: true, changed: false, assigned, instructor_type: type, status: 'unchanged' };
-  const cell = sheet.getRange(index + 2, statusColumn);
+  const row = findOrCreateNamedSheetRow_(sheet, nameColumn, member.name, assigned);
+  if (!row) return { ok: true, changed: false, assigned, instructor_type: type, status: 'unchanged' };
+  if (assigned && String(sheet.getRange(row, nameColumn).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, nameColumn).setValue(member.name);
+  const cell = sheet.getRange(row, statusColumn);
   const current = isGreen_(cell.getBackground());
   if (current !== assigned) {
     cell.setBackground(assigned ? '#00ff00' : '#ffffff');
     CacheService.getScriptCache().remove('instructor-directory:v1');
-    if (type === 'FORT') sheet.getRange(index + 2, 4).setValue(assigned ? new Date() : '');
+    if (type === 'FORT') sheet.getRange(row, 4).setValue(assigned ? new Date() : '');
     appendAppLog_({ kind: 'instructor', callsign: member.callsign, member_name: member.name, action: type + (assigned ? ' Instructor Assigned' : ' Instructor Removed'), details: type, changed_by: actorName_(user) });
   }
   return { ok: true, changed: current !== assigned, assigned, instructor_type: type, status: current !== assigned ? 'queued' : 'unchanged' };
