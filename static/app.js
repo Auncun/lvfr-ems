@@ -231,7 +231,17 @@ function applyOptimisticMutation(route, payload, callsign) {
             updated.callsign = targetCallsign;
             memberCache.delete(key);
             memberCache.set(targetCallsign, updated);
-            paintCachedMemberRow(updated, key);
+            if (Array.isArray(allMembersCache)) {
+                allMembersCache = allMembersCache.filter(member => String(member.callsign || "").toUpperCase() !== key);
+                allMembersCache.push(updated);
+                const rankOrder = ["Commissioners", "Chief", "County Command", "Division Commander", "Captain", "Lieutenant", "Lead Paramedic", "Paramedic", "AEMT", "EMT", "Probationary", "Senior Volunteer", "Volunteer", "Probationary Volunteer", "EMR", "EMR/Volunteer"];
+                allMembersCache.sort((a, b) => (rankOrder.indexOf(a.rank) < 0 ? 999 : rankOrder.indexOf(a.rank)) - (rankOrder.indexOf(b.rank) < 0 ? 999 : rankOrder.indexOf(b.rank)) || String(a.callsign).localeCompare(String(b.callsign), undefined, { numeric: true }));
+                allMembersCacheAt = Date.now();
+                memberListRenderKey = "";
+                void loadMembers();
+            } else {
+                paintCachedMemberRow(updated, key);
+            }
         }
         updated.days_in_rank = 0;
         updated.eligible = false;
@@ -1076,6 +1086,7 @@ function calculateEligibleFromCache(members) {
     };
     return members.flatMap(member => {
         if (member.do_not_promote) return [];
+        if (!currentUserIsAdmin && member.rank !== "EMT") return [];
         const rule = rules[member.rank];
         if (!rule || Number(member.days_in_rank || 0) < rule[1]) return [];
         if (rule[2] && !member.has_basic_firefighting) return [];
