@@ -58,18 +58,19 @@
     if (!accountProfile && accountId) {
       try { accountProfile = JSON.parse(sessionStorage.getItem(profileCacheKey(accountId)) || 'null'); } catch {}
     }
-    const cachedMember = accountProfile || readRosterSnapshot(user?.callsign);
+    const cachedMember = readRosterSnapshot(user?.callsign) || accountProfile;
     if (cachedMember) {
       accountProfile = cachedMember;
       renderProfile(user, cachedMember);
-      return;
     }
     if (!user?.callsign) {
-      renderProfile(user, null);
+      if (!cachedMember) renderProfile(user, null);
       return;
     }
-    field('accountSettingsName').textContent = user?.name || 'Loading…';
-    field('accountSettingsCallsign').textContent = user?.callsign || '';
+    if (!cachedMember) {
+      field('accountSettingsName').textContent = user?.name || 'Loading…';
+      field('accountSettingsCallsign').textContent = user?.callsign || '';
+    }
     try {
       const headers = {};
       const token = window.lvfrSessionToken?.();
@@ -81,7 +82,7 @@
       if (accountId) try { sessionStorage.setItem(profileCacheKey(accountId), JSON.stringify(member)); } catch {}
       renderProfile(user, member);
     } catch (error) {
-      field('accountSettingsName').textContent = error.message;
+      if (!cachedMember) field('accountSettingsName').textContent = error.message;
     }
   });
   field('closeAccountSettings').addEventListener('click', close);

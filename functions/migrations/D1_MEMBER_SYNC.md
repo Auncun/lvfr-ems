@@ -4,9 +4,11 @@ Google Sheets remains the authoritative roster. With `D1_AUTH_MODE=enabled`,
 member reads (`/api/members`, `/api/member/{callsign}`, eligibility, inactive,
 instructor, and Do not Promote lists) use the D1 `members` cache. The first
 read seeds an empty cache from Sheets. Successful site roster writes are still
-applied by Apps Script to Sheets first; Cloudflare then refreshes D1. A failed
-refresh is reported so an operator can use **Sync now** after connectivity is
-restored.
+applied by Apps Script to Sheets first; Cloudflare starts the D1 refresh in the
+background, so the site can report the Sheets save without waiting for a full
+roster read and D1 rewrite. D1 may lag briefly while that refresh runs. If the
+background refresh fails, Cloudflare logs the error and an operator can use
+**Sync now** to refresh the cache.
 
 ## Setup
 
@@ -30,9 +32,11 @@ restored.
 5. Use the site's **Sync now** action once after deployment to initialize or
    refresh D1.
 
-Changes made by the website do not rely on edit triggers: the Worker refreshes
-D1 after Apps Script confirms the Sheets write. If that refresh fails, the
-response explains that Sheets was updated but the D1 cache needs **Sync now**.
+Changes made by the website do not rely on edit triggers: after Apps Script
+confirms the Sheets write, the Worker uses Pages `waitUntil()` to refresh D1 in
+the background. **Sync now** remains synchronous and waits until the roster is
+refreshed. Direct edits in Google Sheets continue to use the Apps Script edit
+trigger and `/internal/members/sync` endpoint.
 
 ## Troubleshooting HTTP 405 from the edit trigger
 

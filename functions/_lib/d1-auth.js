@@ -379,8 +379,18 @@ export async function handleD1(context) {
     const { proxyToAppsScript } = await import("../[[path]].js");
     const response=await proxyToAppsScript(context,route,url,assertion,data);
     if(method==="POST" && (MEMBER_WRITE_ROUTES.has(route) || /^\/api\/member\/[^/]+\/instructor$/.test(route)) && response.ok) {
-      try { await syncMembersFromAppsScript(db,env,assertion); }
-      catch(error) { console.error("Roster was saved in Sheets but the D1 refresh failed:",error); return json({detail:"The change was saved in Google Sheets, but D1 could not be refreshed. Use Sync now and try again."},503); }
+      // Sheets is authoritative. Return its successful write immediately and
+      // refresh the full D1 roster as a Pages background task so site actions
+      // are not held open by a second Apps Script roster read and D1 batch.
+      const refresh = (async () => {
+        try {
+          const freshAssertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
+          await syncMembersFromAppsScript(db,env,freshAssertion);
+        } catch(error) {
+          console.error("Roster was saved in Sheets but the background D1 refresh failed; use Sync now:",error);
+        }
+      })();
+      context.waitUntil(refresh);
     }
     return response;
   } catch(error) { console.error("D1 API request failed:",error); return json({detail:error.message||"Request failed."},error.status||400); }

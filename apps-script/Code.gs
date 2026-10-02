@@ -1377,12 +1377,13 @@ function moveMember_(member, target, newRank, user, operation) {
   const sourceValues = sheet.getRange(member.row, 2, 1, 12).getDisplayValues()[0];
   const oldRank = member.rank, oldCallsign = member.callsign;
   sheet.getRange(member.row, 6, 1, 4).copyTo(sheet.getRange(target.row, 6, 1, 4), { formatOnly: true });
-  const seniorRank = rankLevel_(newRank) <= rankLevel_('Lead Paramedic');
   const destination = [...sourceValues.slice(0, 8)];
   destination[0] = target.callsign;
   destination[1] = member.name;
-  destination[2] = seniorRank ? '' : Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MM/dd/yyyy');
-  destination[3] = seniorRank ? '' : '=TODAY()-D' + target.row;
+  destination[2] = operation === 'CALLSIGN_CHANGE'
+    ? sourceValues[2]
+    : Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MM/dd/yyyy');
+  destination[3] = '=TODAY()-D' + target.row;
   sheet.getRange(target.row, 2, 1, 8).setValues([destination]);
   sheet.getRange(target.row, 11, 1, 3).setValues([[...sourceValues.slice(9, 12)]]);
   sheet.getRange(member.row, 3, 1, 7).clearContent().setBackground('#ffffff');

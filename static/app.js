@@ -856,6 +856,16 @@ async function loadMembers(silent = false, forceFresh = false) {
         renderStatistics();
         try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(loadedRows)); } catch {}
         loadedRows.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
+        const profileCallsign = String(activeProfileMember?.callsign || "").trim().toUpperCase();
+        if (profileCallsign && !$("#modal")?.classList.contains("hidden")) {
+            const latestProfileRow = loadedRows.find(member => String(member.callsign || "").trim().toUpperCase() === profileCallsign);
+            const rosterFields = ["rank", "date", "rank_assigned_date", "days_in_rank", "activity", "notes", "has_basic_firefighting", "has_advanced_firefighting", "has_supervisor_exam", "has_hert", "instructor_type", "do_not_promote"];
+            if (latestProfileRow && rosterFields.some(field => activeProfileMember[field] !== latestProfileRow[field])) {
+                const refreshedProfile = { ...activeProfileMember, ...latestProfileRow, ...calculateMemberEligibility({ ...activeProfileMember, ...latestProfileRow }) };
+                memberCache.set(profileCallsign, refreshedProfile);
+                void profile(profileCallsign, true, refreshedProfile);
+            }
+        }
 
         const hertFilter = $("#filterHert")?.value || "all";
         const fortInstructorFilter = $("#filterFortInstructor")?.value || "all";
