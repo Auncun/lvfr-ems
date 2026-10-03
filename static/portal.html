@@ -7,15 +7,15 @@
   <meta name="theme-color" content="#101720">
   <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
   <title>Choose an application · LVFR</title>
-  <link rel="stylesheet" href="/static/style.css?v=nav-arrow-20261003-1">
+  <link rel="stylesheet" href="/static/style.css?v=nested-navigation-20261003-2">
   <style>
     body{min-height:100vh;margin:0;padding:0;background:#0b1017;color:#f3f6fa}
     main{width:min(920px,100%);margin:28px auto;padding:0 18px}
     .portal-heading{text-align:center;margin-bottom:30px}
     .portal-brand{justify-content:flex-start;margin-bottom:0;text-align:left}
     .portal-sync-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-    .portal-topbar{padding-left:28px}
-    @media(max-width:700px){.portal-topbar{padding-left:14px}}
+    .portal-topbar{padding-left:70px}
+    @media(max-width:700px){.portal-topbar{padding:68px 14px 14px}}
     #portalSyncStatus{margin:0;color:#9aa4b2}
     .portal-heading p{color:#9aa4b2;margin:8px 0}
     .portal-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
@@ -36,6 +36,7 @@
   </style>
 </head>
 <body>
+  <button class="sidebar-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="appSidebar"><span></span><span></span><span></span></button>
   <header class="topbar portal-topbar">
     <div class="topbar-left">
       <div class="brand portal-brand"><a class="brand-home-link" href="/portal" aria-label="Go to application selection"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"></a><div><h1>Choose an application</h1><p>Select where you want to continue.</p></div></div>
@@ -70,5 +71,6 @@
   <script src="/static/account-settings.js?v=account-settings-5"></script>
   <script src="/static/header-controls.js?v=header-controls-1"></script>
   <script src="/static/portal.js?v=sync-7-header"></script>
+  <script src="/static/sidebar.js?v=nested-navigation-7"></script>
 </body>
 </html>
