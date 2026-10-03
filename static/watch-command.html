@@ -232,7 +232,7 @@
             <div class="quick-controls" style="margin-top:8px">
               <label>Type<select id="callType"><option value="MASCAS">MASCAS</option><option value="Fire dealt with by Engine-1">Fire dealt with by Engine-1</option><option value="Dive Rescue">Dive Rescue</option><option value="Other">Other</option></select></label>
               <label id="callDetailsWrap"><span id="callDetailsLabel">MASCAS number</span><input id="callDetails" type="number" min="1" step="1" placeholder="5"></label>
-              <label>Location<input id="callLocation" placeholder="Casino"></label>
+              <label>Location<input id="callLocation" placeholder="Casino" list="savedCallLocations" autocomplete="off"><datalist id="savedCallLocations"></datalist></label>
               <label id="divePerformedByWrap" hidden>Dive rescue performed by<select id="divePerformedBy"><option value="">Choose an active unit</option></select></label>
               <label id="diveSuccessCountWrap" hidden>Successful rescues<input id="diveSuccessCount" type="number" min="0" step="1" value="0"></label>
               <label id="diveFailureCountWrap" hidden>Failed rescues<input id="diveFailureCount" type="number" min="0" step="1" value="0"></label>
@@ -268,7 +268,7 @@
   <script src="/static/session-auth.js?v=shared-session-4"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
   <script src="/static/header-controls.js?v=header-controls-1"></script>
-  <script src="/static/watch_command.js?v=70"></script>
+  <script src="/static/watch_command.js?v=71"></script>
   <script src="/static/sidebar.js?v=nested-navigation-8"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 </body>

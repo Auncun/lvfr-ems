@@ -30,6 +30,34 @@ const activeUnitSummary = document.querySelector('#activeUnitSummary');
 const activeEmsSummary = document.querySelector('#activeEmsSummary');
 const activeEmsWrap = document.querySelector('#activeEmsWrap');
 const activeMergeButton = document.querySelector('#toggleActiveMerge');
+const callLocationInput = document.querySelector('#callLocation');
+const savedCallLocations = document.querySelector('#savedCallLocations');
+const WATCH_LOCATION_HISTORY_KEY = 'lvfr.watch.call-locations.v1';
+function readSavedCallLocations() {
+  try {
+    const values = JSON.parse(localStorage.getItem(WATCH_LOCATION_HISTORY_KEY) || '[]');
+    return Array.isArray(values) ? values.map(value => String(value || '').trim()).filter(Boolean) : [];
+  } catch (_) { return []; }
+}
+function renderSavedCallLocations() {
+  if (!savedCallLocations) return;
+  savedCallLocations.replaceChildren(...readSavedCallLocations().map(value => {
+    const option = document.createElement('option');
+    option.value = value;
+    return option;
+  }));
+}
+function rememberCallLocation(value) {
+  const location = String(value || '').trim().replace(/\s+/g, ' ');
+  if (!location) return;
+  const locations = readSavedCallLocations().filter(item => item.toLocaleLowerCase() !== location.toLocaleLowerCase());
+  locations.unshift(location);
+  try { localStorage.setItem(WATCH_LOCATION_HISTORY_KEY, JSON.stringify(locations.slice(0, 50))); } catch (_) {}
+  renderSavedCallLocations();
+}
+renderSavedCallLocations();
+callLocationInput?.addEventListener('change', () => rememberCallLocation(callLocationInput.value));
+callLocationInput?.addEventListener('blur', () => rememberCallLocation(callLocationInput.value));
 const memberNameCache = new Map();
 const memberLookupPromises = new Map();
 let watchCommandSaveQueue = Promise.resolve();
@@ -1901,6 +1929,7 @@ function addCall(isDnr = false) {
   const type = isDnr ? 'DNR' : document.querySelector('#callType').value;
   const details = document.querySelector('#callDetails').value.trim();
   const location = document.querySelector('#callLocation').value.trim();
+  rememberCallLocation(location);
   const callMessage = document.querySelector(isDnr ? '#dnrMessage' : '#callMessage');
   const diveUnit = document.querySelector('#divePerformedBy').value;
   const diveSuccessCount = Math.max(0, Number.parseInt(document.querySelector('#diveSuccessCount').value, 10) || 0);
