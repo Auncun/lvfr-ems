@@ -214,11 +214,6 @@ app.mount(
 )
 
 
-@app.get("/manifest.webmanifest", include_in_schema=False)
-def pwa_manifest():
-    return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
-
-
 @app.get("/service-worker.js", include_in_schema=False)
 def pwa_service_worker():
     return FileResponse(
@@ -231,11 +226,6 @@ def pwa_service_worker():
 @app.get("/pwa-icon.svg", include_in_schema=False)
 def pwa_icon():
     return FileResponse(STATIC_DIR / "pwa-icon.svg", media_type="image/svg+xml")
-
-
-@app.get("/offline.html", include_in_schema=False)
-def pwa_offline_page():
-    return FileResponse(STATIC_DIR / "offline.html", media_type="text/html")
 
 
 def _b64encode(value):
@@ -636,8 +626,7 @@ async def account_auth_guard(request: Request, call_next):
     path = request.url.path
     if path.startswith("/static/") or path.startswith("/auth/signup-status/") or path in {
         "/login", "/auth/login", "/auth/signup", "/auth/logout",
-        "/verification-pending", "/manifest.webmanifest", "/service-worker.js",
-        "/pwa-icon.svg", "/offline.html"
+        "/verification-pending", "/service-worker.js", "/pwa-icon.svg"
     }:
         return await call_next(request)
 

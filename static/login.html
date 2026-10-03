@@ -5,7 +5,6 @@
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#101720">
-  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
   <title>Account access · LVFR EMS</title>
   <link rel="stylesheet" href="/static/style.css?v=leaders-header-compact-1">
@@ -14,6 +13,7 @@
     .auth-card{width:min(430px,100%);padding:28px;background:#111720;border:1px solid #303945;border-radius:14px;text-align:center}
     .auth-logo{display:block;width:92px;height:92px;object-fit:contain;margin:0 auto 14px}
     .auth-card h1{margin:0 0 8px}.auth-card>p{color:#9aa4b2;margin:0 0 20px}
+    .auth-links{display:flex;justify-content:center;gap:16px;margin-top:14px;font-size:13px}.auth-links a{color:#8cc8ff}
     .auth-tabs{display:flex;gap:8px;margin-bottom:18px}.auth-tabs button{flex:1}
     .auth-form{display:grid;gap:12px}.auth-form label{display:grid;gap:6px;text-align:left}
     .auth-form[hidden]{display:none!important}
@@ -26,8 +26,7 @@
   <main class="auth-card">
     <img class="auth-logo" src="/static/image0.webp" alt="LVFR logo">
     <h1>LVFR EMS Operations</h1>
-    <p>Sign in or request an account.</p>
-    <button type="button" id="installAppButton" hidden>Install app</button>
+    <p>For authorized LVFR EMS personnel. Use only the password created for this portal; never enter a password from another service.</p>
     <form id="loginForm" class="auth-form">
       <label>Name<input name="name" minlength="2" maxlength="48" autocomplete="username" required></label>
       <label>Password<input name="password" type="password" minlength="4" maxlength="20" pattern="[A-Za-z0-9]{4,20}" autocomplete="current-password" required></label>
@@ -35,6 +34,7 @@
       <label class="check"><input type="checkbox" name="remember_me"> Remember me on this device</label>
       <button type="submit" class="primary">Sign in</button>
     </form>
+    <div class="auth-links"><a href="/about.html">About this portal</a><a href="/privacy.html">Privacy policy</a></div>
     <details class="auth-note" style="margin-top:18px">
       <summary>Request a new LVFR account</summary>
       <form id="signupForm" class="auth-form" style="margin-top:12px">
@@ -48,6 +48,5 @@
   </main>
   <script src="/static/session-auth.js?v=shared-session-4"></script>
   <script src="/static/login.js?v=session-debug-3-brand-back"></script>
-  <script src="/static/pwa.js"></script>
 </body>
 </html>

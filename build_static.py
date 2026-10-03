@@ -1,4 +1,4 @@
-"""Prepare the public PWA files for a Cloudflare Pages deployment."""
+"""Prepare the public static files for a Cloudflare Pages deployment."""
 
 from pathlib import Path
 import shutil
@@ -14,6 +14,15 @@ def main():
         raise SystemExit("The static/ directory is missing.")
 
     OUTPUT.mkdir(parents=True, exist_ok=True)
+    # Remove install/offline files left by an earlier PWA build.
+    for stale_file in (
+        OUTPUT / "manifest.webmanifest",
+        OUTPUT / "offline.html",
+        OUTPUT / "static" / "manifest.webmanifest",
+        OUTPUT / "static" / "offline.html",
+        OUTPUT / "static" / "pwa.js",
+    ):
+        stale_file.unlink(missing_ok=True)
 
     for page in SOURCE.glob("*.html"):
         shutil.copy2(page, OUTPUT / page.name)
@@ -22,7 +31,7 @@ def main():
         shutil.copy2(verification_file, OUTPUT / verification_file.name)
     for asset in SOURCE.iterdir():
         if asset.is_file() and asset.name in {
-            "manifest.webmanifest", "service-worker.js", "pwa-icon.svg", "offline.html",
+            "service-worker.js", "pwa-icon.svg",
             "_redirects", "_headers", "_routes.json",
         }:
             shutil.copy2(asset, OUTPUT / asset.name)

@@ -5,9 +5,6 @@
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#101720">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
   <title>Choose an application · LVFR</title>
   <link rel="stylesheet" href="/static/style.css?v=account-settings-4">
@@ -42,7 +39,7 @@
       <div class="portal-brand"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"><h1>Choose an application</h1></div>
       <p>Select where you want to continue.</p>
     </header>
-    <div class="portal-header-actions"><span id="accountName" class="status-dot account-user-name"></span><button type="button" id="installAppButton" hidden>Install app</button><button type="button" id="portalNotificationsButton" aria-expanded="false" aria-controls="portalNotificationPanel">Notifications <span id="portalNotificationBadge"></span></button><button type="button" id="manageAccountButton">Account settings</button><button type="button" id="portalSyncButton" hidden>Sync roster</button><span id="portalSyncStatus" role="status" aria-live="polite" hidden></span><button type="button" data-action="logout">Log out</button></div>
+    <div class="portal-header-actions"><span id="accountName" class="status-dot account-user-name"></span><button type="button" id="portalNotificationsButton" aria-expanded="false" aria-controls="portalNotificationPanel">Notifications <span id="portalNotificationBadge"></span></button><button type="button" id="manageAccountButton">Account settings</button><button type="button" id="portalSyncButton" hidden>Sync roster</button><span id="portalSyncStatus" role="status" aria-live="polite" hidden></span><button type="button" data-action="logout">Log out</button></div>
     <section class="portal-notifications" id="portalNotificationPanel" aria-labelledby="portalNotificationsTitle" hidden>
       <h2 id="portalNotificationsTitle">Notifications</h2>
       <div id="portalNotificationList" class="portal-notification-list" aria-live="polite"><p>Loading notifications…</p></div>
@@ -65,6 +62,5 @@
   <script src="/static/session-auth.js?v=shared-session-4"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
   <script src="/static/portal.js?v=sync-6"></script>
-  <script src="/static/pwa.js"></script>
 </body>
 </html>
