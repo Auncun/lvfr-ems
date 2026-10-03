@@ -48,10 +48,13 @@
   ];
 
   const esc = value => value.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
-  const groupMarkup = page => `
+  const groupMarkup = (page, index) => `
     <section class="sidebar-page-group" data-sidebar-group ${page.admin ? 'data-admin-group="true"' : ''}>
-      <a class="sidebar-page-link" href="${page.href}" ${currentPath === page.href ? 'aria-current="page"' : ''}>${esc(page.title)}</a>
-      <div class="sidebar-items">${page.items.map(item => {
+      <div class="sidebar-page-head">
+        <a class="sidebar-page-link" href="${page.href}" ${currentPath === page.href ? 'aria-current="page"' : ''}>${esc(page.title)}</a>
+        <button type="button" class="sidebar-expand" aria-label="Show ${esc(page.title)} menus" aria-expanded="false" aria-controls="sidebarItems${index}">⌄</button>
+      </div>
+      <div class="sidebar-items" id="sidebarItems${index}" hidden>${page.items.map(item => {
         const cls = item.sub ? ' class="sidebar-subitem"' : '';
         const availability = item.availability ? ` data-availability="${item.availability}"` : '';
         if (item.anchor) return `<a${cls} href="${page.href}${item.anchor}" data-sidebar-item${availability}>${esc(item.label)}</a>`;
@@ -105,6 +108,14 @@
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && !sidebar.hidden) close(); });
 
   sidebar.addEventListener('click', event => {
+    const expand = event.target.closest('.sidebar-expand');
+    if (expand) {
+      const items = document.getElementById(expand.getAttribute('aria-controls'));
+      const isExpanded = expand.getAttribute('aria-expanded') === 'true';
+      expand.setAttribute('aria-expanded', String(!isExpanded));
+      items.hidden = isExpanded;
+      return;
+    }
     const item = event.target.closest('[data-sidebar-item]');
     if (!item) return;
     const targetTab = item.dataset.tab;
@@ -135,6 +146,8 @@
       const accessAllowed = !group.dataset.adminGroup || adminAllowed;
       const pageLink = group.querySelector('.sidebar-page-link');
       const pageMatch = pageLink.textContent.toLocaleLowerCase().includes(query);
+      const itemsContainer = group.querySelector('.sidebar-items');
+      const expandButton = group.querySelector('.sidebar-expand');
       let anyVisible = false;
       group.querySelectorAll('[data-sidebar-item]').forEach(item => {
         const available = !item.dataset.availability || (() => {
@@ -145,6 +158,10 @@
         item.hidden = !available || !matches;
         if (!item.hidden) anyVisible = true;
       });
+      const searching = !!query && (pageMatch || anyVisible);
+      itemsContainer.hidden = !searching && expandButton.getAttribute('aria-expanded') !== 'true';
+      if (searching) expandButton.setAttribute('aria-expanded', 'true');
+      else if (query) expandButton.setAttribute('aria-expanded', 'false');
       group.hidden = !accessAllowed || (!pageMatch && !anyVisible);
     });
   });
