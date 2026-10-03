@@ -27,7 +27,9 @@ members and Callsign slots to D1 through the installed Apps Script triggers.
    installs edit triggers for roster/private sheet value edits and a change
    trigger for formatting changes in the roster spreadsheet. The formatting
    trigger is needed because activity, training, exam, and instructor status
-   are stored as cell colors; direct color changes do not fire `onEdit`.
+   are stored as cell colors; direct color changes do not fire `onEdit`. The
+   installer also adds a five-minute fingerprint check as a fallback, so a
+   missed formatting event is still synced without sending unchanged snapshots.
    Script Properties are private; never put the worker secret in the site
    bundle.
 5. Apply `0004_callsign_slots.sql`. Before the first Commander bootstrap, run

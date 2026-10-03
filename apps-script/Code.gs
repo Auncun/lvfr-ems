@@ -1036,12 +1036,13 @@ function eligibleMembers_() {
 // formatting changes such as activity, training, exam, and instructor colors.
 function installRosterD1SyncTriggers() {
   const ids = [requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'), requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')];
-  const handlers = ['syncRosterToD1OnEdit_', 'syncRosterToD1OnChange_'];
+  const handlers = ['syncRosterToD1OnEdit_', 'syncRosterToD1OnChange_', 'syncRosterToD1OnTimer_'];
   ScriptApp.getProjectTriggers().filter(trigger => handlers.includes(trigger.getHandlerFunction()))
     .forEach(trigger => ScriptApp.deleteTrigger(trigger));
   ids.filter((id, index) => ids.indexOf(id) === index).forEach(id => ScriptApp.newTrigger('syncRosterToD1OnEdit_').forSpreadsheet(id).onEdit().create());
   ScriptApp.newTrigger('syncRosterToD1OnChange_')
     .forSpreadsheet(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')).onChange().create();
+  ScriptApp.newTrigger('syncRosterToD1OnTimer_').timeBased().everyMinutes(5).create();
 }
 
 function syncRosterToD1OnEdit_(event) {
@@ -1081,6 +1082,17 @@ function syncRosterToD1OnChange_(event) {
     syncRosterSnapshotToD1_('trigger:onChange:' + (changeType || 'UNKNOWN'), false);
   } catch (error) {
     console.error('Roster D1 onChange trigger failed: ' + (error && error.stack ? error.stack : error));
+    throw error;
+  }
+}
+
+// Formatting edits do not consistently produce a spreadsheet event. This
+// scheduled fingerprint check is a fallback; unchanged snapshots do not POST.
+function syncRosterToD1OnTimer_() {
+  try {
+    syncRosterSnapshotToD1_('trigger:timer', false);
+  } catch (error) {
+    console.error('Roster D1 timer sync failed: ' + (error && error.stack ? error.stack : error));
     throw error;
   }
 }
