@@ -108,6 +108,11 @@ function dispatch_(route, method, params, data, user) {
     const result = syncRosterSnapshotToD1_('manual');
     return Object.assign({}, result, { message: result.skipped ? 'Roster already synchronized' : 'Roster synchronized' });
   }
+  if (route === '/api/full-sync' && method === 'POST') {
+    requireAdmin_(user);
+    const result = syncRosterSnapshotToD1_('full-manual', true);
+    return Object.assign({}, result, { message: 'Full roster sync completed' });
+  }
   if (route === '/api/notifications' && method === 'GET') { requireApproved_(user); return listNotifications_(user); }
   if (route === '/api/notifications/read' && method === 'POST') { requireApproved_(user); return markNotificationsRead_(data, user); }
   if (route === '/api/leaders' && method === 'GET') { requireAdmin_(user); return leaderOverview_(); }
@@ -879,7 +884,7 @@ function writeRosterCache_(cache, cacheKey, records) {
   }
 }
 
-function readRosterMembers_() {
+function readRosterMembers_(readOnly) {
   // Reuse one spreadsheet connection while building a cold roster snapshot.
   const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
   const sheet = rosterSheet_(spreadsheet);
@@ -892,7 +897,7 @@ function readRosterMembers_() {
   const colors = sheet.getRange(2, 6, count, 4).getBackgrounds();
   const hertByName = hertDirectory_(spreadsheet);
   const instructorsByName = new Map(instructorDirectory_(spreadsheet).map(item => [item.name.toLowerCase(), item]));
-  const doNotPromote = doNotPromoteCallsigns_();
+  const doNotPromote = doNotPromoteCallsigns_(Boolean(readOnly));
   const rankByCallsign = Object.create(null);
   let rank = 'Probationary';
   const records = [];
@@ -1041,37 +1046,71 @@ function installRosterD1SyncTriggers() {
 
 function syncRosterToD1OnEdit_(event) {
   if (!event || !event.range) return;
-  const sheet = event.range.getSheet(), name = sheet.getName();
-  const rosterId = requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID');
-  const privateId = requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID');
-  const allowed = event.source.getId() === rosterId
-    ? [LVFR.rosterTab, 'HERT Certified', 'FIREFIGHTER CERT'].includes(name)
-    : event.source.getId() === privateId && name === 'Do not Promote';
-  if (!allowed || event.range.getRow() === 1) return;
-  syncRosterSnapshotToD1_();
+  try {
+    const sheet = event.range.getSheet(), name = sheet.getName();
+    console.log('Roster D1 trigger started: onEdit; spreadsheet=' + event.source.getId() + '; sheet=' + name + '; range=' + event.range.getA1Notation());
+    const rosterId = requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID');
+    const privateId = requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID');
+    const allowed = event.source.getId() === rosterId
+      ? [LVFR.rosterTab, 'HERT Certified', 'FIREFIGHTER CERT'].includes(name)
+      : event.source.getId() === privateId && name === 'Do not Promote';
+    if (!allowed || event.range.getRow() === 1) {
+      console.log('Roster D1 trigger skipped: onEdit event is outside synchronized data.');
+      return;
+    }
+    syncRosterSnapshotToD1_('trigger:onEdit', false);
+  } catch (error) {
+    console.error('Roster D1 onEdit trigger failed: ' + (error && error.stack ? error.stack : error));
+    throw error;
+  }
 }
 
 // Activity, training, exam, and instructor states are encoded as cell colors.
 // A user changing only a cell's format does not produce an onEdit event, so
 // mirror FORMAT changes through an installable spreadsheet onChange trigger.
 function syncRosterToD1OnChange_(event) {
-  if (!event || !event.source || String(event.changeType || '').toUpperCase() !== 'FORMAT') return;
-  if (event.source.getId() !== requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')) return;
-  syncRosterSnapshotToD1_();
+  if (!event || !event.source) return;
+  try {
+    const changeType = String(event.changeType || '').toUpperCase();
+    console.log('Roster D1 trigger started: onChange; changeType=' + changeType + '; spreadsheet=' + event.source.getId());
+    if (changeType !== 'FORMAT') {
+      console.log('Roster D1 trigger skipped: onChange changeType is not FORMAT.');
+      return;
+    }
+    if (event.source.getId() !== requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')) {
+      console.log('Roster D1 trigger skipped: onChange spreadsheet is not the configured roster.');
+      return;
+    }
+    syncRosterSnapshotToD1_('trigger:onChange:FORMAT', false);
+  } catch (error) {
+    console.error('Roster D1 onChange trigger failed: ' + (error && error.stack ? error.stack : error));
+    throw error;
+  }
 }
 
-function syncRosterSnapshotToD1_(source) {
+function syncRosterSnapshotToD1_(source, forceFull) {
+  source = source || 'trigger';
+  forceFull = Boolean(forceFull);
+  console.log('Roster D1 sync started; source=' + source + '; forceFull=' + forceFull + '.');
   const workerUrl = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_SYNC_URL') || '').trim();
   const workerSecret = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
-  if (!workerUrl || !workerSecret) throw new Error('Configure LVFR_D1_SYNC_URL and LVFR_D1_WORKER_SECRET in Script Properties.');
+  if (!workerUrl || !workerSecret) {
+    console.error('Roster D1 sync configuration missing; hasUrl=' + Boolean(workerUrl) + '; hasWorkerSecret=' + Boolean(workerSecret) + '.');
+    throw new Error('Configure LVFR_D1_SYNC_URL and LVFR_D1_WORKER_SECRET in Script Properties.');
+  }
   // Serialize snapshot reads, D1 writes, and fingerprint commits. Without this
   // lock an older concurrent sync could finish last and overwrite a newer hash.
   const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
+  let lockAcquired = false;
   try {
+    console.log('Roster D1 sync waiting for ScriptLock; source=' + source + '.');
+    lock.waitLock(30000);
+    lockAcquired = true;
+    console.log('Roster D1 sync acquired ScriptLock; source=' + source + '.');
     invalidateRosterCache_();
     CacheService.getScriptCache().removeAll(['instructor-directory:v1', 'members:do-not-promote:v1', 'members:do-not-promote:list:v1']);
-    const members = readRosterMembers_();
+    console.log('Roster D1 sync reading current Google Sheet snapshot; readOnly=' + forceFull + '.');
+    const members = forceFull ? readRosterMembers_(true) : readRosterMembers_();
     const callsign_slots = availableCallsignInventory_();
     const available_callsigns = availableCallsigns_();
     const payload = { members, available_callsigns, callsign_slots };
@@ -1087,12 +1126,14 @@ function syncRosterSnapshotToD1_(source) {
     )).replace(/=+$/, '');
     const properties = PropertiesService.getScriptProperties();
     const fingerprintKey = 'LVFR_D1_ROSTER_SNAPSHOT_SHA256';
-    if (properties.getProperty(fingerprintKey) === fingerprint) {
-      console.log('Roster snapshot unchanged → skipped (' + (source || 'trigger') + ').');
+    const previousFingerprint = String(properties.getProperty(fingerprintKey) || '');
+    console.log('Roster D1 fingerprints; source=' + source + '; old=' + (previousFingerprint || '(none)') + '; new=' + fingerprint + '.');
+    if (!forceFull && previousFingerprint === fingerprint) {
+      console.log('Roster snapshot unchanged → SKIP; source=' + source + '; no D1 POST issued.');
       return { ok: true, skipped: true, reason: 'Roster snapshot unchanged', members: members.length };
     }
 
-    console.log('Roster snapshot changed → syncing (' + (source || 'trigger') + ').');
+    console.log((forceFull ? 'Full Sync requested' : 'Roster snapshot changed') + ' → POST /internal/members/sync; source=' + source + '.');
     const response = UrlFetchApp.fetch(workerUrl.replace(/\/$/, '') + '/internal/members/sync', {
       method: 'post', contentType: 'application/json',
       headers: { 'X-LVFR-Worker-Secret': workerSecret },
@@ -1101,15 +1142,19 @@ function syncRosterSnapshotToD1_(source) {
     const responseBody = response.getContentText();
     let syncResult = null;
     try { syncResult = JSON.parse(responseBody); } catch (ignored) {}
+    console.log('Roster D1 POST completed; source=' + source + '; HTTP=' + response.getResponseCode() + '; D1 result=' + (syncResult ? JSON.stringify(syncResult) : '(non-JSON response)') + '.');
     if (response.getResponseCode() < 200 || response.getResponseCode() >= 300 || !syncResult || syncResult.ok !== true) {
-      console.error('D1 sync failed → hash not saved. HTTP ' + response.getResponseCode());
+      console.error('D1 sync failed → hash not saved; source=' + source + '; HTTP=' + response.getResponseCode() + '.');
       throw new Error('D1 roster sync failed: HTTP ' + response.getResponseCode() + ' ' + responseBody);
     }
     properties.setProperty(fingerprintKey, fingerprint);
-    console.log('D1 sync successful → hash saved (' + fingerprint + ').');
+    console.log('D1 sync successful → hash saved; source=' + source + '; fingerprint=' + fingerprint + '.');
     return { ok: true, skipped: false, members: members.length, synced_at: new Date().toISOString() };
+  } catch (error) {
+    console.error('Roster D1 sync exception; source=' + source + '; forceFull=' + forceFull + '; error=' + (error && error.stack ? error.stack : error));
+    throw error;
   } finally {
-    lock.releaseLock();
+    if (lockAcquired) lock.releaseLock();
   }
 }
 
@@ -1147,14 +1192,24 @@ function doNotPromoteSheet_() {
   return sheet;
 }
 
-function doNotPromoteCallsigns_() {
+function doNotPromoteCallsigns_(readOnly) {
   const cache = CacheService.getScriptCache(), key = 'members:do-not-promote:v1';
-  const cached = cache.get(key);
-  if (cached) { try { return new Set(JSON.parse(cached)); } catch (ignored) {} }
-  const sheet = doNotPromoteSheet_(), count = Math.max(0, sheet.getLastRow() - 1);
+  if (!readOnly) {
+    const cached = cache.get(key);
+    if (cached) { try { return new Set(JSON.parse(cached)); } catch (ignored) {} }
+  }
+  let sheet;
+  if (readOnly) {
+    const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+    sheet = spreadsheet.getSheetByName(DO_NOT_PROMOTE_TAB) || spreadsheet.getSheetByName('DO NOT PROMOTE');
+  } else {
+    sheet = doNotPromoteSheet_();
+  }
+  if (!sheet) return new Set();
+  const count = Math.max(0, sheet.getLastRow() - 1);
   const callsigns = count ? sheet.getRange(2, 1, count, 1).getDisplayValues()
     .map(row => String(row[0] || '').trim().toUpperCase()).filter(Boolean) : [];
-  try { cache.put(key, JSON.stringify(callsigns), 300); } catch (ignored) {}
+  if (!readOnly) { try { cache.put(key, JSON.stringify(callsigns), 300); } catch (ignored) {} }
   return new Set(callsigns);
 }
 

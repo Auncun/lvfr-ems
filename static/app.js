@@ -4400,6 +4400,31 @@ if (syncButton) {
 
 }
 
+const fullSyncButton = $("#fullSyncBtn");
+fullSyncButton?.addEventListener("click", async () => {
+    if (!currentUserIsAdmin || !window.confirm("Full Sync will replace the D1 roster and Callsign slots from the current Google Sheet. Continue?")) return;
+    fullSyncButton.disabled = true;
+    fullSyncButton.textContent = "Full Syncing...";
+    try {
+        const result = await api("/api/full-sync", { method: "POST" });
+        const sourceMembers = memberRowsFromResponse(await api("/api/members"));
+        if (!sourceMembers) throw new Error("The roster response was invalid. Refresh the page and try again.");
+        allMembersCache = sourceMembers;
+        allMembersCacheAt = Date.now();
+        memberCache.clear();
+        sourceMembers.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
+        memberListRenderKey = "";
+        await loadMembers();
+        await syncStatus();
+        toast(result.message || `Full Sync completed - ${sourceMembers.length} members`);
+    } catch (error) {
+        toast(error.message || "Full Sync failed.");
+    } finally {
+        fullSyncButton.disabled = false;
+        fullSyncButton.textContent = "Full Sync";
+    }
+});
+
 // ============================================================
 // SEARCH
 // ============================================================
@@ -4670,6 +4695,8 @@ function applyAccountUser(user) {
     currentUserIsCommand = Boolean(user.is_command);
     const commandSyncPanel = $("#commandSyncPanel");
     if (commandSyncPanel) commandSyncPanel.hidden = user.role === "member";
+    const fullSyncButton = $("#fullSyncBtn");
+    if (fullSyncButton) fullSyncButton.hidden = !currentUserIsAdmin;
     currentInstructorTypes = String(user.instructor_type || "")
         .split("/").map(value => value.trim().toUpperCase()).filter(Boolean);
     const account = $("#accountName");

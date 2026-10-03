@@ -63,29 +63,15 @@ async function rosterIdentity(env, name) {
   if (!member || !member.name || !member.callsign) throw new Error("Name was not found on the LVFR roster.");
   return member;
 }
-async function syncMembersFromAppsScript(db, env, token = "", forceFresh = false) {
-  // A manual sync must bypass the Apps Script roster cache.
-  // Its /api/sync endpoint invalidates that cache before reading Sheets.
-  const snapshot = forceFresh
-    ? await gasCall(env, "/api/sync", "POST", {}, token)
-    : await gasCall(env, "/api/members", "GET", {}, token);
-  // /api/sync is executed by Apps Script, which now posts the authoritative
-  // Sheet snapshot to D1 and returns whether it synced or skipped.
-  if (forceFresh) {
-    if (!snapshot || snapshot.ok !== true) throw new Error("Apps Script returned an invalid sync result.");
-    return snapshot;
-  }
-  const members = Array.isArray(snapshot) ? snapshot : snapshot && snapshot.members;
-
-  if (!Array.isArray(members)) {
-    throw new Error("Apps Script returned an invalid roster.");
-  }
-
-  const syncedAt = new Date().toISOString();
-
-  const result=await replaceMembers(db, members, syncedAt);
-  if(snapshot && !Array.isArray(snapshot) && (snapshot.callsign_slots||snapshot.available_callsigns)) await saveCallsignSlots(db,snapshot.callsign_slots||snapshot.available_callsigns);
-  return result;
+async function syncMembersFromAppsScript(env, token = "", fullSync = false) {
+  // Manual sync endpoints read the Sheet and let Apps Script check/commit its
+  // fingerprint before it posts the snapshot to D1.
+  const snapshot = fullSync
+    ? await gasCall(env, "/api/full-sync", "POST", {}, token)
+    : await gasCall(env, "/api/sync", "POST", {}, token);
+  if (!snapshot || snapshot.ok !== true) throw new Error("Apps Script returned an invalid sync result.");
+  if (fullSync && snapshot.skipped) throw new Error("Apps Script unexpectedly skipped the requested Full Sync.");
+  return snapshot;
 }
 async function saveCallsignSlots(db, slots) {
   await ensureCallsignSlotsTable(db);
@@ -505,8 +491,13 @@ export async function handleD1(context) {
     }
     if(route==="/api/sync" && method==="POST") {
       if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can synchronize the roster."),{status:403});
-      const result=await syncMembersFromAppsScript(db,env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET),true);
+      const result=await syncMembersFromAppsScript(env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
       return json({...result,message:result.skipped?"Roster snapshot unchanged; sync skipped":"Roster synchronized from Google Sheets"});
+    }
+    if(route==="/api/full-sync" && method==="POST") {
+      if(!["admin","commander"].includes(user.role)) throw Object.assign(new Error("Only Commanders can run a Full Sync."),{status:403});
+      const result=await syncMembersFromAppsScript(env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET),true);
+      return json({...result,message:"Full roster sync completed from Google Sheets"});
     }
     const instructorWrite=route.match(/^\/api\/member\/([^/]+)\/instructor$/);
     if(method==="POST" && (MEMBER_WRITE_ROUTES.has(route)||instructorWrite)) {
