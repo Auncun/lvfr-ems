@@ -18,7 +18,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=compact-header-2"
+    href="/static/style.css?v=compact-header-3"
 >
 
 <style>
@@ -121,6 +121,7 @@
 <header class="topbar">
 
 
+    <div class="topbar-left">
     <div class="brand">
 
 
@@ -146,6 +147,22 @@
 
     </div>
 
+
+    <span id="dbStatus" class="status-dot">Checking…</span>
+
+    <div id="commandSyncPanel" class="command-sync-panel" hidden>
+      <div class="sync-status-group">
+        <span id="syncStatus" class="status-dot"></span>
+        <span id="syncActivityStatus" class="status-dot"></span>
+        <span id="googleWriteStatus" class="status-dot archive-status"></span>
+        <span id="archiveStatus" class="status-dot archive-status"></span>
+      </div>
+      <div class="sync-actions">
+        <button id="syncBtn" class="primary" type="button">Sync now</button>
+        <button id="fullSyncBtn" class="danger" type="button" hidden>Full Sync</button>
+      </div>
+    </div>
+    </div>
 
     <div class="top-actions">
 
@@ -174,27 +191,7 @@
         </section>
         </div>
         <span id="topOnlineCount" class="online-account-count" aria-live="polite">Online now: —</span>
-        <span
-            id="dbStatus"
-            class="status-dot"
-        >
-            Checking…
-        </span>
 
-
-        <div id="commandSyncPanel" class="command-sync-panel" hidden>
-          <div class="sync-status-group">
-            <span id="syncStatus" class="status-dot"></span>
-            <span id="syncActivityStatus" class="status-dot"></span>
-            <span id="googleWriteStatus" class="status-dot archive-status"></span>
-            <span id="archiveStatus" class="status-dot archive-status"></span>
-          </div>
-
-          <div class="sync-actions">
-            <button id="syncBtn" class="primary" type="button">Sync now</button>
-            <button id="fullSyncBtn" class="danger" type="button" hidden>Full Sync</button>
-          </div>
-        </div>
 
 
     </div>

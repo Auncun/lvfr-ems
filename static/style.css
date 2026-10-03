@@ -30,12 +30,21 @@ body {
     color:#8b949e;
     font-size:13px
 }
+.topbar-left {
+    display:flex;
+    align-items:center;
+    gap:18px;
+    flex:1;
+    min-width:0
+}
 .top-actions {
     display:flex;
     align-items:center;
     gap:10px;
     flex-wrap:wrap;
-    justify-content:flex-end
+    justify-content:flex-end;
+    margin-left:auto;
+    flex:0 0 auto
 }
 .icon-button { position:relative; width:42px; height:42px; padding:9px; display:grid; place-items:center }
 .icon-button svg { width:21px; height:21px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round }
@@ -376,9 +385,15 @@ tr:hover {
     align-items:flex-start
 }
 
+.topbar-left {
+    width:100%;
+    flex-wrap:wrap;
+    gap:12px
+}
+
 .top-actions {
     width:100%;
-    justify-content:flex-start
+    justify-content:flex-end
 }
 .tabs {
     padding:10px 14px
