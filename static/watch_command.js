@@ -92,15 +92,18 @@ function installWatchSectionToggles() {
     ['active-status', 'Current Active Status', form.querySelector('.active-presence')],
     ['initial-roll-call', 'Initial Roll Call', form.querySelector('.initial-rollcall')],
     ['unit-sign-in', 'Unit Sign In', form.querySelector('.quick-signin:not(.initial-rollcall)')],
-    ['sector-coverage', 'Sector Coverage', form.querySelector('[aria-labelledby="sectorHeading"] .watch-fields')],
+    ['sector-red', 'Red Sector', form.querySelector('#redUnitRoster')?.closest('label'), true],
+    ['sector-green', 'Green Sector', form.querySelector('#greenUnitRoster')?.closest('label'), true],
+    ['sector-blue', 'Blue Sector', form.querySelector('#blueUnitRoster')?.closest('label'), true],
+    ['sector-specialised', 'Specialised Units', form.querySelector('#specialisedUnitRoster')?.closest('label'), true],
     ['notes', 'Notes', form.querySelector('#watchNotes')?.closest('label')],
-    ['dnr', 'DNR', form.querySelector('#dnrFields')],
+    ['dnr', 'Add DNR', form.querySelector('#dnrFields')],
     ['significant-call', 'Significant Call / Add Call', form.querySelector('#significantCallText')?.closest('.watch-field')],
     ['coverage-gaps', 'Coverage Gaps', form.querySelector('textarea[name="coverage_gaps"]')?.closest('label')],
     ['watch-transition', 'Watch Command Transition', form.querySelector('#watchTransitionText')?.closest('.watch-field')],
     ['safety-concerns', 'Safety Concerns', form.querySelector('textarea[name="safety_concerns"]')?.closest('label')]
   ];
-  sections.forEach(([key, label, target]) => {
+  sections.forEach(([key, label, target, inline]) => {
     if (!target) return;
     const storageKey = `lvfr.watch.section-hidden.${key}`;
     let collapsed = false;
@@ -108,9 +111,15 @@ function installWatchSectionToggles() {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'watch-section-toggle';
-    button.setAttribute('aria-controls', target.id || (target.id = `watch-section-${key}`));
+    const content = inline ? document.createElement('div') : target;
+    if (inline) {
+      content.className = 'watch-section-content';
+      content.id = `watch-section-${key}`;
+      while (target.firstChild) content.append(target.firstChild);
+    }
+    button.setAttribute('aria-controls', content.id || (content.id = `watch-section-${key}`));
     const update = () => {
-      target.hidden = collapsed;
+      content.hidden = collapsed;
       button.setAttribute('aria-expanded', String(!collapsed));
       button.textContent = `${collapsed ? '＋ Show' : '− Hide'} ${label}`;
     };
@@ -119,7 +128,8 @@ function installWatchSectionToggles() {
       try { localStorage.setItem(storageKey, String(collapsed)); } catch (_) {}
       update();
     });
-    target.before(button);
+    if (inline) target.append(button, content);
+    else target.before(button);
     update();
   });
 }
@@ -127,7 +137,16 @@ installWatchSectionToggles();
 renderSavedCallLocations();
 callLocationInput?.addEventListener('focus', () => renderSavedCallLocations(true));
 callLocationInput?.addEventListener('input', () => renderSavedCallLocations(true));
-callLocationInput?.addEventListener('blur', () => setTimeout(() => { savedCallLocations.hidden = true; }, 120));
+function closeCallLocationsIfFocusLeft() {
+  setTimeout(() => {
+    const focusedSuggestion = savedCallLocations?.contains(document.activeElement);
+    if (document.activeElement !== callLocationInput && !focusedSuggestion && savedCallLocations) {
+      savedCallLocations.hidden = true;
+    }
+  }, 0);
+}
+callLocationInput?.addEventListener('blur', closeCallLocationsIfFocusLeft);
+savedCallLocations?.addEventListener('focusout', closeCallLocationsIfFocusLeft);
 const memberNameCache = new Map();
 const memberLookupPromises = new Map();
 let watchCommandSaveQueue = Promise.resolve();
