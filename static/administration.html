@@ -11,7 +11,6 @@
     .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
     .admin-brand{display:flex;align-items:center;gap:12px}
     .admin-header{margin-bottom:20px}.admin-header h1{margin:0}.admin-header p,.muted{color:#9aa4b2}
-    .admin-nav{display:flex;gap:8px;flex-wrap:wrap}.admin-nav a{padding:9px 13px;border:1px solid #303945;border-radius:8px;color:#e6edf3;text-decoration:none}
     .admin-card{margin:16px 0;padding:20px;border:1px solid #303945;border-radius:14px;background:#111720}
     .admin-toolbar{justify-content:flex-start;margin:12px 0}.admin-toolbar input,.admin-toolbar select{min-width:200px}
     .admin-table-wrap{overflow:auto}.admin-table{width:100%;border-collapse:collapse;min-width:800px}.admin-table th,.admin-table td{text-align:left;vertical-align:top;padding:11px 9px;border-bottom:1px solid #303945}.admin-table th{color:#9aa4b2;font-weight:600}
@@ -21,12 +20,11 @@
   </style>
 </head>
 <body>
-  <a class="portal-back" href="/portal" aria-label="Back to Portal" title="Back to Portal">←</a>
+  <button class="sidebar-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="appSidebar"><span></span><span></span><span></span></button>
   <main class="admin-shell">
     <header class="topbar admin-header">
       <div class="topbar-left">
       <div class="admin-brand"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"><div><h1>Operation Command</h1><p>Manage account access, roles, and review account activity.</p></div></div>
-      <nav class="admin-nav"><a href="/portal">Applications</a><a href="/">LVFR EMS</a></nav>
       </div>
       <div class="top-actions">
         <div class="notification-control">
@@ -62,5 +60,6 @@
   <script src="/static/header-controls.js?v=header-controls-1"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
   <script src="/static/administration.js?v=account-presence-12-notification-cache"></script>
+  <script src="/static/sidebar.js?v=unified-navigation-1"></script>
 </body>
 </html>

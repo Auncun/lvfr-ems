@@ -13,9 +13,6 @@
     .watch-brand { display:flex; align-items:center; gap:12px; }
     .watch-header p,.hint { color:#9aa4b2; }
     .watch-header h1 { margin:0 0 5px; }
-    .watch-nav { display:flex; gap:8px; flex-wrap:wrap; }
-    .watch-nav a { display:inline-block; padding:9px 13px; border:1px solid #303945; border-radius:8px; color:#e6edf3; text-decoration:none; }
-    #emsNavLink[hidden] { display:none; }
     .watch-card { margin:16px 0; padding:22px; border:1px solid #303945; border-radius:14px; background:#111720; }
     .watch-card h2 { margin-top:0; }
     .watch-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
@@ -75,15 +72,11 @@
   </style>
 </head>
 <body>
-  <a class="portal-back" href="/portal" aria-label="Back to Portal" title="Back to Portal">←</a>
+  <button class="sidebar-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="appSidebar"><span></span><span></span><span></span></button>
   <main class="watch-shell">
     <header class="topbar watch-header">
       <div class="topbar-left">
       <div class="watch-brand"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"><div><h1>Watch Command</h1><p>Create and review watch handover logs.</p></div></div>
-      <nav class="watch-nav" aria-label="Watch Command navigation">
-        <a href="/portal">Application selection</a>
-        <a id="emsNavLink" href="/" hidden>LVFR EMS Operations</a>
-      </nav>
       </div>
       <div class="top-actions">
         <div class="notification-control">
@@ -117,7 +110,7 @@
         </select></label>
         <label class="wide"><span id="rollCallLabel">Roll Call (0)</span><textarea name="roll_call" placeholder="Personnel and units present"></textarea></label>
         <div class="active-presence">
-          <div class="active-presence-head"><h3>Current Active Status</h3><button type="button" id="toggleActiveMerge" aria-pressed="false">MERGE</button></div>
+          <div class="active-presence-head"><h3 id="activePresenceHeading">Current Active Status</h3><button type="button" id="toggleActiveMerge" aria-pressed="false">MERGE</button></div>
           <div class="active-presence-grid">
             <label>ACTIVE UNIT<textarea id="activeUnitSummary" readonly aria-label="Active units"></textarea></label>
             <label id="activeEmsWrap">ACTIVE EMS<textarea id="activeEmsSummary" readonly aria-label="Active EMS personnel"></textarea></label>
@@ -275,5 +268,6 @@
   <script src="/static/account-settings.js?v=account-settings-5"></script>
   <script src="/static/header-controls.js?v=header-controls-1"></script>
   <script src="/static/watch_command.js?v=67"></script>
+  <script src="/static/sidebar.js?v=unified-navigation-1"></script>
 </body>
 </html>
