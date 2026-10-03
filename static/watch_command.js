@@ -1971,7 +1971,7 @@ form.addEventListener('submit', async event => {
       newDraftId();
       await saveWatch();
     }
-    setMessage(message, 'Watch log saved.', 'success');
+    setMessage(message, 'Watch log submitted. Saving in the background.');
     form.reset();
     watchTimeZonePicker.value = preferredTimeZone;
     refreshStartTimeLabel();
@@ -1999,13 +1999,48 @@ form.addEventListener('submit', async event => {
     renderUnitRosters();
     refreshInitialUnitOptions();
     updateAvailableChoices();
-    await loadHistory();
   } catch (error) {
     setMessage(message, error.message, 'error');
   } finally {
     saveButton.disabled = false;
     quickButton.disabled = false;
   }
+});
+document.querySelector('#clearWatchCommand').addEventListener('click', () => {
+  if (!window.confirm('Clear the current unsaved Watch Command form? Saved watch logs will not be deleted.')) return;
+  form.reset();
+  watchTimeZonePicker.value = preferredTimeZone;
+  refreshStartTimeLabel();
+  sessionStorage.removeItem('watch-command-draft-id');
+  sessionStorage.removeItem('watch-command-form-draft');
+  newDraftId();
+  form.elements.watch_date.value = localDateInputValue();
+  form.elements.start_time.value = currentWatchTime();
+  applyLoggedInCommander();
+  initialCallsignInput.value = '';
+  initialCallsignInput.dispatchEvent(new Event('input', { bubbles: true }));
+  initialMemberLookup.textContent = 'Enter a callsign to look up the member name.';
+  refreshRollCallSummary();
+  refreshActivePresence();
+  document.querySelector('#specialisedUnitWrap').hidden = true;
+  activityTraining.checked = false;
+  activityAttachedUnit.value = '';
+  document.querySelector('#activityAttachedWrap').hidden = true;
+  document.querySelector('#initialSpecialWrap').hidden = true;
+  formUnitPanel.hidden = true;
+  document.querySelector('#toggleFormUnit').textContent = 'Forming a unit with';
+  formUnitCount.value = '2';
+  renderFormUnitMemberInputs();
+  onDutyPicker.hidden = true;
+  quickButton.textContent = 'Sign in';
+  setMessage(message, '');
+  setMessage(quickMessage, '');
+  setMessage(initialRollcallMessage, '');
+  persistFormDraft();
+  refreshOnDutyCallsignChoices();
+  renderUnitRosters();
+  refreshInitialUnitOptions();
+  updateAvailableChoices();
 });
 document.querySelector('#watchLogout').addEventListener('click', () => {
   sessionStorage.removeItem('watch-command-draft-id');
