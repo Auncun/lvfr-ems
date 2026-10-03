@@ -4945,11 +4945,3 @@ document.addEventListener("visibilitychange", () => {
 setInterval(() => {
     if (!document.hidden && currentUserIsAdmin && $("#allLeadersTable")) void loadLeaders();
 }, 30000);
-// Keep another open EMS Operations tab/device current after a roster change
-// made elsewhere (the installed PWA and the website share the same D1 API).
-const ROSTER_REFRESH_INTERVAL_MS = 15000;
-function refreshVisibleRoster() {
-    if (!document.hidden && !memberListRequestInFlight) void loadMembers(true, true);
-}
-setInterval(refreshVisibleRoster, ROSTER_REFRESH_INTERVAL_MS);
-document.addEventListener("visibilitychange", refreshVisibleRoster);

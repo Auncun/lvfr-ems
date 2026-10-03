@@ -1119,10 +1119,7 @@ function syncRosterSnapshotToD1_(source, forceFull) {
     const canonicalPayload = {
       available_callsigns: Object.keys(available_callsigns).sort().reduce((out, key) => { out[key] = available_callsigns[key]; return out; }, {}),
       callsign_slots: callsign_slots.slice().sort((a, b) => String(a.rank).localeCompare(String(b.rank)) || Number(a.row || 0) - Number(b.row || 0) || String(a.callsign).localeCompare(String(b.callsign))),
-      // Days in rank is derived from the assigned date and changes daily; it
-      // is recalculated by the D1 API when read, so exclude it from the sync hash.
-      members: members.map(({ days_in_rank, ...member }) => member)
-        .sort((a, b) => String(a.callsign).localeCompare(String(b.callsign)))
+      members: members.slice().sort((a, b) => String(a.callsign).localeCompare(String(b.callsign)))
     };
     const fingerprint = Utilities.base64EncodeWebSafe(Utilities.computeDigest(
       Utilities.DigestAlgorithm.SHA_256, JSON.stringify(canonicalPayload)
