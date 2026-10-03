@@ -77,6 +77,12 @@
     <nav class="sidebar-nav">${pages.map(groupMarkup).join('')}</nav>`;
   document.body.append(backdrop, sidebar);
 
+  const bottomNav = document.createElement('nav');
+  bottomNav.className = 'bottom-app-nav';
+  bottomNav.setAttribute('aria-label', 'Applications');
+  bottomNav.innerHTML = pages.map(page => `<a href="${page.href}"${currentPath === page.href ? ' aria-current="page"' : ''}${page.admin ? ' data-admin-app="true"' : ''}><span aria-hidden="true">${page.href === '/' ? '⌂' : page.href === '/watch-command' ? '◷' : '⚙'}</span><small>${page.href === '/' ? 'EMS' : page.href === '/watch-command' ? 'Watch' : 'Command'}</small></a>`).join('');
+  document.body.append(bottomNav);
+
   const close = () => {
     sidebar.classList.remove('is-open');
     backdrop.hidden = true;
@@ -145,6 +151,8 @@
 
   const refreshAccess = () => {
     const user = window.lvfrCachedUser?.();
+    const adminLink = bottomNav.querySelector('[data-admin-app]');
+    if (adminLink) adminLink.hidden = currentPath !== '/administration' && !user?.is_admin;
     sidebar.querySelector('input').dispatchEvent(new Event('input'));
   };
   refreshAccess();
