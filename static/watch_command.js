@@ -39,13 +39,38 @@ function readSavedCallLocations() {
     return Array.isArray(values) ? values.map(value => String(value || '').trim()).filter(Boolean) : [];
   } catch (_) { return []; }
 }
-function renderSavedCallLocations() {
+function renderSavedCallLocations(show = false) {
   if (!savedCallLocations) return;
-  savedCallLocations.replaceChildren(...readSavedCallLocations().map(value => {
-    const option = document.createElement('option');
-    option.value = value;
-    return option;
+  const query = String(callLocationInput?.value || '').trim().toLocaleLowerCase();
+  const locations = readSavedCallLocations().filter(value => !query || value.toLocaleLowerCase().includes(query));
+  savedCallLocations.replaceChildren(...locations.map(value => {
+    const row = document.createElement('div');
+    row.className = 'watch-place-option';
+    const choose = document.createElement('button');
+    choose.type = 'button';
+    choose.textContent = value;
+    choose.addEventListener('mousedown', event => event.preventDefault());
+    choose.addEventListener('click', () => {
+      callLocationInput.value = value;
+      savedCallLocations.hidden = true;
+      callLocationInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'watch-place-remove';
+    remove.textContent = '×';
+    remove.title = `Remove ${value} from saved places`;
+    remove.setAttribute('aria-label', `Remove ${value} from saved places`);
+    remove.addEventListener('mousedown', event => event.preventDefault());
+    remove.addEventListener('click', () => {
+      const remaining = readSavedCallLocations().filter(item => item.toLocaleLowerCase() !== value.toLocaleLowerCase());
+      try { localStorage.setItem(WATCH_LOCATION_HISTORY_KEY, JSON.stringify(remaining)); } catch (_) {}
+      renderSavedCallLocations(true);
+    });
+    row.append(choose, remove);
+    return row;
   }));
+  savedCallLocations.hidden = !show || locations.length === 0;
 }
 function rememberCallLocation(value) {
   const location = String(value || '').trim().replace(/\s+/g, ' ');
@@ -56,8 +81,9 @@ function rememberCallLocation(value) {
   renderSavedCallLocations();
 }
 renderSavedCallLocations();
-callLocationInput?.addEventListener('change', () => rememberCallLocation(callLocationInput.value));
-callLocationInput?.addEventListener('blur', () => rememberCallLocation(callLocationInput.value));
+callLocationInput?.addEventListener('focus', () => renderSavedCallLocations(true));
+callLocationInput?.addEventListener('input', () => renderSavedCallLocations(true));
+callLocationInput?.addEventListener('blur', () => setTimeout(() => { savedCallLocations.hidden = true; }, 120));
 const memberNameCache = new Map();
 const memberLookupPromises = new Map();
 let watchCommandSaveQueue = Promise.resolve();
@@ -406,7 +432,15 @@ function renderLog(log) {
   copyButton.className = 'watch-copy-button';
   copyButton.textContent = 'Copy for Discord';
   copyButton.addEventListener('click', () => copyWatchLog(log, copyButton));
-  titleRow.append(heading, copyButton);
+  const continueButton = document.createElement('button');
+  continueButton.type = 'button';
+  continueButton.className = 'watch-copy-button';
+  continueButton.textContent = 'Edit / Continue';
+  continueButton.addEventListener('click', () => continueWatchLog(log));
+  const actions = document.createElement('div');
+  actions.className = 'watch-log-actions';
+  actions.append(continueButton, copyButton);
+  titleRow.append(heading, actions);
   const meta = document.createElement('div');
   meta.className = 'watch-log-meta';
   const recordTimeZone = isValidTimeZone(log.time_zone) ? log.time_zone : selectedTimeZone();
@@ -452,6 +486,36 @@ function renderLog(log) {
     article.append(sectionHeading, grid);
   }
   return article;
+}
+async function continueWatchLog(log) {
+  const record = { ...log, finalized: false, end_time: '' };
+  try {
+    await request('/api/watch-command', { method: 'POST', body: JSON.stringify(record) });
+  } catch (error) {
+    setMessage(message, `Could not reopen this watch log: ${error.message}`, 'error');
+    return;
+  }
+  form.reset();
+  for (const [key, value] of Object.entries(record)) {
+    const field = form.elements.namedItem(key);
+    if (!field) continue;
+    if (field.type === 'checkbox') field.checked = Boolean(value);
+    else if ('value' in field) field.value = value == null ? '' : String(value);
+  }
+  watchTimeZonePicker.value = isValidTimeZone(record.time_zone) ? record.time_zone : preferredTimeZone;
+  form.elements.end_time.value = '';
+  sessionStorage.setItem('watch-command-draft-id', String(record.draft_id || ''));
+  ensureDraftId();
+  refreshStartTimeLabel();
+  applyLoggedInCommander();
+  refreshRollCallSummary();
+  renderUnitRosters();
+  refreshOnDutyCallsignChoices();
+  refreshInitialUnitOptions();
+  updateAvailableChoices();
+  persistFormDraft();
+  setMessage(message, 'Watch log reopened. Continue editing, then select End Watch & Save when finished.', 'success');
+  form.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 async function loadHistory() {
   history.replaceChildren();
@@ -903,10 +967,10 @@ function refreshOnDutyCallsignChoices() {
     const match = line.trim().match(/^([A-Z]+-\d+)\s*(.*)$/i);
     if (match) {
       const callsign = match[1].toUpperCase();
-      const cleanedName = match[2].replace(/\s+WC\/(?:Red|Green|Blue|Guardian|Nomad|Dive|Engine)-\d+(?:\([^)]*\))?$/i, '')
+      const cleanedName = match[2].replace(/\s+WC\/(?:Red|Green|Blue|Command|Battalion|Guardian|Nomad|Dive|Engine)-\d+(?:\([^)]*\))?$/i, '')
         .replace(/\s+WC\b/g, '').replace(/\s+\(Training\)/gi, '')
         .replace(/\s+(?:Red|Green|Blue)-\d+(?:\([^)]*\))?$/i, '')
-        .replace(/\s+(?:Guardian|Nomad|Dive|Engine)-\d+(?:\([^)]*\))?$/i, '').trim();
+        .replace(/\s+(?:Command|Battalion|Guardian|Nomad|Dive|Engine)-\d+(?:\([^)]*\))?$/i, '').trim();
       displayNames.set(callsign, memberNameCache.get(callsign)?.name || cleanedName);
       watchCallsigns.set(callsign, memberNameCache.get(callsign)?.name || cleanedName);
     }
@@ -1542,10 +1606,10 @@ function markRollCallWatchCommander(callsign, memberName, clearPrevious = false)
   const updated = lines.map((line, index) => {
     if (!clearPrevious && index !== targetIndex) return line;
     const clean = line
-      .replace(/\s+WC\/(?=(?:Red|Green|Blue|Guardian|Nomad|Dive|Engine)-\d+)/gi, ' ')
+      .replace(/\s+WC\/(?=(?:Red|Green|Blue|Command|Battalion|Guardian|Nomad|Dive|Engine)-\d+)/gi, ' ')
       .replace(/\s+WC\b/gi, '').trimEnd();
     if (index !== targetIndex) return clean;
-    const unit = clean.match(/\s(?:Red|Green|Blue|Guardian|Nomad|Dive|Engine)-\d+(?:\([^)]*\))?/i);
+    const unit = clean.match(/\s(?:Red|Green|Blue|Command|Battalion|Guardian|Nomad|Dive|Engine)-\d+(?:\([^)]*\))?/i);
     return unit
       ? `${clean.slice(0, unit.index).trimEnd()} WC/${unit[0].trim()}`
       : `${clean} WC`;
@@ -1929,7 +1993,6 @@ function addCall(isDnr = false) {
   const type = isDnr ? 'DNR' : document.querySelector('#callType').value;
   const details = document.querySelector('#callDetails').value.trim();
   const location = document.querySelector('#callLocation').value.trim();
-  rememberCallLocation(location);
   const callMessage = document.querySelector(isDnr ? '#dnrMessage' : '#callMessage');
   const diveUnit = document.querySelector('#divePerformedBy').value;
   const diveSuccessCount = Math.max(0, Number.parseInt(document.querySelector('#diveSuccessCount').value, 10) || 0);
@@ -1946,6 +2009,7 @@ function addCall(isDnr = false) {
     (dnr ? document.querySelector(!dnrSubject ? '#dnrSubject' : !dnrReason ? '#dnrReason' : !dnrIssuer ? '#dnrIssuer' : '#dnrDuration') : type === 'Dive Rescue' ? document.querySelector('#divePerformedBy') : document.querySelector('#callDetails')).focus();
     return;
   }
+  if (!isDnr) rememberCallLocation(location);
   const description = dnr
     ? `DNR ${dnrType} ${dnrType === 'Localized' ? 'Place' : 'Name'}: ${dnrSubject} · Reason: ${dnrReason} · Issued by: ${dnrIssuer}${dnrDuration ? ` · Lasts for: ${dnrDuration} ${dnrDurationUnit}` : ''}`
     : type === 'MASCAS'
@@ -1978,6 +2042,9 @@ renderUnitRosters();
 refreshRollCallSummary();
 updateAvailableChoices();
 persistFormDraft();
+form.addEventListener('keydown', event => {
+  if (event.key === 'Enter' && !(event.target instanceof HTMLTextAreaElement)) event.preventDefault();
+});
 form.addEventListener('submit', async event => {
   event.preventDefault();
   const endTime = currentWatchTime();
@@ -1990,17 +2057,24 @@ form.addEventListener('submit', async event => {
   quickButton.disabled = true;
   setMessage(message, 'Saving watch log…');
   try {
+    const submittedRecord = currentRecord(true);
     const saveWatch = () => request('/api/watch-command', {
-      method: 'POST', body: JSON.stringify(currentRecord(true)),
+      method: 'POST', body: JSON.stringify(submittedRecord),
     });
     try {
       await saveWatch();
     } catch (error) {
       if (!error.message.includes('belongs to another user')) throw error;
-      newDraftId();
+      submittedRecord.draft_id = newDraftId();
       await saveWatch();
     }
     setMessage(message, 'Watch log submitted. Saving in the background.');
+    const continueButton = document.createElement('button');
+    continueButton.type = 'button';
+    continueButton.className = 'watch-copy-button';
+    continueButton.textContent = 'Edit / Continue';
+    continueButton.addEventListener('click', () => continueWatchLog(submittedRecord));
+    message.append(' ', continueButton);
     form.reset();
     watchTimeZonePicker.value = preferredTimeZone;
     refreshStartTimeLabel();

@@ -58,6 +58,12 @@
     .watch-log-title-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
     .watch-log-title-row h3 { min-width:0; }
     .watch-copy-button { flex:none; white-space:nowrap; }
+    .watch-log-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .watch-place-suggestions { display:grid; gap:4px; margin-top:6px; }
+    .watch-place-option { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:5px 8px; border-radius:6px; background:#0d1219; }
+    .watch-place-option[hidden] { display:none; }
+    .watch-place-option button { padding:4px 8px; }
+    .watch-place-option .watch-place-remove { flex:none; min-width:30px; color:#ff8178; }
     .watch-log h3 { margin:0 0 5px; }
     .watch-log-meta { color:#9aa4b2; font-size:13px; margin-bottom:14px; }
     .watch-log-meta .watch-na { color:#788391; }
@@ -140,10 +146,10 @@
           <label><span><input type="checkbox" id="initialIsTraining" name="initial_is_training"> Training</span></label>
         </div>
         <label id="initialSpecialWrap" hidden style="margin-top:10px">Specialised unit type
-          <select id="initialSpecial"><option value="Guardian">Guardian</option><option value="Nomad">Nomad</option><option value="Dive">Dive</option><option value="Engine">Engine</option></select>
+          <select id="initialSpecial"><option value="Command">Command</option><option value="Battalion">Battalion</option><option value="Guardian">Guardian</option><option value="Nomad">Nomad</option><option value="Dive">Dive</option><option value="Engine">Engine</option></select>
         </label>
         <datalist id="initialUnitOptions"></datalist>
-        <datalist id="attachedUnitOptions"><option value="Engine-1"></option><option value="Guardian-1"></option><option value="Nomad-1"></option><option value="Dive-1"></option></datalist>
+        <datalist id="attachedUnitOptions"><option value="Battalion-1"></option><option value="Command-1"></option><option value="Engine-1"></option><option value="Guardian-1"></option><option value="Nomad-1"></option><option value="Dive-1"></option></datalist>
         <p id="initialRollcallMessage" role="status" aria-live="polite"></p>
       </section>
 
@@ -184,6 +190,8 @@
             <option value="Nomad">Nomad</option>
             <option value="Dive">Dive</option>
             <option value="Engine">Engine</option>
+            <option value="Command">Command</option>
+            <option value="Battalion">Battalion</option>
           </select>
         </label>
         <label id="activityAttachedWrap" hidden style="margin-top:10px">Attached unit (optional)<input id="activityAttachedUnit" maxlength="24" list="attachedUnitOptions" placeholder="Engine-1" autocomplete="off"></label>
@@ -193,7 +201,7 @@
           <div class="quick-controls">
             <label>Number of members<select id="formUnitCount"></select></label>
             <label>Sector<select id="formUnitSector"><option value="Red">Red Sector</option><option value="Green">Green Sector</option><option value="Blue">Blue Sector</option><option value="Specialised">Specialised unit</option></select></label>
-            <label id="formUnitSpecialWrap" hidden>Specialised unit<select id="formUnitSpecial"><option value="Guardian">Guardian</option><option value="Nomad">Nomad</option><option value="Dive">Dive</option><option value="Engine">Engine</option></select></label>
+            <label id="formUnitSpecialWrap" hidden>Specialised unit<select id="formUnitSpecial"><option value="Command">Command</option><option value="Battalion">Battalion</option><option value="Guardian">Guardian</option><option value="Nomad">Nomad</option><option value="Dive">Dive</option><option value="Engine">Engine</option></select></label>
           </div>
           <div id="formUnitMembers" class="watch-fields" style="margin-top:12px"></div>
           <button type="button" class="primary" id="submitFormUnit" style="margin-top:12px">Form unit and sign in members</button>
@@ -232,7 +240,7 @@
             <div class="quick-controls" style="margin-top:8px">
               <label>Type<select id="callType"><option value="MASCAS">MASCAS</option><option value="Fire dealt with by Engine-1">Fire dealt with by Engine-1</option><option value="Dive Rescue">Dive Rescue</option><option value="Other">Other</option></select></label>
               <label id="callDetailsWrap"><span id="callDetailsLabel">MASCAS number</span><input id="callDetails" type="number" min="1" step="1" placeholder="5"></label>
-              <label>Location<input id="callLocation" placeholder="Casino" list="savedCallLocations" autocomplete="off"><datalist id="savedCallLocations"></datalist></label>
+              <div class="watch-field"><label for="callLocation">Location</label><input id="callLocation" placeholder="Casino" autocomplete="off" aria-controls="savedCallLocations" aria-autocomplete="list"><div id="savedCallLocations" class="watch-place-suggestions" hidden></div></div>
               <label id="divePerformedByWrap" hidden>Dive rescue performed by<select id="divePerformedBy"><option value="">Choose an active unit</option></select></label>
               <label id="diveSuccessCountWrap" hidden>Successful rescues<input id="diveSuccessCount" type="number" min="0" step="1" value="0"></label>
               <label id="diveFailureCountWrap" hidden>Failed rescues<input id="diveFailureCount" type="number" min="0" step="1" value="0"></label>
@@ -268,7 +276,7 @@
   <script src="/static/session-auth.js?v=shared-session-5"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
   <script src="/static/header-controls.js?v=header-controls-1"></script>
-  <script src="/static/watch_command.js?v=71"></script>
+  <script src="/static/watch_command.js?v=73"></script>
   <script src="/static/sidebar.js?v=nested-navigation-8"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 </body>
