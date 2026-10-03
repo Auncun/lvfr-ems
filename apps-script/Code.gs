@@ -1538,9 +1538,11 @@ function moveMember_(member, target, newRank, user, operation) {
     : Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MM/dd/yyyy');
   destination[3] = '=TODAY()-D' + target.row;
   sheet.getRange(target.row, 2, 1, 8).setValues([destination]);
-  sheet.getRange(target.row, 11, 1, 3).setValues([[...sourceValues.slice(9, 12)]]);
+  // Column K (notes) follows the member. Columns L and M belong to the
+  // physical roster slot and must stay untouched on both source and target.
+  sheet.getRange(target.row, 11).setValue(sourceValues[9]);
   sheet.getRange(member.row, 3, 1, 7).clearContent().setBackground('#ffffff');
-  sheet.getRange(member.row, 11, 1, 3).clearContent().setBackground('#ffffff');
+  sheet.getRange(member.row, 11).clearContent().setBackground('#ffffff');
   sheet.getRange(member.row, 2).setValue(oldCallsign);
   if (member.do_not_promote) moveDoNotPromoteCallsign_(oldCallsign, target.callsign, member.name);
   const event = operation === 'DEMOTION' ? 'Demoted' : operation === 'CALLSIGN_CHANGE' ? 'Callsign Changed' : operation === 'CHANGE_RANK' ? 'Rank Changed' : 'Promoted';
@@ -1562,7 +1564,8 @@ function terminateMember_(data, user) {
   const member = memberByCallsign_(data.callsign), sheet = rosterSheet_();
   sheet.getRange(member.row, 3, 1, 7).clearContent().setBackground('#ffffff');
   sheet.getRange(member.row, 4).setValue(new Date());
-  sheet.getRange(member.row, 11, 1, 3).clearContent().setBackground('#ffffff');
+  // Keep the slot-specific L and M values and formatting during termination.
+  sheet.getRange(member.row, 11).clearContent().setBackground('#ffffff');
   const timestamp = new Date().toISOString(), reason = String(data.note || '');
   appendArchiveLog_({ timestamp, event: 'Terminated', member: member.name, callsign: member.callsign, old_callsign: '', new_callsign: '', old_rank: member.rank, new_rank: '', details: reason, actor: actorName_(user), actor_callsign: user.callsign });
   appendAppLog_({ kind: 'termination', log_date: timestamp, callsign: member.callsign, member_name: member.name, action: 'Terminated', details: reason, changed_by: actorName_(user), old_rank: member.rank });

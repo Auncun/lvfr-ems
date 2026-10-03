@@ -3921,6 +3921,10 @@ function openRankTools(cs) {
         return;
     }
 
+    const currentMember = memberCache.get(String(cs || "").trim().toUpperCase()) ||
+        (activeProfileMember?.callsign?.toUpperCase() === String(cs || "").trim().toUpperCase() ? activeProfileMember : null);
+    const currentRank = String(currentMember?.rank || "").trim().toLowerCase();
+
     $("#modalContent").innerHTML = `
 
         <h2>
@@ -3961,10 +3965,10 @@ function openRankTools(cs) {
 
                 <select id="newrank">
 
-                    ${config.ranks.map(
-                        x =>
-                            `<option>${esc(x)}</option>`
-                    ).join("")}
+                    ${config.ranks.map(x => {
+                        const selected = String(x).trim().toLowerCase() === currentRank ? " selected" : "";
+                        return `<option${selected}>${esc(x)}</option>`;
+                    }).join("")}
 
                 </select>
 
