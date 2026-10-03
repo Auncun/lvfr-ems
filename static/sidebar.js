@@ -52,7 +52,7 @@
     <section class="sidebar-page-group" data-sidebar-group ${page.admin ? 'data-admin-group="true"' : ''}>
       <div class="sidebar-page-head">
         <a class="sidebar-page-link" href="${page.href}" ${currentPath === page.href ? 'aria-current="page"' : ''}>${esc(page.title)}</a>
-        <button type="button" class="sidebar-expand" aria-label="Show ${esc(page.title)} menus" aria-expanded="false" aria-controls="sidebarItems${index}">⌄</button>
+        <button type="button" class="sidebar-expand" aria-label="Show ${esc(page.title)} menus" title="Show menus" aria-expanded="false" aria-controls="sidebarItems${index}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
       </div>
       <div class="sidebar-items" id="sidebarItems${index}" hidden>${page.items.map(item => {
         const cls = item.sub ? ' class="sidebar-subitem"' : '';
