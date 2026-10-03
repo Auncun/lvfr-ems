@@ -59,11 +59,17 @@
     .watch-log-title-row h3 { min-width:0; }
     .watch-copy-button { flex:none; white-space:nowrap; }
     .watch-log-actions { display:flex; gap:8px; flex-wrap:wrap; }
-    .watch-place-suggestions { display:grid; gap:4px; margin-top:6px; }
-    .watch-place-option { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:5px 8px; border-radius:6px; background:#0d1219; }
+    .watch-place-suggestions { display:grid; gap:3px; max-height:220px; overflow-y:auto; margin-top:7px; padding:5px; border:1px solid #3b4858; border-radius:10px; background:#151e29; box-shadow:0 10px 26px #0008; }
+    .watch-place-option { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:3px; border-radius:7px; background:transparent; }
+    .watch-place-option:hover, .watch-place-option:focus-within { background:#223247; }
+    .watch-place-option .watch-place-choose { flex:1; min-width:0; padding:9px 11px; border:0; background:transparent; color:#e8eef6; text-align:left; font-weight:500; }
+    .watch-place-option .watch-place-choose:hover { background:transparent; }
     .watch-place-option[hidden] { display:none; }
     .watch-place-option button { padding:4px 8px; }
-    .watch-place-option .watch-place-remove { flex:none; min-width:30px; color:#ff8178; }
+    .watch-place-option .watch-place-remove { flex:none; min-width:34px; min-height:34px; border:0; color:#b9c3d0; background:transparent; font-size:20px; }
+    .watch-place-option .watch-place-remove:hover { color:#ff8178; background:#422b31; }
+    .watch-section-toggle { width:100%; margin:8px 0; padding:8px 12px; text-align:left; color:#c9d1d9; }
+    .watch-section-toggle[aria-expanded="false"] { color:#9aa4b2; }
     .watch-log h3 { margin:0 0 5px; }
     .watch-log-meta { color:#9aa4b2; font-size:13px; margin-bottom:14px; }
     .watch-log-meta .watch-na { color:#788391; }
@@ -276,7 +282,7 @@
   <script src="/static/session-auth.js?v=shared-session-5"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
   <script src="/static/header-controls.js?v=header-controls-1"></script>
-  <script src="/static/watch_command.js?v=73"></script>
+  <script src="/static/watch_command.js?v=75"></script>
   <script src="/static/sidebar.js?v=nested-navigation-8"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 </body>

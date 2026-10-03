@@ -42,12 +42,15 @@ function readSavedCallLocations() {
 function renderSavedCallLocations(show = false) {
   if (!savedCallLocations) return;
   const query = String(callLocationInput?.value || '').trim().toLocaleLowerCase();
-  const locations = readSavedCallLocations().filter(value => !query || value.toLocaleLowerCase().includes(query));
+  const locations = readSavedCallLocations()
+    .filter(value => !query || value.toLocaleLowerCase().includes(query))
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
   savedCallLocations.replaceChildren(...locations.map(value => {
     const row = document.createElement('div');
     row.className = 'watch-place-option';
     const choose = document.createElement('button');
     choose.type = 'button';
+    choose.className = 'watch-place-choose';
     choose.textContent = value;
     choose.addEventListener('mousedown', event => event.preventDefault());
     choose.addEventListener('click', () => {
@@ -80,6 +83,44 @@ function rememberCallLocation(value) {
   try { localStorage.setItem(WATCH_LOCATION_HISTORY_KEY, JSON.stringify(locations.slice(0, 50))); } catch (_) {}
   renderSavedCallLocations();
 }
+function installWatchSectionToggles() {
+  const sections = [
+    ['roll-call', 'Roll Call', form.querySelector('textarea[name="roll_call"]')?.closest('label')],
+    ['active-status', 'Current Active Status', form.querySelector('.active-presence')],
+    ['initial-roll-call', 'Initial Roll Call', form.querySelector('.initial-rollcall')],
+    ['unit-sign-in', 'Unit Sign In', form.querySelector('.quick-signin:not(.initial-rollcall)')],
+    ['sector-coverage', 'Sector Coverage', form.querySelector('[aria-labelledby="sectorHeading"] .watch-fields')],
+    ['notes', 'Notes', form.querySelector('#watchNotes')?.closest('label')],
+    ['dnr', 'DNR', form.querySelector('#dnrFields')],
+    ['significant-call', 'Significant Call / Add Call', form.querySelector('#significantCallText')?.closest('.watch-field')],
+    ['coverage-gaps', 'Coverage Gaps', form.querySelector('textarea[name="coverage_gaps"]')?.closest('label')],
+    ['watch-transition', 'Watch Command Transition', form.querySelector('#watchTransitionText')?.closest('.watch-field')],
+    ['safety-concerns', 'Safety Concerns', form.querySelector('textarea[name="safety_concerns"]')?.closest('label')]
+  ];
+  sections.forEach(([key, label, target]) => {
+    if (!target) return;
+    const storageKey = `lvfr.watch.section-hidden.${key}`;
+    let collapsed = false;
+    try { collapsed = localStorage.getItem(storageKey) === 'true'; } catch (_) {}
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'watch-section-toggle';
+    button.setAttribute('aria-controls', target.id || (target.id = `watch-section-${key}`));
+    const update = () => {
+      target.hidden = collapsed;
+      button.setAttribute('aria-expanded', String(!collapsed));
+      button.textContent = `${collapsed ? '＋ Show' : '− Hide'} ${label}`;
+    };
+    button.addEventListener('click', () => {
+      collapsed = !collapsed;
+      try { localStorage.setItem(storageKey, String(collapsed)); } catch (_) {}
+      update();
+    });
+    target.before(button);
+    update();
+  });
+}
+installWatchSectionToggles();
 renderSavedCallLocations();
 callLocationInput?.addEventListener('focus', () => renderSavedCallLocations(true));
 callLocationInput?.addEventListener('input', () => renderSavedCallLocations(true));
