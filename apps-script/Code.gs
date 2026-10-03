@@ -1527,8 +1527,9 @@ function emptyRowForCallsign_(callsign) {
 function moveMember_(member, target, newRank, user, operation) {
   if (member.row === target.row) throw new Error('Old and new Callsign point to the same roster row.');
   const sheet = rosterSheet_();
-  // Read B:K only. L and M are slot-specific and must not be copied or cleared.
-  const sourceValues = sheet.getRange(member.row, 2, 1, 10).getDisplayValues()[0];
+  // Read only member-owned fields. Slot metadata in L:M is not part of this move.
+  const sourceValues = sheet.getRange(member.row, 2, 1, 8).getDisplayValues()[0];
+  const sourceNote = sheet.getRange(member.row, 11).getDisplayValue();
   const oldRank = member.rank, oldCallsign = member.callsign;
   sheet.getRange(member.row, 6, 1, 4).copyTo(sheet.getRange(target.row, 6, 1, 4), { formatOnly: true });
   const destination = [...sourceValues.slice(0, 8)];
@@ -1539,9 +1540,8 @@ function moveMember_(member, target, newRank, user, operation) {
     : Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MM/dd/yyyy');
   destination[3] = '=TODAY()-D' + target.row;
   sheet.getRange(target.row, 2, 1, 8).setValues([destination]);
-  // Column K (notes) follows the member. Columns L and M belong to the
-  // physical roster slot and must stay untouched on both source and target.
-  sheet.getRange(target.row, 11).setValue(sourceValues[9]);
+  // Column K (notes) follows the member; L:M remain untouched on both rows.
+  sheet.getRange(target.row, 11).setValue(sourceNote);
   sheet.getRange(member.row, 3, 1, 7).clearContent().setBackground('#ffffff');
   sheet.getRange(member.row, 11).clearContent().setBackground('#ffffff');
   sheet.getRange(member.row, 2).setValue(oldCallsign);
