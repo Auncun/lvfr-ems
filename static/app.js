@@ -2551,6 +2551,7 @@ let profileLoading = false;
 let activeProfileMember = null;
 let profileRenderToken = 0;
 let currentUserIsAdmin = false;
+let currentUserCanFullSync = false;
 let currentUserAccountId = String(window.lvfrCachedUser?.()?.account_id || window.lvfrCachedUser?.()?.id || "");
 let currentInstructorTypes = [];
 let currentUserCallsign = String(window.lvfrCachedUser?.()?.callsign || "").trim().toUpperCase();
@@ -4402,7 +4403,7 @@ if (syncButton) {
 
 const fullSyncButton = $("#fullSyncBtn");
 fullSyncButton?.addEventListener("click", async () => {
-    if (!currentUserIsAdmin || !window.confirm("Full Sync will replace the D1 roster and Callsign slots from the current Google Sheet. Continue?")) return;
+    if (!currentUserCanFullSync || !window.confirm("Full Sync will replace the D1 roster and Callsign slots from the current Google Sheet. Continue?")) return;
     fullSyncButton.disabled = true;
     fullSyncButton.textContent = "Full Syncing...";
     try {
@@ -4683,6 +4684,10 @@ function canViewStatistics(user) {
     ));
 }
 
+function canRunFullSync(user) {
+    return ["admin", "commander"].includes(String(user?.role || "").trim().toLowerCase());
+}
+
 function applyAccountUser(user) {
     window.lvfrCacheUser?.(user);
     if (user.role === "member") {
@@ -4690,13 +4695,14 @@ function applyAccountUser(user) {
         return;
     }
     currentUserIsAdmin = Boolean(user.is_admin);
+    currentUserCanFullSync = canRunFullSync(user);
     currentUserAccountId = String(user.account_id || user.id || "");
     currentUserCallsign = String(user.callsign || "").trim().toUpperCase();
     currentUserIsCommand = Boolean(user.is_command);
     const commandSyncPanel = $("#commandSyncPanel");
     if (commandSyncPanel) commandSyncPanel.hidden = user.role === "member";
     const fullSyncButton = $("#fullSyncBtn");
-    if (fullSyncButton) fullSyncButton.hidden = !currentUserIsAdmin;
+    if (fullSyncButton) fullSyncButton.hidden = !currentUserCanFullSync;
     currentInstructorTypes = String(user.instructor_type || "")
         .split("/").map(value => value.trim().toUpperCase()).filter(Boolean);
     const account = $("#accountName");
@@ -4853,8 +4859,11 @@ async function loadAccount() {
     }
     if (cachedUser) {
         currentUserIsAdmin = Boolean(cachedUser.is_admin);
+        currentUserCanFullSync = canRunFullSync(cachedUser);
         currentUserAccountId = String(cachedUser.account_id || cachedUser.id || "");
         currentUserIsCommand = Boolean(cachedUser.is_command);
+        const fullSyncButton = $("#fullSyncBtn");
+        if (fullSyncButton) fullSyncButton.hidden = !currentUserCanFullSync;
         if ($("#accountName")) $("#accountName").textContent = cachedUser.name || "";
         if ($("#leadersTab")) $("#leadersTab").style.display = cachedUser.is_admin ? "" : "none";
         if ($("#doNotPromoteTab")) $("#doNotPromoteTab").style.display = cachedUser.is_admin ? "" : "none";
