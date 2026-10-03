@@ -5,11 +5,11 @@
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Watch Command | LVFR</title>
-  <link rel="stylesheet" href="/static/style.css?v=portal-back-1">
+  <link rel="stylesheet" href="/static/style.css?v=all-page-header-1">
   <style>
     body { min-height:100vh; background:#0b1017; color:#f3f6fa; }
     .watch-shell { width:min(1100px,100%); margin:0 auto; padding:72px 24px 24px; }
-    .watch-header { display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:22px; }
+    .watch-header { margin-bottom:22px; }
     .watch-brand { display:flex; align-items:center; gap:12px; }
     .watch-header p,.hint { color:#9aa4b2; }
     .watch-header h1 { margin:0 0 5px; }
@@ -77,15 +77,22 @@
 <body>
   <a class="portal-back" href="/portal" aria-label="Back to Portal" title="Back to Portal">←</a>
   <main class="watch-shell">
-    <header class="watch-header">
+    <header class="topbar watch-header">
+      <div class="topbar-left">
       <div class="watch-brand"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"><div><h1>Watch Command</h1><p>Create and review watch handover logs.</p></div></div>
       <nav class="watch-nav" aria-label="Watch Command navigation">
         <a href="/portal">Application selection</a>
         <a id="emsNavLink" href="/" hidden>LVFR EMS Operations</a>
-        <span id="accountName" class="status-dot account-user-name"></span>
-        <button type="button" id="manageAccountButton">Account settings</button>
-        <button type="button" id="watchLogout">Log out</button>
       </nav>
+      </div>
+      <div class="top-actions">
+        <div class="notification-control">
+          <button type="button" id="watchNotificationButton" class="icon-button" aria-label="Notifications" title="Notifications" aria-expanded="false" aria-controls="watchNotificationPanel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span id="watchNotificationBadge" class="notification-badge" hidden>0</span></button>
+          <section id="watchNotificationPanel" class="notification-panel" hidden aria-label="Notifications"><div class="notification-panel-head"><strong>Notifications</strong></div><div id="watchNotificationList"><div class="empty">Loading...</div></div></section>
+        </div>
+        <div class="online-control"><button type="button" id="topOnlineCount" class="online-count-button" aria-expanded="false" aria-controls="onlineUsersPanel">Online: —</button><section id="onlineUsersPanel" class="online-users-panel" hidden aria-label="Online members"><strong>Online now</strong><div id="onlineUsersList" aria-live="polite"><div class="empty">Loading...</div></div></section></div>
+        <div class="account-control"><button type="button" id="accountMenuButton" class="icon-button" aria-label="Account menu" title="Account" aria-expanded="false" aria-controls="accountMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></button><section id="accountMenu" class="account-menu" hidden><strong id="accountName"></strong><button type="button" id="manageAccountButton">Settings</button><button type="button" id="watchLogout">Sign out</button></section></div>
+      </div>
     </header>
 
     <form id="watchForm" class="watch-card">
@@ -266,6 +273,7 @@
   </main>
   <script src="/static/session-auth.js?v=shared-session-4"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
+  <script src="/static/header-controls.js?v=header-controls-1"></script>
   <script src="/static/watch_command.js?v=67"></script>
 </body>
 </html>

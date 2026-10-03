@@ -23,7 +23,10 @@ function renderPortalNotifications(items = []) {
   if (!notificationList) return;
   const unread = items.filter(item => !Number(item.is_read)).length;
   const badge = document.querySelector('#portalNotificationBadge');
-  if (badge) badge.textContent = unread ? `(${unread} new)` : '';
+  if (badge) {
+    badge.textContent = unread > 99 ? '99+' : String(unread);
+    badge.hidden = unread === 0;
+  }
   notificationList.innerHTML = items.length ? items.slice(0, 8).map(item => `
     <button type="button" class="portal-notification ${Number(item.is_read) ? '' : 'unread'}" data-notification-id="${Number(item.id)}">
       <strong>${escapePortalText(item.title || 'Notification')}</strong>

@@ -7,14 +7,16 @@
   <meta name="theme-color" content="#101720">
   <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
   <title>Choose an application · LVFR</title>
-  <link rel="stylesheet" href="/static/style.css?v=account-settings-4">
+  <link rel="stylesheet" href="/static/style.css?v=all-page-header-1">
   <style>
-    body{min-height:100vh;display:grid;place-items:center;padding:24px;background:#0b1017;color:#f3f6fa}
-    main{width:min(920px,100%)}
+    body{min-height:100vh;margin:0;padding:0;background:#0b1017;color:#f3f6fa}
+    main{width:min(920px,100%);margin:28px auto;padding:0 18px}
     .portal-heading{text-align:center;margin-bottom:30px}
-    .portal-brand{display:flex;justify-content:center;align-items:center;gap:12px;margin-bottom:12px}
-    .portal-header-actions{display:flex;justify-content:center;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:24px}
-    #portalSyncStatus{flex-basis:100%;margin:0;color:#9aa4b2;text-align:center}
+    .portal-brand{justify-content:flex-start;margin-bottom:0;text-align:left}
+    .portal-sync-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .portal-topbar{padding-left:28px}
+    @media(max-width:700px){.portal-topbar{padding-left:14px}}
+    #portalSyncStatus{margin:0;color:#9aa4b2}
     .portal-heading p{color:#9aa4b2;margin:8px 0}
     .portal-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
     .portal-card{display:flex;min-height:190px;flex-direction:column;justify-content:space-between;padding:24px;border:1px solid #303945;border-radius:16px;background:#111720;text-decoration:none;color:inherit;transition:border-color .15s,transform .15s}
@@ -34,16 +36,21 @@
   </style>
 </head>
 <body>
+  <header class="topbar portal-topbar">
+    <div class="topbar-left">
+      <div class="brand portal-brand"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"><div><h1>Choose an application</h1><p>Select where you want to continue.</p></div></div>
+      <div class="portal-sync-group"><button type="button" id="portalSyncButton" class="primary" hidden>Sync roster</button><span id="portalSyncStatus" class="status-dot" role="status" aria-live="polite" hidden></span></div>
+    </div>
+    <div class="top-actions">
+      <div class="notification-control">
+        <button type="button" id="portalNotificationsButton" class="icon-button" aria-label="Notifications" title="Notifications" aria-expanded="false" aria-controls="portalNotificationPanel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span id="portalNotificationBadge" class="notification-badge" hidden></span></button>
+        <section class="portal-notifications notification-panel" id="portalNotificationPanel" aria-labelledby="portalNotificationsTitle" hidden><div class="notification-panel-head"><h2 id="portalNotificationsTitle">Notifications</h2></div><div id="portalNotificationList" class="portal-notification-list" aria-live="polite"><p>Loading notifications...</p></div></section>
+      </div>
+      <div class="online-control"><button type="button" id="topOnlineCount" class="online-count-button" aria-expanded="false" aria-controls="onlineUsersPanel">Online: —</button><section id="onlineUsersPanel" class="online-users-panel" hidden aria-label="Online members"><strong>Online now</strong><div id="onlineUsersList" aria-live="polite"><div class="empty">Loading...</div></div></section></div>
+      <div class="account-control"><button type="button" id="accountMenuButton" class="icon-button" aria-label="Account menu" title="Account" aria-expanded="false" aria-controls="accountMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></button><section id="accountMenu" class="account-menu" hidden><strong id="accountName"></strong><button type="button" id="manageAccountButton">Settings</button><button type="button" data-action="logout">Sign out</button></section></div>
+    </div>
+  </header>
   <main>
-    <header class="portal-heading">
-      <div class="portal-brand"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"><h1>Choose an application</h1></div>
-      <p>Select where you want to continue.</p>
-    </header>
-    <div class="portal-header-actions"><span id="accountName" class="status-dot account-user-name"></span><button type="button" id="portalNotificationsButton" aria-expanded="false" aria-controls="portalNotificationPanel">Notifications <span id="portalNotificationBadge"></span></button><button type="button" id="manageAccountButton">Account settings</button><button type="button" id="portalSyncButton" hidden>Sync roster</button><span id="portalSyncStatus" role="status" aria-live="polite" hidden></span><button type="button" data-action="logout">Log out</button></div>
-    <section class="portal-notifications" id="portalNotificationPanel" aria-labelledby="portalNotificationsTitle" hidden>
-      <h2 id="portalNotificationsTitle">Notifications</h2>
-      <div id="portalNotificationList" class="portal-notification-list" aria-live="polite"><p>Loading notifications…</p></div>
-    </section>
     <section class="portal-options" aria-label="Available applications">
       <a class="portal-card" id="emsCard" href="/" hidden>
         <div><h2>LVFR EMS Operations</h2><p>Open the member directory, training, ranks, and operations tools.</p></div>
@@ -61,6 +68,7 @@
   </main>
   <script src="/static/session-auth.js?v=shared-session-4"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
-  <script src="/static/portal.js?v=sync-6"></script>
+  <script src="/static/header-controls.js?v=header-controls-1"></script>
+  <script src="/static/portal.js?v=sync-7-header"></script>
 </body>
 </html>
