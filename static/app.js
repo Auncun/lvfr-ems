@@ -2647,12 +2647,12 @@ async function profile(
 
     try {
         const normalizedCallsign = String(cs || "").trim().toUpperCase();
-        // Render the roster snapshot immediately, then refresh it quietly.
-        const cachedMember = providedMember || memberCache.get(normalizedCallsign);
-        const shouldRefresh = !providedMember && Boolean(cachedMember);
+        // A member profile must come from the current D1 record. The roster
+        // cache is useful for the table, but can lag a just-completed Sheet
+        // color sync and briefly show an obsolete profile on reopen.
         let m;
-        if (cachedMember) {
-            m = providedMember && Array.isArray(providedMember.trainings)
+        if (providedMember) {
+            m = Array.isArray(providedMember.trainings)
                 ? Object.assign({}, providedMember, {
                     trainings: [
                         ...(providedMember.has_basic_firefighting ? ["basic_firefighting"] : []),
@@ -2661,17 +2661,18 @@ async function profile(
                     exams: providedMember.has_supervisor_exam ? ["supervisor_exam"] : [],
                     hert: Boolean(providedMember.has_hert)
                 })
-                : Object.assign({}, cachedMember, {
-                trainings: [
-                    ...(cachedMember.has_basic_firefighting ? ["basic_firefighting"] : []),
-                    ...(cachedMember.has_advanced_firefighting ? ["advanced_firefighting"] : [])
-                ],
-                exams: cachedMember.has_supervisor_exam ? ["supervisor_exam"] : [],
-                hert: Boolean(cachedMember.has_hert),
-                ...calculateMemberEligibility(cachedMember)
-            });
+                : Object.assign({}, providedMember, {
+                    trainings: [
+                        ...(providedMember.has_basic_firefighting ? ["basic_firefighting"] : []),
+                        ...(providedMember.has_advanced_firefighting ? ["advanced_firefighting"] : [])
+                    ],
+                    exams: providedMember.has_supervisor_exam ? ["supervisor_exam"] : [],
+                    hert: Boolean(providedMember.has_hert),
+                    ...calculateMemberEligibility(providedMember)
+                });
         } else {
-            m = await api("/api/member/" + encodeURIComponent(cs));
+            // Bypass the short-lived API response cache on every profile open.
+            m = await api("/api/member/" + encodeURIComponent(normalizedCallsign) + "?_fresh=" + Date.now());
             if (renderToken !== profileRenderToken) return;
             memberCache.set(normalizedCallsign, m);
         }
@@ -2923,14 +2924,6 @@ async function profile(
             modal.classList.remove(
                 "hidden"
             );
-        }
-
-        if (shouldRefresh) {
-            api("/api/member/" + encodeURIComponent(normalizedCallsign)).then(fresh => {
-                if (renderToken !== profileRenderToken || activeProfileMember?.callsign !== normalizedCallsign) return;
-                memberCache.set(normalizedCallsign, fresh);
-                profile(normalizedCallsign, true, fresh);
-            }).catch(() => {});
         }
 
     } catch (e) {
