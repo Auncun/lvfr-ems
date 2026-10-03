@@ -89,7 +89,8 @@
   sidebar.className = 'app-sidebar';
   sidebar.hidden = true;
   sidebar.setAttribute('aria-label', 'Page navigation');
-  sidebar.innerHTML = `<div class="sidebar-head"><strong>Navigation</strong><button type="button" class="sidebar-close" aria-label="Close navigation">×</button></div>
+  const currentPageTitle = pages.find(page => page.href === currentPath)?.title || (currentPath === '/portal' ? 'Portal' : '');
+  sidebar.innerHTML = `<div class="sidebar-head"><div class="sidebar-head-title"><strong>Navigation</strong>${currentPageTitle ? `<span class="sidebar-current-page">${esc(currentPageTitle)}</span>` : ''}</div><button type="button" class="sidebar-close" aria-label="Close navigation">×</button></div>
     <label class="sidebar-search"><input type="search" placeholder="Search pages and menus" aria-label="Search pages and menus"></label>
     <nav class="sidebar-nav">${pages.map(groupMarkup).join('')}</nav>`;
   document.body.append(backdrop, sidebar);
@@ -222,6 +223,62 @@
     return true;
   }
 
+  function setActiveMenuItem(action) {
+    sidebar.querySelectorAll('.sidebar-item-action.is-active').forEach(item => {
+      item.classList.remove('is-active');
+      item.removeAttribute('aria-current');
+    });
+    sidebar.querySelectorAll('.sidebar-tree-entry.is-active, .sidebar-tree-entry.has-active-child').forEach(entry => {
+      entry.classList.remove('is-active', 'has-active-child');
+    });
+    if (!action) return;
+    action.classList.add('is-active');
+    action.setAttribute('aria-current', 'location');
+    let entry = action.closest('[data-sidebar-entry]');
+    if (entry) entry.classList.add('is-active');
+    while (entry) {
+      entry = entry.parentElement.closest('[data-sidebar-entry]');
+      if (entry) entry.classList.add('has-active-child');
+    }
+  }
+
+  function refreshActiveNavigation() {
+    if (currentPath === '/') {
+      const tab = document.querySelector('.tabs .tab.active')?.dataset.tab;
+      if (!tab) return setActiveMenuItem(null);
+      let selector = `[data-sidebar-item][data-tab="${tab}"]`;
+      if (tab === 'membersLog') {
+        const log = document.querySelector('.log-tabs .log-tab.active[data-log]')?.dataset.log;
+        if (log) selector += `[data-log="${log}"]`;
+      } else if (tab === 'leaders') {
+        const view = document.querySelector('.leader-view-tab.active[data-leader-view]')?.dataset.leaderView;
+        if (view) selector += `[data-leader="${view}"]`;
+      } else {
+        selector += ':not([data-log]):not([data-leader])';
+      }
+      return setActiveMenuItem(sidebar.querySelector(`.sidebar-page-group[data-sidebar-group] .sidebar-item-action${selector}`));
+    }
+    if (currentPath === '/administration') {
+      const auditHeading = document.querySelector('#auditHeading');
+      if (auditHeading && auditHeading.getBoundingClientRect().top <= 170) {
+        return setActiveMenuItem(sidebar.querySelector('[data-sidebar-item][href$="#auditHeading"]'));
+      }
+      const status = document.querySelector('.admin-tabs [aria-pressed="true"]')?.dataset.status;
+      if (status) return setActiveMenuItem(sidebar.querySelector(`[data-sidebar-item][data-status="${status}"]`));
+      return setActiveMenuItem(sidebar.querySelector('[data-sidebar-item][href$="#accountsHeading"]'));
+    }
+    if (currentPath === '/watch-command') {
+      const anchors = [...sidebar.querySelectorAll('.sidebar-page-group[data-sidebar-group] .sidebar-item-action[data-page="/watch-command"][href*="#"]')];
+      let active = anchors[0] || null;
+      for (const item of anchors) {
+        const target = document.querySelector(new URL(item.href).hash);
+        if (target && target.getBoundingClientRect().top <= 170) active = item;
+      }
+      return setActiveMenuItem(active);
+    }
+    setActiveMenuItem(null);
+  }
+
   function activatePendingNavigation() {
     activatePendingNavigation.attempts = (activatePendingNavigation.attempts || 0) + 1;
     let pending;
@@ -257,10 +314,21 @@
     const adminLink = bottomNav?.querySelector('[data-admin-app]');
     if (adminLink) adminLink.hidden = currentPath !== '/administration' && !user?.is_admin;
     sidebar.querySelector('input').dispatchEvent(new Event('input'));
+    refreshActiveNavigation();
   };
   refreshAccess();
-  if (document.querySelector('.tabs')) {
-    new MutationObserver(refreshAccess).observe(document.querySelector('.tabs'), { subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
-  }
+  document.addEventListener('click', event => {
+    if (event.target.closest('.tabs, .log-tabs, .admin-tabs')) requestAnimationFrame(refreshActiveNavigation);
+  });
+  const navigationObservers = ['.tabs', '.log-tabs', '.admin-tabs']
+    .map(selector => document.querySelector(selector)).filter(Boolean);
+  navigationObservers.forEach(container => new MutationObserver(refreshActiveNavigation)
+    .observe(container, { subtree: true, attributes: true, attributeFilter: ['class', 'aria-pressed', 'style'] }));
+  let scrollUpdatePending = false;
+  window.addEventListener('scroll', () => {
+    if (currentPath !== '/watch-command' || scrollUpdatePending) return;
+    scrollUpdatePending = true;
+    requestAnimationFrame(() => { scrollUpdatePending = false; refreshActiveNavigation(); });
+  }, { passive: true });
   window.addEventListener('pageshow', refreshAccess);
 })();

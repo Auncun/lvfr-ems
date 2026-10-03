@@ -515,6 +515,8 @@ main {
 .app-sidebar[hidden], .sidebar-backdrop[hidden] { display:none; }
 .app-sidebar.is-open { transform:translateX(0); }
 .sidebar-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 16px; font-size:18px; }
+.sidebar-head-title { display:grid; min-width:0; gap:3px; }
+.sidebar-current-page { color:#8bbcff; font-size:12px; font-weight:600; }
 .sidebar-close { width:36px; height:36px; padding:0; font-size:23px; }
 .sidebar-search { display:block; margin-bottom:14px; }
 .sidebar-search input { box-sizing:border-box; width:100%; padding:10px 12px; border:1px solid #374454; border-radius:9px; background:#0b1017; color:#f3f6fa; }
@@ -531,6 +533,8 @@ main {
 .sidebar-item-row { display:flex; align-items:center; gap:5px; min-width:0; }
 .sidebar-item-action { display:block; flex:1; min-width:0; width:100%; padding:9px; border:0; border-radius:6px; background:transparent; color:#cbd5e1; text-align:left; text-decoration:none; font:inherit; cursor:pointer; }
 .sidebar-item-action:hover { background:#202b38; color:#fff; }
+.sidebar-item-action.is-active { background:#1f6feb; color:#fff; font-weight:650; }
+.sidebar-tree-entry.has-active-child > .sidebar-item-row > .sidebar-item-action { color:#8bbcff; }
 .sidebar-tree-expand { width:34px; min-width:34px; min-height:34px; }
 .sidebar-children { display:none !important; gap:3px; margin-left:12px; padding:4px 0 4px 9px; border-left:1px solid #374454; }
 .sidebar-tree-entry.is-expanded > .sidebar-children { display:grid !important; }
