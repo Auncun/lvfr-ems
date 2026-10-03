@@ -76,8 +76,27 @@ async function syncMembersFromAppsScript(env, token = "", fullSync = false) {
 async function saveCallsignSlots(db, slots) {
   await ensureCallsignSlotsTable(db);
   const items=Array.isArray(slots)?slots:Object.entries(slots||{}).map(([rank,v])=>typeof v==="string"?({rank,callsign:v}):({rank,...v}));
-  const rows=items.filter(v=>v&&v.callsign).map(v=>db.prepare("INSERT INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?) ON CONFLICT(rank,callsign) DO UPDATE SET sheet_row=excluded.sheet_row,synced_at=excluded.synced_at").bind(String(v.rank||""),String(v.callsign).toUpperCase(),Number(v.row)||null,new Date().toISOString()));
-  await db.prepare("DELETE FROM callsign_slots").run(); if(rows.length) await db.batch(rows);
+  const desired=new Map();
+  for(const item of items) {
+    const callsign=String(item?.callsign||"").trim().toUpperCase();
+    if(callsign) desired.set(callsign,{rank:String(item.rank||""),callsign,sheet_row:Number(item.row)||null});
+  }
+  const currentResult=await db.prepare("SELECT rank,callsign,sheet_row FROM callsign_slots").all();
+  const current=new Map((currentResult.results||[]).map(row=>[String(row.callsign||"").trim().toUpperCase(),row]));
+  const now=new Date().toISOString(), statements=[];
+  for(const [callsign,row] of current) {
+    const next=desired.get(callsign);
+    if(!next || String(row.rank||"")!==next.rank) statements.push(db.prepare("DELETE FROM callsign_slots WHERE callsign=?").bind(callsign));
+  }
+  for(const [callsign,row] of desired) {
+    const previous=current.get(callsign);
+    if(!previous || String(previous.rank||"")!==row.rank) {
+      statements.push(db.prepare("INSERT INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(row.rank,callsign,row.sheet_row,now));
+    } else if((Number(previous.sheet_row)||null)!==row.sheet_row) {
+      statements.push(db.prepare("UPDATE callsign_slots SET sheet_row=?,synced_at=? WHERE callsign=?").bind(row.sheet_row,now,callsign));
+    }
+  }
+  if(statements.length) await db.batch(statements);
 }
 async function ensureCallsignSlotsTable(db) {
   await db.prepare(`CREATE TABLE IF NOT EXISTS callsign_slots (
@@ -90,56 +109,49 @@ async function ensureCallsignSlotsTable(db) {
   )`).run();
 }
 async function replaceMembers(db, members, syncedAt = new Date().toISOString()) {
-  const statements = [db.prepare("DELETE FROM members")];
-
-  for (const member of members) {
-    statements.push(
-      db.prepare(`
-        INSERT INTO members (
-          callsign,
-          name,
-          rank,
-          date,
-          rank_assigned_date,
-          days_in_rank,
-          discord_id,
-          notes,
-          has_basic_firefighting,
-          has_advanced_firefighting,
-          has_supervisor_exam,
-          has_hert,
-          activity,
-          instructor_type,
-          do_not_promote,
-          sheet_row,
-          synced_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(
-        String(member.callsign || "").trim().toUpperCase(),
-        String(member.name || "").trim(),
-        String(member.rank || ""),
-        String(member.date || ""),
-        String(member.rank_assigned_date || ""),
-        Number(member.days_in_rank || 0),
-        String(member.discord_id || ""),
-        String(member.notes || ""),
-        member.has_basic_firefighting ? 1 : 0,
-        member.has_advanced_firefighting ? 1 : 0,
-        member.has_supervisor_exam ? 1 : 0,
-        member.has_hert ? 1 : 0,
-        String(member.activity || "Active"),
-        String(member.instructor_type || ""),
-        member.do_not_promote ? 1 : 0,
-        Number(member.sheet_row || member.row || 0) || null,
-        syncedAt
-      )
-    );
+  const columns=["callsign","name","rank","date","rank_assigned_date","days_in_rank","discord_id","notes","has_basic_firefighting","has_advanced_firefighting","has_supervisor_exam","has_hert","activity","instructor_type","do_not_promote","sheet_row"];
+  // days_in_rank is derived from rank_assigned_date and changes with the date;
+  // reads recalculate it, so it must not make every member look changed daily.
+  const comparisonColumns=columns.filter(column=>column!=="days_in_rank");
+  const desired=new Map();
+  for(const member of members) {
+    const callsign=String(member.callsign||"").trim().toUpperCase();
+    if(!callsign) continue;
+    desired.set(callsign,{
+      callsign,name:String(member.name||"").trim(),rank:String(member.rank||""),date:String(member.date||""),
+      rank_assigned_date:String(member.rank_assigned_date||""),days_in_rank:Number(member.days_in_rank||0),
+      discord_id:String(member.discord_id||""),notes:String(member.notes||""),
+      has_basic_firefighting:member.has_basic_firefighting?1:0,
+      has_advanced_firefighting:member.has_advanced_firefighting?1:0,
+      has_supervisor_exam:member.has_supervisor_exam?1:0,has_hert:member.has_hert?1:0,
+      activity:String(member.activity||"Active"),instructor_type:String(member.instructor_type||""),
+      do_not_promote:member.do_not_promote?1:0,sheet_row:Number(member.sheet_row||member.row||0)||null,
+    });
   }
-
-  await db.batch(statements);
-
-  return { ok: true, members: members.length, synced_at: syncedAt };
+  const currentResult=await db.prepare("SELECT * FROM members").all();
+  const current=new Map((currentResult.results||[]).map(row=>[String(row.callsign||"").trim().toUpperCase(),row]));
+  const statements=[]; let inserted=0,updated=0,deleted=0,unchanged=0;
+  for(const [callsign,row] of current) {
+    if(!desired.has(callsign)) {
+      statements.push(db.prepare("DELETE FROM members WHERE callsign=?").bind(row.callsign));
+      deleted++;
+    }
+  }
+  for(const [callsign,row] of desired) {
+    const previous=current.get(callsign);
+    if(!previous) {
+      statements.push(db.prepare(`INSERT INTO members (${columns.join(",")},synced_at) VALUES (${columns.map(()=>"?").join(",")},?)`).bind(...columns.map(column=>row[column]),syncedAt));
+      inserted++;
+      continue;
+    }
+    const changed=comparisonColumns.some(column=>String(previous[column]??"")!==String(row[column]??""));
+    if(!changed) { unchanged++; continue; }
+    statements.push(db.prepare(`UPDATE members SET ${columns.filter(column=>column!=="callsign").map(column=>`${column}=?`).join(",")},synced_at=? WHERE callsign=?`)
+      .bind(...columns.filter(column=>column!=="callsign").map(column=>row[column]),syncedAt,previous.callsign));
+    updated++;
+  }
+  if(statements.length) await db.batch(statements);
+  return {ok:true,members:desired.size,synced_at:syncedAt,inserted,updated,deleted,unchanged};
 }
 const MEMBER_WRITE_ROUTES = new Set(["/api/activity", "/api/note", "/api/date", "/api/training", "/api/exam", "/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign", "/api/terminate", "/api/do-not-promote"]);
 const RANK_PREFIX = { Commissioners:"COM", Chief:"CHIEF", "County Command":"B", "Division Commander":"DIV", Captain:"C", Lieutenant:"E", "Lead Paramedic":"L", Paramedic:"M", AEMT:"A", EMT:"R", Probationary:"P", EMR:"P", "Senior Volunteer":"S", Volunteer:"V", "Probationary Volunteer":"V", "EMR/Volunteer":"P" };
@@ -222,8 +234,10 @@ async function applyRosterMutationD1(db, route, data, actor) {
     await db.batch([db.prepare("DELETE FROM callsign_slots WHERE callsign=?").bind(nextCs),db.prepare("DELETE FROM members WHERE callsign=?").bind(old.callsign),db.prepare(`INSERT INTO members(callsign,name,rank,date,rank_assigned_date,days_in_rank,discord_id,notes,has_basic_firefighting,has_advanced_firefighting,has_supervisor_exam,has_hert,activity,instructor_type,do_not_promote,sheet_row,synced_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(nextCs,old.name,finalRank,date,date,0,old.discord_id,old.notes,old.has_basic_firefighting,old.has_advanced_firefighting,old.has_supervisor_exam,old.has_hert,old.activity,old.instructor_type,old.do_not_promote,slot.sheet_row||null,now),db.prepare("INSERT OR IGNORE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(rankForCallsign(old.callsign),old.callsign,old.sheet_row,now)]);
     return {ok:true,new_callsign:nextCs,new_rank:finalRank};
   }
-  const assignments=Object.keys(cols).filter(k=>k!=="callsign").map(k=>`${k}=?`).join(",");
-  await db.prepare(`UPDATE members SET ${assignments} WHERE callsign=?`).bind(...Object.keys(cols).filter(k=>k!=="callsign").map(k=>cols[k]),old.callsign).run();
+  const changedColumns=Object.keys(cols).filter(k=>k!=="callsign"&&k!=="synced_at"&&k!=="days_in_rank"&&String(old[k]??"")!==String(cols[k]??""));
+  if(!changedColumns.length) return {...result,changed:false};
+  const assignments=[...changedColumns,"synced_at"].map(k=>`${k}=?`).join(",");
+  await db.prepare(`UPDATE members SET ${assignments} WHERE callsign=?`).bind(...changedColumns.map(k=>cols[k]),now,old.callsign).run();
   return result;
 }
 function memberFromRow(row) {

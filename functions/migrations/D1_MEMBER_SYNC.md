@@ -40,10 +40,11 @@ members and Callsign slots to D1 through the installed Apps Script triggers.
    has no guaranteed row order.
 
 Website changes write D1 first and Sheet in the background; they do not trigger
-a Sheet read or a D1 replacement. **Sync now** synchronously rewrites D1 from
-the current Sheet snapshot. Direct Google Sheets edits use the installed edit
-and format triggers to update D1; the site displays that D1 data on manual page
-refresh.
+a Sheet read or a D1 replacement. **Sync now** compares the current Sheet
+snapshot with D1 and writes only added, changed, or removed roster rows and
+Callsign slots. An unchanged snapshot is skipped by the Apps Script fingerprint.
+Direct Google Sheets edits use the installed edit and format triggers to update
+D1; the site displays that D1 data on manual page refresh.
 
 ## Troubleshooting HTTP 405 from the edit trigger
 
