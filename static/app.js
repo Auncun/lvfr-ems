@@ -648,12 +648,24 @@ notificationButton?.addEventListener("click", async () => {
         await markNotificationsRead();
     }
 });
+const accountMenuButton = $("#accountMenuButton");
+accountMenuButton?.addEventListener("click", () => {
+    const menu = $("#accountMenu");
+    if (!menu) return;
+    menu.hidden = !menu.hidden;
+    accountMenuButton.setAttribute("aria-expanded", String(!menu.hidden));
+});
 $("#markNotificationsRead")?.addEventListener("click", () => markNotificationsRead());
 document.addEventListener("click", event => {
     const panel = $("#notificationPanel");
     if (panel && !event.target.closest(".notification-control")) {
         panel.hidden = true;
         notificationButton?.setAttribute("aria-expanded", "false");
+    }
+    const accountMenu = $("#accountMenu");
+    if (accountMenu && !event.target.closest(".account-control")) {
+        accountMenu.hidden = true;
+        accountMenuButton?.setAttribute("aria-expanded", "false");
     }
 });
 
@@ -792,8 +804,8 @@ async function health() {
 
         if (dbStatus) {
 
-            dbStatus.textContent =
-                "Google Apps Script: online";
+            dbStatus.textContent = "Script: online";
+            dbStatus.title = "Google Apps Script: online";
 
             dbStatus.style.color =
                 "#56d364";
@@ -806,7 +818,7 @@ async function health() {
         if (dbStatus) {
 
             dbStatus.textContent =
-                "Google Apps Script offline";
+                "Script: offline";
 
             dbStatus.title = error?.message || "Health request failed";
 
@@ -836,10 +848,12 @@ async function syncStatus() {
             return;
         }
 
-        syncStatusElement.textContent =
-            s.synced_at
-                ? `Roster snapshot: ${s.synced_at} | ${s.members} members`
-                : `Roster ready: ${s.members} members | waiting for initial sync`;
+        syncStatusElement.textContent = s.synced_at
+            ? `Roster: ${s.members} · ${new Date(s.synced_at).toLocaleString()}`
+            : `Roster: ${s.members} · Initial sync pending`;
+        syncStatusElement.title = s.synced_at
+            ? `Roster snapshot: ${s.synced_at} | ${s.members} members`
+            : `Roster ready: ${s.members} members | waiting for initial sync`;
 
         syncStatusElement.style.color =
             s.synced_at
@@ -848,7 +862,8 @@ async function syncStatus() {
 
         const syncActivityElement = $("#syncActivityStatus");
         if (syncActivityElement) {
-            syncActivityElement.textContent = "Site edits update D1 immediately; Sheet edits sync through the spreadsheet trigger";
+            syncActivityElement.textContent = "Site: live · Sheet: trigger sync";
+            syncActivityElement.title = "Site edits update D1 immediately; Sheet edits sync through the spreadsheet trigger";
             syncActivityElement.style.color = "#d29922";
         }
         const manualSyncButton = $("#syncBtn");
@@ -858,13 +873,15 @@ async function syncStatus() {
 
         const googleWriteStatusElement = $("#googleWriteStatus");
         if (googleWriteStatusElement) {
-            googleWriteStatusElement.textContent = "Edits save to D1 immediately; Google Sheets updates in the background";
+            googleWriteStatusElement.textContent = "Sheets: background sync";
+            googleWriteStatusElement.title = "Edits save to D1 immediately; Google Sheets updates in the background";
             googleWriteStatusElement.style.color = "#56d364";
         }
 
         const archiveStatusElement = $("#archiveStatus");
         if (archiveStatusElement) {
-            archiveStatusElement.textContent = "Audit history is stored in the private Google Sheet";
+            archiveStatusElement.textContent = "Audit: private Sheet";
+            archiveStatusElement.title = "Audit history is stored in the private Google Sheet";
             archiveStatusElement.style.color = "#56d364";
         }
 
@@ -1386,11 +1403,14 @@ let leaderAuditRows = [];
 let currentLeaderView = "all";
 
 function setOnlineCount(value) {
-    const text = `Online now: ${Number(value || 0)}`;
-    ["#onlineAccountCount", "#topOnlineCount"].forEach(selector => {
-        const element = $(selector);
-        if (element) element.textContent = text;
-    });
+    const count = Number(value || 0);
+    const summary = $("#onlineAccountCount");
+    if (summary) summary.textContent = `Online now: ${count}`;
+    const compact = $("#topOnlineCount");
+    if (compact) {
+        compact.textContent = `Online: ${count}`;
+        compact.title = `Online now: ${count}`;
+    }
 }
 
 async function refreshOnlineCount() {

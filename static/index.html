@@ -154,15 +154,10 @@
 
     <div class="top-actions">
 
-        <button type="button" id="installAppButton" hidden>Install app</button>
-
-        <button type="button" data-action="app-selection">
-            App selection
-        </button>
-
         <div class="notification-control">
-            <button type="button" id="notificationButton" aria-expanded="false" aria-controls="notificationPanel">
-                Notifications <span id="notificationBadge" class="notification-badge" hidden>0</span>
+            <button type="button" id="notificationButton" class="icon-button" aria-label="Notifications" title="Notifications" aria-expanded="false" aria-controls="notificationPanel">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+                <span id="notificationBadge" class="notification-badge" hidden>0</span>
             </button>
             <section id="notificationPanel" class="notification-panel" hidden aria-label="Notifications">
                 <div class="notification-panel-head">
@@ -173,14 +168,17 @@
             </section>
         </div>
 
-        <span id="accountName" class="status-dot account-user-name"></span>
+        <div class="account-control">
+        <button type="button" id="accountMenuButton" class="icon-button" aria-label="Account menu" title="Account" aria-expanded="false" aria-controls="accountMenu">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+        </button>
+        <section id="accountMenu" class="account-menu" hidden>
+            <strong id="accountName"></strong>
+            <button type="button" id="manageAccountButton">Settings</button>
+            <form action="/auth/logout" method="post"><button type="submit">Sign out</button></form>
+        </section>
+        </div>
         <span id="topOnlineCount" class="online-account-count" aria-live="polite">Online now: —</span>
-        <button type="button" id="manageAccountButton">Account settings</button>
-        <form action="/auth/logout" method="post">
-            <button type="submit">Sign out</button>
-        </form>
-
-
         <span
             id="dbStatus"
             class="status-dot"
