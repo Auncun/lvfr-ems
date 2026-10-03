@@ -112,8 +112,10 @@
     if (expand) {
       const items = document.getElementById(expand.getAttribute('aria-controls'));
       const isExpanded = expand.getAttribute('aria-expanded') === 'true';
+      const group = expand.closest('[data-sidebar-group]');
       expand.setAttribute('aria-expanded', String(!isExpanded));
       items.hidden = isExpanded;
+      group.classList.toggle('is-expanded', !isExpanded);
       return;
     }
     const item = event.target.closest('[data-sidebar-item]');
@@ -158,7 +160,9 @@
         item.hidden = !available || !matches;
         if (!item.hidden) anyVisible = true;
       });
-      itemsContainer.hidden = expandButton.getAttribute('aria-expanded') !== 'true';
+      const isExpanded = expandButton.getAttribute('aria-expanded') === 'true';
+      itemsContainer.hidden = !isExpanded;
+      group.classList.toggle('is-expanded', isExpanded);
       group.hidden = !accessAllowed || (!pageMatch && !anyVisible);
     });
   });

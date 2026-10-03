@@ -523,7 +523,8 @@ main {
 .sidebar-page-link[aria-current="page"] { color:#8bbcff; }
 .sidebar-expand { width:38px; min-width:38px; min-height:38px; padding:0; font-size:19px; transition:transform .15s ease; }
 .sidebar-expand[aria-expanded="true"] { transform:rotate(180deg); }
-.sidebar-items { display:grid; gap:3px; padding-left:9px; border-left:1px solid #374454; }
+.sidebar-page-group .sidebar-items { display:none !important; gap:3px; padding-left:9px; border-left:1px solid #374454; }
+.sidebar-page-group.is-expanded .sidebar-items { display:grid !important; }
 .sidebar-items button,.sidebar-items a { display:block; width:100%; padding:7px 9px; border:0; border-radius:6px; background:transparent; color:#cbd5e1; text-align:left; text-decoration:none; font:inherit; cursor:pointer; }
 .sidebar-items button:hover,.sidebar-items a:hover { background:#202b38; color:#fff; }
 .sidebar-items .sidebar-subitem { padding-left:22px; color:#98a8ba; font-size:13px; }
