@@ -18,7 +18,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=compact-header-3"
+    href="/static/style.css?v=compact-header-4"
 >
 
 <style>
@@ -190,7 +190,13 @@
             <form action="/auth/logout" method="post"><button type="submit">Sign out</button></form>
         </section>
         </div>
-        <span id="topOnlineCount" class="online-account-count" aria-live="polite">Online now: —</span>
+        <div class="online-control">
+            <button type="button" id="topOnlineCount" class="online-count-button" aria-expanded="false" aria-controls="onlineUsersPanel">Online: —</button>
+            <section id="onlineUsersPanel" class="online-users-panel" hidden aria-label="Online members">
+                <strong>Online now</strong>
+                <div id="onlineUsersList" aria-live="polite"><div class="empty">Loading...</div></div>
+            </section>
+        </div>
 
 
 
@@ -831,7 +837,7 @@
 
 <script src="/static/session-auth.js?v=shared-session-4"></script>
 <script src="/static/account-settings.js?v=account-settings-5"></script>
-<script src="/static/app.js?v=compact-header-2"></script>
+<script src="/static/app.js?v=online-members-1"></script>
 
 
 </body>

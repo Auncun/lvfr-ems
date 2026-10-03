@@ -1237,13 +1237,21 @@ def presence_summary():
     con = L.db()
     try:
         con.execute("CREATE TABLE IF NOT EXISTS AccountPresence (account_id TEXT PRIMARY KEY, last_seen REAL NOT NULL)")
-        count = con.execute(
-            "SELECT COUNT(*) FROM AccountPresence WHERE last_seen >= ?",
+        rows = con.execute(
+            "SELECT account_id FROM AccountPresence WHERE last_seen >= ?",
             (now - PRESENCE_ONLINE_SECONDS,),
-        ).fetchone()[0]
+        ).fetchall()
     finally:
         con.close()
-    return {"online_count": int(count or 0)}
+    online_ids = {str(row["account_id"] or "") for row in rows}
+    online = [
+        {"name": str(account.get("name") or ""), "callsign": str(account.get("callsign") or "")}
+        for account in _load_accounts()
+        if str(account.get("account_id") or "") in online_ids
+        and str(account.get("status") or "").lower() == "approved"
+    ]
+    online.sort(key=lambda account: account["name"].casefold())
+    return {"online_count": len(online), "online": online}
 
 
 def _leader_overview_with_presence(overview):

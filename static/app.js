@@ -655,6 +655,14 @@ accountMenuButton?.addEventListener("click", () => {
     menu.hidden = !menu.hidden;
     accountMenuButton.setAttribute("aria-expanded", String(!menu.hidden));
 });
+const onlineCountButton = $("#topOnlineCount");
+onlineCountButton?.addEventListener("click", async () => {
+    const panel = $("#onlineUsersPanel");
+    if (!panel) return;
+    panel.hidden = !panel.hidden;
+    onlineCountButton.setAttribute("aria-expanded", String(!panel.hidden));
+    if (!panel.hidden) await refreshOnlineCount();
+});
 $("#markNotificationsRead")?.addEventListener("click", () => markNotificationsRead());
 document.addEventListener("click", event => {
     const panel = $("#notificationPanel");
@@ -666,6 +674,11 @@ document.addEventListener("click", event => {
     if (accountMenu && !event.target.closest(".account-control")) {
         accountMenu.hidden = true;
         accountMenuButton?.setAttribute("aria-expanded", "false");
+    }
+    const onlinePanel = $("#onlineUsersPanel");
+    if (onlinePanel && !event.target.closest(".online-control")) {
+        onlinePanel.hidden = true;
+        onlineCountButton?.setAttribute("aria-expanded", "false");
     }
 });
 
@@ -1401,8 +1414,9 @@ let leaderRows = { approved: [], pending: [], deactivated: [] };
 let instructorRows = [];
 let leaderAuditRows = [];
 let currentLeaderView = "all";
+let onlineMembers = [];
 
-function setOnlineCount(value) {
+function setOnlineCount(value, people) {
     const count = Number(value || 0);
     const summary = $("#onlineAccountCount");
     if (summary) summary.textContent = `Online now: ${count}`;
@@ -1411,12 +1425,19 @@ function setOnlineCount(value) {
         compact.textContent = `Online: ${count}`;
         compact.title = `Online now: ${count}`;
     }
+    if (Array.isArray(people)) onlineMembers = people;
+    const list = $("#onlineUsersList");
+    if (list) {
+        list.innerHTML = onlineMembers.length
+            ? onlineMembers.map(person => `<div class="online-user"><strong>${esc(person.name || "Member")}</strong>${person.callsign ? `<span>${esc(person.callsign)}</span>` : ""}</div>`).join("")
+            : '<div class="empty">No one online.</div>';
+    }
 }
 
 async function refreshOnlineCount() {
     try {
         const summary = await api("/api/presence/summary");
-        setOnlineCount(summary.online_count);
+        setOnlineCount(summary.online_count, summary.online);
     } catch {}
 }
 
