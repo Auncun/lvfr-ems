@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-02-d1-roster-live-14',
+  apiVersion: '2026-10-03-d1-roster-live-15',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -1036,13 +1036,12 @@ function eligibleMembers_() {
 // formatting changes such as activity, training, exam, and instructor colors.
 function installRosterD1SyncTriggers() {
   const ids = [requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'), requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')];
-  const handlers = ['syncRosterToD1OnEdit_', 'syncRosterToD1OnChange_', 'syncRosterToD1OnTimer_'];
+  const handlers = ['syncRosterToD1OnEdit_', 'syncRosterToD1OnChange_'];
   ScriptApp.getProjectTriggers().filter(trigger => handlers.includes(trigger.getHandlerFunction()))
     .forEach(trigger => ScriptApp.deleteTrigger(trigger));
   ids.filter((id, index) => ids.indexOf(id) === index).forEach(id => ScriptApp.newTrigger('syncRosterToD1OnEdit_').forSpreadsheet(id).onEdit().create());
   ScriptApp.newTrigger('syncRosterToD1OnChange_')
     .forSpreadsheet(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')).onChange().create();
-  ScriptApp.newTrigger('syncRosterToD1OnTimer_').timeBased().everyMinutes(5).create();
 }
 
 function syncRosterToD1OnEdit_(event) {
@@ -1067,32 +1066,24 @@ function syncRosterToD1OnEdit_(event) {
 }
 
 // Activity, training, exam, and instructor states are encoded as cell colors.
-// A user changing only a cell's format does not produce an onEdit event. Keep
-// the roster onChange trigger as a fallback for format and other Sheet changes;
-// the snapshot fingerprint makes overlapping onEdit/onChange runs cheap.
+// A user changing only a cell's format does not produce an onEdit event, so
+// mirror FORMAT changes through an installable spreadsheet onChange trigger.
 function syncRosterToD1OnChange_(event) {
   if (!event || !event.source) return;
   try {
     const changeType = String(event.changeType || '').toUpperCase();
     console.log('Roster D1 trigger started: onChange; changeType=' + changeType + '; spreadsheet=' + event.source.getId());
+    if (changeType !== 'FORMAT') {
+      console.log('Roster D1 trigger skipped: onChange changeType is not FORMAT.');
+      return;
+    }
     if (event.source.getId() !== requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')) {
       console.log('Roster D1 trigger skipped: onChange spreadsheet is not the configured roster.');
       return;
     }
-    syncRosterSnapshotToD1_('trigger:onChange:' + (changeType || 'UNKNOWN'), false);
+    syncRosterSnapshotToD1_('trigger:onChange:FORMAT', false);
   } catch (error) {
     console.error('Roster D1 onChange trigger failed: ' + (error && error.stack ? error.stack : error));
-    throw error;
-  }
-}
-
-// Formatting edits do not consistently produce a spreadsheet event. This
-// scheduled fingerprint check is a fallback; unchanged snapshots do not POST.
-function syncRosterToD1OnTimer_() {
-  try {
-    syncRosterSnapshotToD1_('trigger:timer', false);
-  } catch (error) {
-    console.error('Roster D1 timer sync failed: ' + (error && error.stack ? error.stack : error));
     throw error;
   }
 }
@@ -1527,9 +1518,9 @@ function emptyRowForCallsign_(callsign) {
 function moveMember_(member, target, newRank, user, operation) {
   if (member.row === target.row) throw new Error('Old and new Callsign point to the same roster row.');
   const sheet = rosterSheet_();
-  // Read only member-owned fields. Slot metadata in L:M is not part of this move.
-  const sourceValues = sheet.getRange(member.row, 2, 1, 8).getDisplayValues()[0];
-  const sourceNote = sheet.getRange(member.row, 11).getDisplayValue();
+  // Columns B..K only (10 columns). Columns L and M are never read, written,
+  // copied, or cleared by any roster change.
+  const sourceValues = sheet.getRange(member.row, 2, 1, 10).getDisplayValues()[0];
   const oldRank = member.rank, oldCallsign = member.callsign;
   sheet.getRange(member.row, 6, 1, 4).copyTo(sheet.getRange(target.row, 6, 1, 4), { formatOnly: true });
   const destination = [...sourceValues.slice(0, 8)];
@@ -1540,10 +1531,9 @@ function moveMember_(member, target, newRank, user, operation) {
     : Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MM/dd/yyyy');
   destination[3] = '=TODAY()-D' + target.row;
   sheet.getRange(target.row, 2, 1, 8).setValues([destination]);
-  // Column K (notes) follows the member; L:M remain untouched on both rows.
-  sheet.getRange(target.row, 11).setValue(sourceNote);
+  sheet.getRange(target.row, 11).setValue(sourceValues[9]); // Notes (K) only
   sheet.getRange(member.row, 3, 1, 7).clearContent().setBackground('#ffffff');
-  sheet.getRange(member.row, 11).clearContent().setBackground('#ffffff');
+  sheet.getRange(member.row, 11).clearContent().setBackground('#ffffff'); // K only
   sheet.getRange(member.row, 2).setValue(oldCallsign);
   if (member.do_not_promote) moveDoNotPromoteCallsign_(oldCallsign, target.callsign, member.name);
   const event = operation === 'DEMOTION' ? 'Demoted' : operation === 'CALLSIGN_CHANGE' ? 'Callsign Changed' : operation === 'CHANGE_RANK' ? 'Rank Changed' : 'Promoted';
@@ -1565,8 +1555,7 @@ function terminateMember_(data, user) {
   const member = memberByCallsign_(data.callsign), sheet = rosterSheet_();
   sheet.getRange(member.row, 3, 1, 7).clearContent().setBackground('#ffffff');
   sheet.getRange(member.row, 4).setValue(new Date());
-  // Keep the slot-specific L and M values and formatting during termination.
-  sheet.getRange(member.row, 11).clearContent().setBackground('#ffffff');
+  sheet.getRange(member.row, 11).clearContent().setBackground('#ffffff'); // K only; L and M untouched
   const timestamp = new Date().toISOString(), reason = String(data.note || '');
   appendArchiveLog_({ timestamp, event: 'Terminated', member: member.name, callsign: member.callsign, old_callsign: '', new_callsign: '', old_rank: member.rank, new_rank: '', details: reason, actor: actorName_(user), actor_callsign: user.callsign });
   appendAppLog_({ kind: 'termination', log_date: timestamp, callsign: member.callsign, member_name: member.name, action: 'Terminated', details: reason, changed_by: actorName_(user), old_rank: member.rank });
