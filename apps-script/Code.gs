@@ -1527,7 +1527,8 @@ function emptyRowForCallsign_(callsign) {
 function moveMember_(member, target, newRank, user, operation) {
   if (member.row === target.row) throw new Error('Old and new Callsign point to the same roster row.');
   const sheet = rosterSheet_();
-  const sourceValues = sheet.getRange(member.row, 2, 1, 12).getDisplayValues()[0];
+  // Read B:K only. L and M are slot-specific and must not be copied or cleared.
+  const sourceValues = sheet.getRange(member.row, 2, 1, 10).getDisplayValues()[0];
   const oldRank = member.rank, oldCallsign = member.callsign;
   sheet.getRange(member.row, 6, 1, 4).copyTo(sheet.getRange(target.row, 6, 1, 4), { formatOnly: true });
   const destination = [...sourceValues.slice(0, 8)];
