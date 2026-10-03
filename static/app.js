@@ -269,6 +269,19 @@ function applyOptimisticMutation(route, payload, callsign) {
         closeModal();
         return;
     }
+    if (route === "/api/activity") {
+        if (Array.isArray(allMembersCache)) {
+            const index = allMembersCache.findIndex(member => String(member.callsign || "").toUpperCase() === key);
+            if (index >= 0) allMembersCache[index] = updated;
+            allMembersCacheAt = Date.now();
+            memberListRenderKey = "";
+            try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(allMembersCache)); } catch {}
+            void loadMembers();
+        }
+        inactiveRows = inactiveRows.filter(member => String(member.callsign || "").toUpperCase() !== key);
+        if (updated.activity === "Can Be Terminated") inactiveRows.push({ callsign: updated.callsign, name: updated.name });
+        renderInactive();
+    }
     if (!(updated.optimistic_from && ["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(route))) {
         memberCache.set(key, updated);
         paintCachedMemberRow(updated, key);
@@ -908,6 +921,7 @@ async function syncStatus() {
 
 let memberListRequestInFlight = false;
 let memberListReloadQueued = false;
+let memberListForceReloadQueued = false;
 let memberListRenderKey = "";
 const memberCache = new Map();
 let allMembersCache = (() => {
@@ -923,7 +937,11 @@ if (allMembersCache) {
 }
 
 async function loadMembers(silent = false, forceFresh = false) {
-    if (memberListRequestInFlight) { memberListReloadQueued = true; return; }
+    if (memberListRequestInFlight) {
+        memberListReloadQueued = true;
+        memberListForceReloadQueued = memberListForceReloadQueued || forceFresh;
+        return;
+    }
     memberListRequestInFlight = true;
 
     try {
@@ -1107,7 +1125,9 @@ async function loadMembers(silent = false, forceFresh = false) {
         memberListRequestInFlight = false;
         if (memberListReloadQueued) {
             memberListReloadQueued = false;
-            void loadMembers();
+            const forceReload = memberListForceReloadQueued;
+            memberListForceReloadQueued = false;
+            void loadMembers(true, forceReload);
         }
     }
 }
@@ -1116,9 +1136,13 @@ async function loadMembers(silent = false, forceFresh = false) {
 // ELIGIBLE
 // ============================================================
 
-async function loadEligible() {
+async function loadEligible(forceFresh = false) {
 
     try {
+        if (forceFresh) {
+            renderEligibleRows(await api(`/api/eligible?_fresh=${Date.now()}`));
+            return;
+        }
         const cachedRows = [...memberCache.values()];
         if (cachedRows.length) {
             renderEligibleRows(calculateEligibleFromCache(cachedRows));
@@ -1278,9 +1302,14 @@ function renderEligibleRows(loadedRows) {
 let inactiveRows = [];
 
 
-async function loadInactive() {
+async function loadInactive(forceFresh = false) {
 
     try {
+        if (forceFresh) {
+            inactiveRows = await api(`/api/inactive?_fresh=${Date.now()}`);
+            renderInactive();
+            return;
+        }
         const cachedRows = [...memberCache.values()];
         if (cachedRows.length) {
             inactiveRows = cachedRows.filter(member => member.activity === "Can Be Terminated");
@@ -4934,6 +4963,19 @@ async function loadAccount() {
 
 refreshOnlineCount();
 setInterval(refreshOnlineCount, 30000);
+
+// A Sheet edit syncs into D1 without a push channel to already-open browsers.
+// Refresh only the visible roster view so external activity changes appear
+// within a few seconds, and immediately when the user returns to the tab.
+function refreshVisibleRosterView() {
+    if (document.hidden) return;
+    const activeTab = $(".tab.active")?.dataset.tab;
+    if (activeTab === "members") void loadMembers(true, true);
+    else if (activeTab === "eligible") void loadEligible(true);
+    else if (activeTab === "inactive") void loadInactive(true);
+}
+setInterval(refreshVisibleRosterView, 3000);
+document.addEventListener("visibilitychange", refreshVisibleRosterView);
 
 setInterval(() => { if (!document.hidden) syncStatus(); }, 60000);
 setInterval(() => {
