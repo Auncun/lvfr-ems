@@ -1066,22 +1066,19 @@ function syncRosterToD1OnEdit_(event) {
 }
 
 // Activity, training, exam, and instructor states are encoded as cell colors.
-// A user changing only a cell's format does not produce an onEdit event, so
-// mirror FORMAT changes through an installable spreadsheet onChange trigger.
+// A user changing only a cell's format does not produce an onEdit event. Keep
+// the roster onChange trigger as a fallback for format and other Sheet changes;
+// the snapshot fingerprint makes overlapping onEdit/onChange runs cheap.
 function syncRosterToD1OnChange_(event) {
   if (!event || !event.source) return;
   try {
     const changeType = String(event.changeType || '').toUpperCase();
     console.log('Roster D1 trigger started: onChange; changeType=' + changeType + '; spreadsheet=' + event.source.getId());
-    if (changeType !== 'FORMAT') {
-      console.log('Roster D1 trigger skipped: onChange changeType is not FORMAT.');
-      return;
-    }
     if (event.source.getId() !== requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')) {
       console.log('Roster D1 trigger skipped: onChange spreadsheet is not the configured roster.');
       return;
     }
-    syncRosterSnapshotToD1_('trigger:onChange:FORMAT', false);
+    syncRosterSnapshotToD1_('trigger:onChange:' + (changeType || 'UNKNOWN'), false);
   } catch (error) {
     console.error('Roster D1 onChange trigger failed: ' + (error && error.stack ? error.stack : error));
     throw error;
