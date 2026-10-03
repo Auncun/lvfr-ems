@@ -70,6 +70,9 @@ function renderSavedCallLocations(show = false) {
       try { localStorage.setItem(WATCH_LOCATION_HISTORY_KEY, JSON.stringify(remaining)); } catch (_) {}
       renderSavedCallLocations(true);
     });
+    [choose, remove].forEach(button => button.addEventListener('focus', () => {
+      button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }));
     row.append(choose, remove);
     return row;
   }));

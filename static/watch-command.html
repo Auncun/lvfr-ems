@@ -59,7 +59,10 @@
     .watch-log-title-row h3 { min-width:0; }
     .watch-copy-button { flex:none; white-space:nowrap; }
     .watch-log-actions { display:flex; gap:8px; flex-wrap:wrap; }
-    .watch-place-suggestions { display:grid; gap:3px; max-height:220px; overflow-y:auto; margin-top:7px; padding:5px; border:1px solid #3b4858; border-radius:10px; background:#151e29; box-shadow:0 10px 26px #0008; }
+    .watch-place-suggestions { position:absolute; z-index:30; inset-inline:0; top:calc(100% + 5px); display:grid; gap:3px; max-height:min(240px,40vh); overflow-y:auto; overscroll-behavior:contain; margin:0; padding:5px; border:1px solid #3b4858; border-radius:10px; background:#151e29; box-shadow:0 10px 26px #0008; }
+    .watch-place-suggestions[hidden] { display:none !important; }
+    .watch-location-field { position:relative; }
+    #savedCallLocations { position:absolute; }
     .watch-place-option { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:3px; border-radius:7px; background:transparent; }
     .watch-place-option:hover, .watch-place-option:focus-within { background:#223247; }
     .watch-place-option .watch-place-choose { flex:1; min-width:0; padding:9px 11px; border:0; background:transparent; color:#e8eef6; text-align:left; font-weight:500; }
@@ -68,8 +71,12 @@
     .watch-place-option button { padding:4px 8px; }
     .watch-place-option .watch-place-remove { flex:none; min-width:34px; min-height:34px; border:0; color:#b9c3d0; background:transparent; font-size:20px; }
     .watch-place-option .watch-place-remove:hover { color:#ff8178; background:#422b31; }
-    .watch-section-toggle { width:100%; margin:8px 0; padding:8px 12px; text-align:left; color:#c9d1d9; }
-    .watch-section-toggle[aria-expanded="false"] { color:#9aa4b2; }
+    .watch-section-toggle { grid-column:1/-1; display:flex; align-items:center; gap:9px; width:100%; min-height:40px; margin:3px 0; padding:9px 12px; border:1px solid #354456; border-radius:8px; background:#151e29; color:#dce6f2; text-align:left; font-weight:600; }
+    .watch-section-toggle:hover { border-color:#6182a8; background:#1b2939; }
+    .watch-section-toggle::before { content:"▾"; display:inline-grid; width:20px; height:20px; place-items:center; border-radius:50%; background:#26374a; color:#a9c9ed; }
+    .watch-section-toggle[aria-expanded="false"] { color:#aeb9c7; }
+    .watch-section-toggle[aria-expanded="false"]::before { content:"▸"; }
+    .watch-section-toggle + [hidden] { display:none !important; }
     .watch-log h3 { margin:0 0 5px; }
     .watch-log-meta { color:#9aa4b2; font-size:13px; margin-bottom:14px; }
     .watch-log-meta .watch-na { color:#788391; }
@@ -246,7 +253,7 @@
             <div class="quick-controls" style="margin-top:8px">
               <label>Type<select id="callType"><option value="MASCAS">MASCAS</option><option value="Fire dealt with by Engine-1">Fire dealt with by Engine-1</option><option value="Dive Rescue">Dive Rescue</option><option value="Other">Other</option></select></label>
               <label id="callDetailsWrap"><span id="callDetailsLabel">MASCAS number</span><input id="callDetails" type="number" min="1" step="1" placeholder="5"></label>
-              <div class="watch-field"><label for="callLocation">Location</label><input id="callLocation" placeholder="Casino" autocomplete="off" aria-controls="savedCallLocations" aria-autocomplete="list"><div id="savedCallLocations" class="watch-place-suggestions" hidden></div></div>
+              <div class="watch-field watch-location-field"><label for="callLocation">Location</label><input id="callLocation" placeholder="Casino" autocomplete="off" aria-controls="savedCallLocations" aria-autocomplete="list"><div id="savedCallLocations" class="watch-place-suggestions" role="list" hidden></div></div>
               <label id="divePerformedByWrap" hidden>Dive rescue performed by<select id="divePerformedBy"><option value="">Choose an active unit</option></select></label>
               <label id="diveSuccessCountWrap" hidden>Successful rescues<input id="diveSuccessCount" type="number" min="0" step="1" value="0"></label>
               <label id="diveFailureCountWrap" hidden>Failed rescues<input id="diveFailureCount" type="number" min="0" step="1" value="0"></label>
@@ -282,7 +289,7 @@
   <script src="/static/session-auth.js?v=shared-session-5"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
   <script src="/static/header-controls.js?v=header-controls-1"></script>
-  <script src="/static/watch_command.js?v=75"></script>
+  <script src="/static/watch_command.js?v=76"></script>
   <script src="/static/sidebar.js?v=nested-navigation-8"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 </body>
