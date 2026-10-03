@@ -31,6 +31,8 @@ const activeEmsSummary = document.querySelector('#activeEmsSummary');
 const activeEmsWrap = document.querySelector('#activeEmsWrap');
 const activeMergeButton = document.querySelector('#toggleActiveMerge');
 const memberNameCache = new Map();
+const memberLookupPromises = new Map();
+let watchCommandSaveQueue = Promise.resolve();
 const WATCH_MEMBER_DIRECTORY_KEY = 'lvfr.watch.member.directory.v1';
 function cacheWatchMemberDirectory(members) {
   memberNameCache.clear();
@@ -161,21 +163,23 @@ function setMessage(target, text, kind = '') {
 async function request(url, options = {}) {
   const method = String(options.method || 'GET').toUpperCase();
   if (method === 'POST' && new URL(url, location.href).pathname === '/api/watch-command') {
-    const pending = fetch(url, {
-      ...options,
-      keepalive: true,
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    }).then(async response => {
+    const pending = watchCommandSaveQueue.then(async () => {
+      const response = await fetch(url, {
+        ...options,
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      });
       const data = await response.json().catch(() => ({}));
       if (response.status === 401) {
         location.assign('/login');
         throw new Error('Your session expired. Sign in again.');
       }
       if (!response.ok) throw new Error(data.detail || 'Save failed.');
-      loadHistory();
+      void loadHistory();
     }).catch(error => {
       setMessage(message, `Save failed: ${error.message}. The local watch view may differ from the Sheet. Reload Watch Command to load the saved data.`, 'error');
     });
+    watchCommandSaveQueue = pending.then(() => undefined, () => undefined);
     suppressBackgroundSaveSuccess = true;
     setTimeout(() => { suppressBackgroundSaveSuccess = false; }, 0);
     void pending;
@@ -1070,9 +1074,9 @@ async function addInitialRollCallMember() {
       newDraftId();
       await save();
     }
-    setMessage(initialRollcallMessage, `${callsign} ${member.name} added to Roll Call${unit ? ` and ${unit} in ${sector} coverage` : ' without a unit'}. No 10-41 Notes entry was created.`, 'success');
+    setMessage(initialRollcallMessage, `${callsign} ${member.name} added to Roll Call${unit ? ` and ${unit} in ${sector} coverage` : ' without a unit'}. Saving in the background.`);
     initialCallsignInput.value = '';
-    if (loggedInCommander?.callsign) initialCallsignInput.value = loggedInCommander.callsign;
+    initialCallsignInput.dispatchEvent(new Event('input', { bubbles: true }));
     initialUnitInput.value = '';
     initialAttachedUnit.value = '';
     initialIsTraining.checked = false;
@@ -1083,7 +1087,6 @@ async function addInitialRollCallMember() {
     refreshOnDutyCallsignChoices();
     refreshInitialUnitOptions();
     updateAvailableChoices();
-    await loadHistory();
   } catch (error) {
     for (const [key, value] of Object.entries(previous)) form.elements[key].value = value;
     persistFormDraft();
@@ -1347,13 +1350,14 @@ async function recordActivity() {
       newDraftId();
       await saveActivity();
     }
-    setMessage(quickMessage, `Saved: ${eventLine}`, 'success');
+    setMessage(quickMessage, `Recorded: ${eventLine}. Saving in the background.`);
+    callsignInput.value = '';
+    callsignInput.dispatchEvent(new Event('input', { bubbles: true }));
     activityAttachedUnit.value = '';
     renderUnitRosters();
     refreshOnDutyCallsignChoices();
     refreshInitialUnitOptions();
     updateAvailableChoices();
-    await loadHistory();
   } catch (error) {
     for (const [key, value] of Object.entries(previous)) form.elements[key].value = value;
     persistFormDraft();
@@ -1564,15 +1568,20 @@ async function transferWatchCommand(input = null, trigger = null) {
 async function lookupMember(callsign) {
   callsign = String(callsign || '').trim().toUpperCase();
   if (memberNameCache.has(callsign)) return memberNameCache.get(callsign);
-  if (memberDirectoryPromise) await memberDirectoryPromise;
-  if (memberNameCache.has(callsign)) return memberNameCache.get(callsign);
-  if (memberDirectoryPromise) throw new Error(`${callsign} was not found on the roster.`);
-  const member = await request(`/api/watch-command/member/${encodeURIComponent(callsign)}`);
-  const name = String(member.name || '').trim();
-  if (!name) throw new Error(`${callsign} has no member name on the roster.`);
-  const result = { name, rank: String(member.rank || '').trim() };
-  memberNameCache.set(callsign, result);
-  return result;
+  if (memberLookupPromises.has(callsign)) return memberLookupPromises.get(callsign);
+  const pending = request(`/api/watch-command/member/${encodeURIComponent(callsign)}`).then(member => {
+    const name = String(member.name || '').trim();
+    if (!name) throw new Error(`${callsign} has no member name on the roster.`);
+    const result = { name, rank: String(member.rank || '').trim() };
+    memberNameCache.set(callsign, result);
+    return result;
+  });
+  memberLookupPromises.set(callsign, pending);
+  try {
+    return await pending;
+  } finally {
+    if (memberLookupPromises.get(callsign) === pending) memberLookupPromises.delete(callsign);
+  }
 }
 
 let memberDirectoryPromise = null;
