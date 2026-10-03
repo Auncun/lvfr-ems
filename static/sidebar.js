@@ -158,10 +158,7 @@
         item.hidden = !available || !matches;
         if (!item.hidden) anyVisible = true;
       });
-      const searching = !!query && (pageMatch || anyVisible);
-      itemsContainer.hidden = !searching && expandButton.getAttribute('aria-expanded') !== 'true';
-      if (searching) expandButton.setAttribute('aria-expanded', 'true');
-      else if (query) expandButton.setAttribute('aria-expanded', 'false');
+      itemsContainer.hidden = expandButton.getAttribute('aria-expanded') !== 'true';
       group.hidden = !accessAllowed || (!pageMatch && !anyVisible);
     });
   });
