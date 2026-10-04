@@ -724,7 +724,10 @@ export async function handleD1(context) {
       try {
         const sheetMirror=await proxyToAppsScript(context,"/internal/training-hours/mirror",url,bridgeAssertion,{action,callsign:member.callsign,id:savedId,source_row:existing?.source_row,time:newTime,date:action==="time"?existing.training_date:trainingDate});
         const mirrorResult=await sheetMirror.json().catch(()=>({}));
-        if(!sheetMirror.ok||mirrorResult.ok===false) throw new Error(mirrorResult.detail||mirrorResult.error||"Apps Script did not confirm the Sheet1 update.");
+        if(!sheetMirror.ok||mirrorResult.ok!==true) {
+          const responseDetail=mirrorResult.detail||mirrorResult.error||JSON.stringify(mirrorResult);
+          throw new Error("Apps Script Sheet1 mirror was not confirmed (HTTP "+sheetMirror.status+"): "+String(responseDetail||"empty response").slice(0,400));
+        }
         if(mirrorResult.row&&!existing?.source_row) await db.prepare("UPDATE training_hours SET source_row=? WHERE id=? AND source_row IS NULL").bind(mirrorResult.row,savedId).run();
       } catch(error) {
         sheetSynced=false;
