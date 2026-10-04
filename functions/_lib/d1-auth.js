@@ -630,7 +630,10 @@ export async function handleD1(context) {
       if(instructorWrite) mutationData.callsign=decodeURIComponent(instructorWrite[1]).toUpperCase();
       const result=await applyRosterMutationD1(db,route,mutationData,user);
       const isHertTraining=route==="/api/training" && String(mutationData.training||"").trim().toLowerCase()==="hert";
-      if(result.changed!==false || isHertTraining) {
+      // Sheets can be out of sync with D1 (for example after a manual edit or
+      // a prior background write failure). Always mirror instructor changes,
+      // even when D1 already has the requested instructor state.
+      if(result.changed!==false || isHertTraining || instructorWrite) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
         const { proxyToAppsScript } = await import("../[[path]].js");
         const bg=(async()=>{ try { const response=await proxyToAppsScript(context,route,url,assertion,mutationData); if(!response.ok) console.error("Background Sheet write failed after D1 commit:",await response.text()); } catch(error) { console.error("Background Sheet write failed after D1 commit:",error); } })();
