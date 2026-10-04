@@ -18,7 +18,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=training-directory-20261004-1"
+    href="/static/style.css?v=training-side-menus-20261004-2"
 >
 
 <style>
@@ -389,18 +389,10 @@
 </section>
 
 <section id="trainingDirectory" class="panel">
-  <div class="section-head"><div><h2>Training</h2><p>Members appear only in columns for qualifications they hold.</p></div></div>
-  <h3>HERT</h3>
-  <div class="training-directory-grid">
-    <section class="training-directory-column" data-training-column="hert-certified" data-training-kind="Hert"><h4>HERT Certified</h4><input class="training-directory-filter" type="search" placeholder="Filter HERT Certified" aria-label="Filter HERT Certified"><div class="training-directory-list"></div><div class="training-directory-add"><select aria-label="Choose member for HERT Certified"><option value="">Choose member</option></select><button type="button" class="primary">Add</button></div></section>
-    <section class="training-directory-column" data-training-column="hert-instructor" data-training-kind="instructor:HERT"><h4>HERT Instructor</h4><input class="training-directory-filter" type="search" placeholder="Filter HERT Instructor" aria-label="Filter HERT Instructor"><div class="training-directory-list"></div><div class="training-directory-add"><select aria-label="Choose member for HERT Instructor"><option value="">Choose member</option></select><button type="button" class="primary">Add</button></div></section>
-  </div>
-  <h3>FORT</h3>
-  <div class="training-directory-grid">
-    <section class="training-directory-column" data-training-column="basic-fort" data-training-kind="Basic Firefighting"><h4>Basic FORT</h4><input class="training-directory-filter" type="search" placeholder="Filter Basic FORT" aria-label="Filter Basic FORT"><div class="training-directory-list"></div><div class="training-directory-add"><select aria-label="Choose member for Basic FORT"><option value="">Choose member</option></select><button type="button" class="primary">Add</button></div></section>
-    <section class="training-directory-column" data-training-column="advanced-fort" data-training-kind="Advanced Firefighting"><h4>Advanced FORT</h4><input class="training-directory-filter" type="search" placeholder="Filter Advanced FORT" aria-label="Filter Advanced FORT"><div class="training-directory-list"></div><div class="training-directory-add"><select aria-label="Choose member for Advanced FORT"><option value="">Choose member</option></select><button type="button" class="primary">Add</button></div></section>
-    <section class="training-directory-column" data-training-column="fort-instructor" data-training-kind="instructor:FORT"><h4>FORT Instructor</h4><input class="training-directory-filter" type="search" placeholder="Filter FORT Instructor" aria-label="Filter FORT Instructor"><div class="training-directory-list"></div><div class="training-directory-add"><select aria-label="Choose member for FORT Instructor"><option value="">Choose member</option></select><button type="button" class="primary">Add</button></div></section>
-  </div>
+  <div class="section-head"><div><h2>Training</h2></div></div>
+  <div class="training-directory-tabs"><button type="button" class="log-tab active" data-training-view="FORT">FORT</button><button type="button" class="log-tab" data-training-view="HERT">HERT</button></div>
+  <section class="training-directory-view" data-training-panel="FORT"><label class="training-directory-search">Search FORT members and Add / Remove choices<input type="search" aria-label="Search FORT members and Add or Remove choices" placeholder="Search callsign or member"></label><div id="fortTrainingTable" class="table-wrap"></div></section>
+  <section class="training-directory-view" data-training-panel="HERT" hidden><label class="training-directory-search">Search HERT members and Add / Remove choices<input type="search" aria-label="Search HERT members and Add or Remove choices" placeholder="Search callsign or member"></label><div id="hertTrainingTable" class="table-wrap"></div></section>
 </section>
 
 
@@ -852,9 +844,9 @@
 
 <script src="/static/session-auth.js?v=shared-session-5"></script>
 <script src="/static/account-settings.js?v=account-settings-5"></script>
-<script src="/static/app.js?v=training-directory-20261004-1"></script>
-<script src="/static/sidebar.js?v=nested-navigation-8"></script>
-<script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
+<script src="/static/app.js?v=training-side-menus-20261004-2"></script>
+<script src="/static/sidebar.js?v=training-side-menus-20261004-2"></script>
+<script src="/static/mobile-popovers.js?v=portal-controls-20261004-1"></script>
 
 
 </body>

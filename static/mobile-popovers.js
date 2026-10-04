@@ -3,6 +3,7 @@
     ['accountMenuButton', 'accountMenu', 340],
     ['topOnlineCount', 'onlineUsersPanel', 320],
     ['notificationButton', 'notificationPanel', 380],
+    ['portalNotificationsButton', 'portalNotificationPanel', 380],
     ['watchNotificationButton', 'watchNotificationPanel', 380]
   ];
   const position = (buttonId, panelId, preferredWidth) => {

@@ -1585,7 +1585,7 @@ function changeTraining_(data, user) {
     const row = findOrCreateNamedSheetRow_(sheet, 2, member.name, !remove);
     if (!row) return { ok: false, changed: false, status: 'already_removed', message: 'Training already removed' };
     if (remove) {
-      [2, 4, 6].forEach(column => sheet.getRange(row, column).clearContent().setBackground('#ffffff'));
+      sheet.getRange(row, 4).clearContent().setBackground('#ffffff');
     } else {
       if (String(sheet.getRange(row, 2).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, 2).setValue(member.name);
       const cell = sheet.getRange(row, 4);
@@ -1629,8 +1629,11 @@ function changeInstructor_(callsign, data, user) {
   const row = findOrCreateNamedSheetRow_(sheet, nameColumn, member.name, assigned);
   if (!row) return { ok: true, changed: false, assigned, instructor_type: type, status: 'unchanged' };
   if (!assigned) {
-    if (type === 'HERT') [2, 4, 6].forEach(column => sheet.getRange(row, column).clearContent().setBackground('#ffffff'));
-    else sheet.getRange(row, 1, 1, 5).clearContent().setBackground('#ffffff');
+    if (type === 'HERT') sheet.getRange(row, statusColumn).clearContent().setBackground('#ffffff');
+    else {
+      sheet.getRange(row, statusColumn).clearContent().setBackground('#ffffff');
+      sheet.getRange(row, 4).clearContent();
+    }
     CacheService.getScriptCache().remove('instructor-directory:v1');
     appendAppLog_({ kind: 'instructor', callsign: member.callsign, member_name: member.name, action: type + ' Instructor Removed', details: type, changed_by: actorName_(user) });
     return { ok: true, changed: true, assigned: false, instructor_type: type, status: 'removed' };

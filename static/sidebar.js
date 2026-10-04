@@ -4,7 +4,10 @@
     {
       href: '/', title: 'LVFR EMS Operations', items: [
         { label: 'Members', tab: 'members' },
-        { label: 'Training', tab: 'trainingDirectory' },
+        { label: 'Training', children: [
+          { label: 'FORT', tab: 'trainingDirectory', training: 'FORT' },
+          { label: 'HERT', tab: 'trainingDirectory', training: 'HERT' }
+        ] },
         { label: 'Eligible', tab: 'eligible' },
         { label: 'Do not Promote', tab: 'doNotPromote', availability: '#doNotPromoteTab' },
         { label: 'Inactive', tab: 'inactive' },
@@ -58,7 +61,7 @@
     const id = `sidebarTree${entryId++}`;
     const availability = item.availability ? ` data-availability="${item.availability}"` : '';
     const attrs = item.tab ? ` data-tab="${item.tab}"` : '';
-    const extra = item.log ? ` data-log="${item.log}"` : item.leader ? ` data-leader="${item.leader}"` : item.status ? ` data-status="${item.status}"` : '';
+    const extra = item.log ? ` data-log="${item.log}"` : item.leader ? ` data-leader="${item.leader}"` : item.status ? ` data-status="${item.status}"` : item.training ? ` data-training="${item.training}"` : '';
     const control = item.anchor
       ? `<a class="sidebar-item-action" href="${page.href}${item.anchor}" data-sidebar-item data-page="${page.href}"${availability}>${esc(item.label)}</a>`
       : `<button class="sidebar-item-action" type="button" data-sidebar-item data-page="${page.href}"${attrs}${extra}${availability}>${esc(item.label)}</button>`;
@@ -149,6 +152,7 @@
         return;
       }
       document.querySelector(`[data-tab="${targetTab}"]`)?.click();
+      if (item.dataset.training) document.querySelector(`[data-training-view="${item.dataset.training}"]`)?.click();
       if (item.dataset.log) document.querySelector(`[data-log="${item.dataset.log}"]`)?.click();
       if (item.dataset.leader) document.querySelector(`[data-leader-view="${item.dataset.leader}"]`)?.click();
       close();

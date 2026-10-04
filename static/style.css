@@ -59,15 +59,11 @@ body {
 .online-users-panel>strong { display:block; padding:4px 6px 10px; border-bottom:1px solid #303945 }
 .online-user { display:flex; justify-content:space-between; gap:12px; padding:9px 6px; border-bottom:1px solid #27303b }
 .online-user:last-child { border-bottom:0 }
-.training-directory-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; margin:12px 0 24px; }
-.training-directory-column { min-width:0; padding:14px; border:1px solid #303945; border-radius:12px; background:#111720; }
-.training-directory-column h4 { margin:0 0 10px; }
-.training-directory-column > input { width:100%; margin-bottom:10px; }
-.training-directory-list { display:grid; gap:6px; min-height:32px; }
-.training-directory-member { display:flex; justify-content:space-between; gap:8px; padding:8px; border-radius:7px; background:#0b1017; }
-.training-directory-member span { color:#9aa4b2; }
-.training-directory-add { display:flex; gap:6px; margin-top:12px; }
-.training-directory-add select { min-width:0; flex:1; }
+.training-directory-tabs { display:flex; gap:8px; margin:12px 0; }
+.training-directory-view[hidden] { display:none; }
+.training-directory-search { display:grid; gap:6px; max-width:480px; margin:12px 0; color:#9aa4b2; }
+.training-member-actions { display:flex; flex-wrap:wrap; gap:6px; min-width:150px; }
+.training-member-actions button { padding:6px 9px; }
 .online-user span { color:#9aa4b2; font-size:12px }
 .status-dot {
     font-size:12px;

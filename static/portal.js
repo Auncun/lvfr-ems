@@ -1,9 +1,6 @@
 function showAvailableApps(user) {
   if (!user) return;
-  const isMember = String(user.role || '').toLowerCase() === 'member';
   const isCommander = Boolean(user.is_admin) || ['admin', 'commander'].includes(String(user.role || '').toLowerCase());
-  document.querySelector('#portalNotificationsButton')?.toggleAttribute('hidden', isMember);
-  if (isMember) document.querySelector('#portalNotificationPanel')?.setAttribute('hidden', '');
   if (isCommander) document.querySelector('#administrationCard')?.removeAttribute('hidden');
   const role = String(user.role || '').trim().toLowerCase();
   if (String(user.status || '').toLowerCase() === 'approved' && ['leader', 'supervisor', 'command', 'commander', 'admin'].includes(role)) document.querySelector('#emsCard')?.removeAttribute('hidden');
@@ -80,15 +77,10 @@ notificationsButton?.addEventListener('click', () => {
 });
 
 let cachedNotifications = null;
-if (String(cachedPortalUser?.role || '').toLowerCase() === 'member') {
-  try { localStorage.removeItem(notificationStorageKey); } catch {}
-  cachedNotifications = [];
-} else {
-  try {
-    const stored = JSON.parse(localStorage.getItem(notificationStorageKey) || 'null');
-    if (Array.isArray(stored)) cachedNotifications = stored;
-  } catch {}
-}
+try {
+  const stored = JSON.parse(localStorage.getItem(notificationStorageKey) || 'null');
+  if (Array.isArray(stored)) cachedNotifications = stored;
+} catch {}
 if (cachedNotifications) renderPortalNotifications(cachedNotifications);
 window.addEventListener('storage', event => {
   if (event.key !== notificationStorageKey || !event.newValue) return;
@@ -102,7 +94,6 @@ window.addEventListener('storage', event => {
 });
 
 function loadPortalNotifications() {
-  if (String(window.lvfrCachedUser?.()?.role || '').toLowerCase() === 'member') return Promise.resolve();
   return fetch('/api/notifications')
   .then(response => response.ok ? response.json() : Promise.reject(new Error('Unable to load notifications')))
   .then(result => {

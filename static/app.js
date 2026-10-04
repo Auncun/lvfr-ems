@@ -1136,48 +1136,52 @@ async function loadMembers(silent = false, forceFresh = false) {
 
 function renderTrainingDirectory(members = allMembersCache || []) {
     const has = value => value === true || Number(value) === 1;
-    const fields = {
-        "hert-certified": member => has(member.has_hert),
-        "hert-instructor": member => String(member.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes("HERT"),
-        "basic-fort": member => has(member.has_basic_firefighting),
-        "advanced-fort": member => has(member.has_advanced_firefighting),
-        "fort-instructor": member => String(member.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes("FORT")
+    const instructorHas = (member, type) => String(member.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes(type);
+    const hertSearch = String(document.querySelector('[data-training-panel="HERT"] input[type="search"]')?.value || "").trim().toLocaleLowerCase();
+    const fortSearch = String(document.querySelector('[data-training-panel="FORT"] input[type="search"]')?.value || "").trim().toLocaleLowerCase();
+    const toggle = (member, kind, present, label, type) => {
+        const allowed = type === "instructor" ? currentUserIsAdmin : currentUserIsAdmin || currentInstructorTypes.includes(kind);
+        if (!allowed) return present ? esc(label) : "—";
+        return `<button type="button" class="${present ? "danger" : "primary"}" data-training-action data-callsign="${esc(member.callsign)}" data-kind="${esc(kind)}" data-remove="${present ? "true" : "false"}" data-type="${type}">${present ? "Remove" : "Add"} ${esc(label)}</button>`;
     };
-    document.querySelectorAll(".training-directory-column").forEach(column => {
-        const key = column.dataset.trainingColumn, list = column.querySelector(".training-directory-list");
-        const filter = column.querySelector(".training-directory-filter"), select = column.querySelector("select");
-        if (!list || !fields[key]) return;
-        const qualifies = fields[key];
-        const query = String(filter?.value || "").trim().toLocaleLowerCase();
-        const qualified = members.filter(member => qualifies(member) && (!query || `${member.name} ${member.callsign}`.toLocaleLowerCase().includes(query)));
-        list.innerHTML = qualified.length ? qualified.map(member => `<div class="training-directory-member"><strong>${esc(member.name)}</strong><span>${esc(member.callsign)}</span></div>`).join("") : '<div class="empty">No members found.</div>';
-        if (select && select.dataset.loaded !== "true") {
-            select.insertAdjacentHTML("beforeend", members.map(member => `<option value="${esc(member.callsign)}">${esc(member.name)} / ${esc(member.callsign)}</option>`).join(""));
-            select.dataset.loaded = "true";
-        }
-    });
+    const render = (panel, query, type) => {
+        const container = document.querySelector(type === "FORT" ? "#fortTrainingTable" : "#hertTrainingTable");
+        if (!container) return;
+        const rows = members.filter(member => !query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query));
+        container.innerHTML = rows.length ? `<table><thead><tr><th>Callsign</th><th>Member</th><th>Training</th><th>Instructor</th></tr></thead><tbody>${rows.map(member => {
+            const trainingActions = type === "FORT"
+                ? `${toggle(member, "FORT", has(member.has_basic_firefighting), "Basic FORT", "training")} ${toggle(member, "FORT", has(member.has_advanced_firefighting), "Advanced FORT", "training")}`
+                : toggle(member, "HERT", has(member.has_hert), "HERT Certified", "training");
+            const instructorActions = toggle(member, type, instructorHas(member, type), `${type} Instructor`, "instructor");
+            return `<tr><td><strong>${esc(member.callsign)}</strong></td><td>${esc(member.name)}</td><td><div class="training-member-actions">${trainingActions}</div></td><td><div class="training-member-actions">${instructorActions}</div></td></tr>`;
+        }).join("")}</tbody></table>` : '<div class="empty">No members found.</div>';
+    };
+    render("fortTrainingTable", fortSearch, "FORT");
+    render("hertTrainingTable", hertSearch, "HERT");
 }
 
-document.querySelectorAll(".training-directory-filter").forEach(input => input.addEventListener("input", () => renderTrainingDirectory()));
-document.querySelectorAll(".training-directory-add button").forEach(button => button.addEventListener("click", async () => {
-    const column = button.closest(".training-directory-column"), select = column?.querySelector("select"), callsign = select?.value;
-    if (!callsign) { toast("Choose a member first."); return; }
+document.querySelectorAll(".training-directory-search input").forEach(input => input.addEventListener("input", () => renderTrainingDirectory()));
+document.querySelectorAll("[data-training-view]").forEach(button => button.addEventListener("click", () => {
+    document.querySelectorAll("[data-training-view]").forEach(item => item.classList.toggle("active", item === button));
+    document.querySelectorAll("[data-training-panel]").forEach(panel => { panel.hidden = panel.dataset.trainingPanel !== button.dataset.trainingView; });
+}));
+document.addEventListener("click", async event => {
+    const button = event.target.closest("[data-training-action]");
+    if (!button) return;
+    const callsign = button.dataset.callsign, kind = button.dataset.kind, remove = button.dataset.remove === "true";
     button.disabled = true;
     try {
-        const kind = column.dataset.trainingKind;
-        if (kind.startsWith("instructor:")) {
-            const instructor_type = kind.split(":")[1];
-            await api(`/api/member/${encodeURIComponent(callsign)}/instructor`, { method: "POST", body: JSON.stringify({ instructor_type, assigned: true }) });
+        if (button.dataset.type === "instructor") {
+            await api(`/api/member/${encodeURIComponent(callsign)}/instructor`, { method: "POST", body: JSON.stringify({ instructor_type: kind, assigned: !remove }) });
         } else {
             const field = $("#training"), previous = field?.value;
-            if (field) field.value = kind;
-            await training(callsign, false);
+            if (field) field.value = kind === "HERT" ? "Hert" : button.textContent.includes("Basic FORT") ? "Basic Firefighting" : "Advanced Firefighting";
+            await training(callsign, remove);
             if (field) field.value = previous;
         }
-        select.value = "";
     } catch (error) { if (!isBackgroundPending(error)) toast(error.message); }
     finally { button.disabled = false; }
-}));
+});
 
 // ============================================================
 // ELIGIBLE
