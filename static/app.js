@@ -1139,6 +1139,8 @@ function renderTrainingDirectory(members = allMembersCache || []) {
     const instructorHas = (member, type) => String(member.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes(type);
     const hertSearch = String(document.querySelector('[data-training-panel="HERT"] input[type="search"]')?.value || "").trim().toLocaleLowerCase();
     const fortSearch = String(document.querySelector('[data-training-panel="FORT"] input[type="search"]')?.value || "").trim().toLocaleLowerCase();
+    const hertFilter = $("#hertTrainingFilter")?.value || "all";
+    const fortFilter = $("#fortTrainingFilter")?.value || "all";
     const headerActions = (group, field, skill = "") => {
         const allowed = field === "instructor" ? currentUserIsAdmin : currentUserIsAdmin || currentInstructorTypes.includes(group);
         return allowed ? `<div class="training-header-actions"><button type="button" class="primary" data-training-open data-group="${group}" data-field="${field}" data-skill="${skill}" data-remove="false">Add</button><button type="button" class="danger" data-training-open data-group="${group}" data-field="${field}" data-skill="${skill}" data-remove="true">Remove</button></div>` : "";
@@ -1147,10 +1149,15 @@ function renderTrainingDirectory(members = allMembersCache || []) {
         const container = document.querySelector(type === "FORT" ? "#fortTrainingTable" : "#hertTrainingTable");
         if (!container) return;
         const rows = members.filter(member => {
-            const hasTraining = type === "FORT"
-                ? has(member.has_basic_firefighting) || has(member.has_advanced_firefighting) || instructorHas(member, "FORT")
-                : has(member.has_hert) || instructorHas(member, "HERT");
-            return hasTraining && (!query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query));
+            const matchesTraining = type === "FORT"
+                ? fortFilter === "basic" ? has(member.has_basic_firefighting)
+                    : fortFilter === "advanced" ? has(member.has_advanced_firefighting)
+                    : fortFilter === "instructor" ? instructorHas(member, "FORT")
+                    : has(member.has_basic_firefighting) || has(member.has_advanced_firefighting) || instructorHas(member, "FORT")
+                : hertFilter === "certified" ? has(member.has_hert)
+                    : hertFilter === "instructor" ? instructorHas(member, "HERT")
+                    : has(member.has_hert) || instructorHas(member, "HERT");
+            return matchesTraining && (!query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query));
         });
         const instructorHeader = `${type} Instructor${headerActions(type, "instructor")}`;
         const fortBasicHeader = `Basic FORT${headerActions(type, "training", "Basic Firefighting")}`;
@@ -1168,6 +1175,8 @@ function renderTrainingDirectory(members = allMembersCache || []) {
 }
 
 document.querySelectorAll(".training-directory-search input").forEach(input => input.addEventListener("input", () => renderTrainingDirectory()));
+$("#fortTrainingFilter")?.addEventListener("change", () => renderTrainingDirectory());
+$("#hertTrainingFilter")?.addEventListener("change", () => renderTrainingDirectory());
 document.querySelectorAll("[data-training-view]").forEach(button => button.addEventListener("click", () => {
     document.querySelectorAll("[data-training-view]").forEach(item => item.classList.toggle("active", item === button));
     document.querySelectorAll("[data-training-panel]").forEach(panel => { panel.hidden = panel.dataset.trainingPanel !== button.dataset.trainingView; });

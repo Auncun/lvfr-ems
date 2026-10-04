@@ -18,7 +18,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=training-side-menus-20261004-3"
+    href="/static/style.css?v=training-side-menus-20261004-4"
 >
 
 <style>
@@ -387,8 +387,8 @@
 <section id="trainingDirectory" class="panel">
   <div class="section-head"><div><h2>Training</h2></div></div>
   <div class="training-directory-tabs"><button type="button" class="log-tab active" data-training-view="FORT">FORT</button><button type="button" class="log-tab" data-training-view="HERT">HERT</button></div>
-  <section class="training-directory-view" data-training-panel="FORT"><label class="training-directory-search">Search FORT list<input type="search" aria-label="Search FORT list" placeholder="Search callsign or member"></label><div id="fortTrainingTable" class="table-wrap"></div></section>
-  <section class="training-directory-view" data-training-panel="HERT" hidden><label class="training-directory-search">Search HERT list<input type="search" aria-label="Search HERT list" placeholder="Search callsign or member"></label><div id="hertTrainingTable" class="table-wrap"></div></section>
+  <section class="training-directory-view" data-training-panel="FORT"><div class="training-directory-filters"><label class="training-directory-search">Search FORT list<input type="search" aria-label="Search FORT list" placeholder="Search callsign or member"></label><label>Filter FORT<select id="fortTrainingFilter" aria-label="Filter FORT list"><option value="all">All FORT members</option><option value="basic">Basic FORT</option><option value="advanced">Advanced FORT</option><option value="instructor">FORT Instructor</option></select></label></div><div id="fortTrainingTable" class="table-wrap"></div></section>
+  <section class="training-directory-view" data-training-panel="HERT" hidden><div class="training-directory-filters"><label class="training-directory-search">Search HERT list<input type="search" aria-label="Search HERT list" placeholder="Search callsign or member"></label><label>Filter HERT<select id="hertTrainingFilter" aria-label="Filter HERT list"><option value="all">All HERT members</option><option value="certified">HERT Certified</option><option value="instructor">HERT Instructor</option></select></label></div><div id="hertTrainingTable" class="table-wrap"></div></section>
   <div id="trainingActionDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="trainingActionTitle"><div class="modal-box"><button type="button" class="close" id="closeTrainingAction" aria-label="Close">&times;</button><h2 id="trainingActionTitle"></h2><label class="training-directory-search">Search members<input id="trainingActionSearch" type="search" placeholder="Search callsign or member"></label><div id="trainingActionChoices" class="training-action-choices"></div></div></div>
 </section>
 
@@ -817,7 +817,7 @@
 
 <script src="/static/session-auth.js?v=shared-session-5"></script>
 <script src="/static/account-settings.js?v=account-settings-5"></script>
-<script src="/static/app.js?v=training-side-menus-20261004-4"></script>
+<script src="/static/app.js?v=training-side-menus-20261004-5"></script>
 <script src="/static/sidebar.js?v=training-side-menus-20261004-3"></script>
 <script src="/static/mobile-popovers.js?v=portal-controls-20261004-1"></script>
 
