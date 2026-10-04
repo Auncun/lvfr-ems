@@ -31,7 +31,9 @@ const activeEmsSummary = document.querySelector('#activeEmsSummary');
 const activeEmsWrap = document.querySelector('#activeEmsWrap');
 const activeMergeButton = document.querySelector('#toggleActiveMerge');
 const callLocationInput = document.querySelector('#callLocation');
+const dnrSubjectInput = document.querySelector('#dnrSubject');
 const savedCallLocations = document.querySelector('#savedCallLocations');
+let savedCallLocationInput = callLocationInput;
 const WATCH_LOCATION_HISTORY_KEY = 'lvfr.watch.call-locations.v1';
 function readSavedCallLocations() {
   try {
@@ -41,7 +43,7 @@ function readSavedCallLocations() {
 }
 function renderSavedCallLocations(show = false) {
   if (!savedCallLocations) return;
-  const query = String(callLocationInput?.value || '').trim().toLocaleLowerCase();
+  const query = String(savedCallLocationInput?.value || '').trim().toLocaleLowerCase();
   const locations = readSavedCallLocations()
     .filter(value => !query || value.toLocaleLowerCase().includes(query))
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
@@ -54,9 +56,9 @@ function renderSavedCallLocations(show = false) {
     choose.textContent = value;
     choose.addEventListener('mousedown', event => event.preventDefault());
     choose.addEventListener('click', () => {
-      callLocationInput.value = value;
-      savedCallLocations.hidden = true;
-      callLocationInput.dispatchEvent(new Event('input', { bubbles: true }));
+      savedCallLocationInput.value = value;
+      savedCallLocationInput.dispatchEvent(new Event('input', { bubbles: true }));
+      renderSavedCallLocations(false);
     });
     const remove = document.createElement('button');
     remove.type = 'button';
@@ -135,17 +137,44 @@ function installWatchSectionToggles() {
 }
 installWatchSectionToggles();
 renderSavedCallLocations();
-callLocationInput?.addEventListener('focus', () => renderSavedCallLocations(true));
-callLocationInput?.addEventListener('input', () => renderSavedCallLocations(true));
 function closeCallLocationsIfFocusLeft() {
   setTimeout(() => {
     const focusedSuggestion = savedCallLocations?.contains(document.activeElement);
-    if (document.activeElement !== callLocationInput && !focusedSuggestion && savedCallLocations) {
+    if (document.activeElement !== savedCallLocationInput && !focusedSuggestion && savedCallLocations) {
       savedCallLocations.hidden = true;
     }
   }, 0);
 }
-callLocationInput?.addEventListener('blur', closeCallLocationsIfFocusLeft);
+function moveSavedLocationList(input) {
+  const parent = input === dnrSubjectInput
+    ? document.querySelector('#dnrSubjectLabel')
+    : callLocationInput?.closest('.watch-location-field');
+  if (parent && savedCallLocations.parentElement !== parent) parent.append(savedCallLocations);
+}
+function bindSavedCallLocationInput(input) {
+  if (!input) return;
+  input.setAttribute('aria-controls', 'savedCallLocations');
+  input.setAttribute('aria-autocomplete', 'list');
+  const activate = () => {
+    if (input === dnrSubjectInput && document.querySelector('#dnrType').value !== 'Localized') return false;
+    savedCallLocationInput = input;
+    moveSavedLocationList(input);
+    renderSavedCallLocations(true);
+    return true;
+  };
+  input.addEventListener('focus', activate);
+  input.addEventListener('input', activate);
+  input.addEventListener('keydown', event => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    if (!activate()) return;
+    const first = savedCallLocations?.querySelector('.watch-place-choose');
+    if (first && !savedCallLocations.hidden) first.click();
+  });
+  input.addEventListener('blur', closeCallLocationsIfFocusLeft);
+}
+bindSavedCallLocationInput(callLocationInput);
+bindSavedCallLocationInput(dnrSubjectInput);
 savedCallLocations?.addEventListener('focusout', closeCallLocationsIfFocusLeft);
 const memberNameCache = new Map();
 const memberLookupPromises = new Map();
@@ -2004,9 +2033,23 @@ function refreshDnrFields() {
   refreshDiveRescueUnitChoices();
   document.querySelector('#dnrPartialReason').hidden = dnrType !== 'Partial';
   document.querySelector('#dnrReasonLabel').hidden = dnrType === 'Partial';
+  const untilRestart = document.querySelector('#dnrUntilRestart').checked;
+  document.querySelector('#dnrDurationWrap').hidden = untilRestart;
+  document.querySelector('#dnrDurationUnitWrap').hidden = untilRestart;
   const subjectLabel = document.querySelector('#dnrSubjectLabel');
+  const subjectInput = document.querySelector('#dnrSubject');
+  subjectLabel.classList.toggle('dnr-place-field', dnrType === 'Localized');
+  if (dnrType === 'Localized') {
+    subjectInput.setAttribute('aria-controls', 'savedCallLocations');
+    subjectInput.setAttribute('aria-autocomplete', 'list');
+  } else {
+    subjectInput.removeAttribute('aria-controls');
+    subjectInput.removeAttribute('aria-autocomplete');
+  }
+  if (dnrType !== 'Localized' && savedCallLocationInput === subjectInput) savedCallLocationInput = callLocationInput;
+  moveSavedLocationList(savedCallLocationInput);
   subjectLabel.firstChild.textContent = dnrType === 'Localized' ? 'Place' : 'Name';
-  document.querySelector('#dnrSubject').placeholder = dnrType === 'Localized' ? 'Place' : "Person's name";
+  subjectInput.placeholder = dnrType === 'Localized' ? 'Place' : "Person's name";
 }
 function refreshDiveRescueUnitChoices() {
   const select = document.querySelector('#divePerformedBy');
@@ -2030,6 +2073,12 @@ function refreshDiveRescueUnitChoices() {
 }
 callTypeSelect.addEventListener('change', refreshDnrFields);
 dnrTypeSelect.addEventListener('change', refreshDnrFields);
+document.querySelector('#dnrUntilRestart').addEventListener('change', () => {
+  if (document.querySelector('#dnrUntilRestart').checked) {
+    document.querySelector('#dnrDuration').value = '';
+  }
+  refreshDnrFields();
+});
 refreshDnrFields();
 for (const [choicesId, fieldName] of [['coverageGapChoices', 'coverage_gaps'], ['safetyConcernChoices', 'safety_concerns']]) {
   const choices = document.querySelector(`#${choicesId}`);
@@ -2067,14 +2116,16 @@ function addCall(isDnr = false) {
   const dnrIssuer = document.querySelector('#dnrIssuer').value;
   const dnrDuration = document.querySelector('#dnrDuration').value;
   const dnrDurationUnit = document.querySelector('#dnrDurationUnit').value;
-  if (dnr ? (!dnrSubject || !dnrReason || !dnrIssuer || (dnrDuration && Number(dnrDuration) < 1)) : (type === 'Dive Rescue' ? (!diveUnit || !Number.isInteger(diveSuccessCount) || !Number.isInteger(diveFailureCount)) : (type !== 'Fire dealt with by Engine-1' && !details || (type === 'MASCAS' && (!Number.isInteger(Number(details)) || Number(details) < 1))))) {
+  const dnrUntilRestart = document.querySelector('#dnrUntilRestart').checked;
+  if (dnr ? (!dnrSubject || !dnrReason || !dnrIssuer || (!dnrUntilRestart && dnrDuration && Number(dnrDuration) < 1)) : (type === 'Dive Rescue' ? (!diveUnit || !Number.isInteger(diveSuccessCount) || !Number.isInteger(diveFailureCount)) : (type !== 'Fire dealt with by Engine-1' && !details || (type === 'MASCAS' && (!Number.isInteger(Number(details)) || Number(details) < 1))))) {
     setMessage(callMessage, 'Enter the call details first.', 'error');
     (dnr ? document.querySelector(!dnrSubject ? '#dnrSubject' : !dnrReason ? '#dnrReason' : !dnrIssuer ? '#dnrIssuer' : '#dnrDuration') : type === 'Dive Rescue' ? document.querySelector('#divePerformedBy') : document.querySelector('#callDetails')).focus();
     return;
   }
   if (!isDnr) rememberCallLocation(location);
+  else if (dnrType === 'Localized') rememberCallLocation(dnrSubject);
   const description = dnr
-    ? `DNR ${dnrType} ${dnrType === 'Localized' ? 'Place' : 'Name'}: ${dnrSubject} · Reason: ${dnrReason} · Issued by: ${dnrIssuer}${dnrDuration ? ` · Lasts for: ${dnrDuration} ${dnrDurationUnit}` : ''}`
+    ? `DNR ${dnrType} ${dnrType === 'Localized' ? 'Place' : 'Name'}: ${dnrSubject} · Reason: ${dnrReason} · Issued by: ${dnrIssuer}${dnrUntilRestart ? ' · Until Tsunami' : dnrDuration ? ` · Lasts for: ${dnrDuration} ${dnrDurationUnit}` : ''}`
     : type === 'MASCAS'
     ? `MASCAS X${details}${location ? ` ${location}` : ''}`
     : type === 'Dive Rescue'
@@ -2093,6 +2144,8 @@ function addCall(isDnr = false) {
     document.querySelector('#dnrReason').value = '';
     document.querySelector('#dnrIssuer').value = '';
     document.querySelector('#dnrDuration').value = '';
+    document.querySelector('#dnrUntilRestart').checked = false;
+    refreshDnrFields();
   }
   setMessage(callMessage, `${type === 'DNR' ? 'Added to Notes' : 'Added'}: ${line}`, 'success');
   persistFormDraft();

@@ -18,7 +18,7 @@
     .watch-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
     .watch-fields label { display:grid; align-content:start; gap:6px; color:#c9d1d9; }
     .watch-fields .watch-field { display:grid; align-content:start; gap:6px; color:#c9d1d9; }
-    #dnrReasonLabel[hidden] { display:none !important; }
+    #dnrReasonLabel[hidden], #dnrDurationWrap[hidden], #dnrDurationUnitWrap[hidden] { display:none !important; }
     #callDetailsWrap[hidden], #divePerformedByWrap[hidden], #diveSuccessCountWrap[hidden], #diveFailureCountWrap[hidden] { display:none !important; }
     .unit-roster { display:grid; gap:6px; }
     .unit-roster:empty { display:none; }
@@ -62,6 +62,8 @@
     .watch-place-suggestions { position:absolute; z-index:30; inset-inline:0; top:calc(100% + 5px); display:grid; gap:3px; max-height:min(240px,40vh); overflow-y:auto; overscroll-behavior:contain; margin:0; padding:5px; border:1px solid #3b4858; border-radius:10px; background:#151e29; box-shadow:0 10px 26px #0008; }
     .watch-place-suggestions[hidden] { display:none !important; }
     .watch-location-field { position:relative; }
+    #dnrSubjectLabel.dnr-place-field { position:relative; z-index:31; }
+    #dnrSubjectLabel.dnr-place-field #savedCallLocations { top:calc(100% + 5px); }
     #savedCallLocations { position:absolute; }
     .watch-place-option { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:3px; border-radius:7px; background:transparent; }
     .watch-place-option:hover, .watch-place-option:focus-within { background:#223247; }
@@ -71,6 +73,12 @@
     .watch-place-option button { padding:4px 8px; }
     .watch-place-option .watch-place-remove { flex:none; min-width:34px; min-height:34px; border:0; color:#b9c3d0; background:transparent; font-size:20px; }
     .watch-place-option .watch-place-remove:hover { color:#ff8178; background:#422b31; }
+    .significant-call-controls { grid-template-columns:repeat(4,minmax(0,1fr)); }
+    .significant-call-controls .watch-location-field { grid-column:1/-1; }
+    .significant-call-field { grid-column:1/-1; min-width:0; }
+    .significant-call-controls > .watch-location-field { grid-column:1/-1; width:100%; min-width:0; }
+    #callLocation { display:block; box-sizing:border-box; width:100% !important; min-width:100%; min-height:62px; padding:15px 16px; font-size:18px; }
+    #savedCallLocations { width:100%; box-sizing:border-box; }
     .watch-section-toggle { grid-column:1/-1; display:flex; align-items:center; gap:9px; width:100%; min-height:40px; margin:3px 0; padding:9px 12px; border:1px solid #354456; border-radius:8px; background:#151e29; color:#dce6f2; text-align:left; font-weight:600; }
     .watch-section-toggle:hover { border-color:#6182a8; background:#1b2939; }
     .watch-section-toggle::before { content:"▾"; display:inline-grid; width:20px; height:20px; place-items:center; border-radius:50%; background:#26374a; color:#a9c9ed; }
@@ -89,7 +97,7 @@
     .watch-log-grid p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; color:#d5dce5; }
     .watch-log-grid p.watch-na { color:#788391; }
     .watch-empty { color:#9aa4b2; }
-    @media(max-width:850px) { .quick-controls{grid-template-columns:repeat(2,minmax(0,1fr))} }
+    @media(max-width:850px) { .quick-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.significant-call-controls{grid-template-columns:repeat(2,minmax(0,1fr))} }
     @media(max-width:650px) { .watch-shell{width:100%;min-width:0;padding:14px 14px 28px}.watch-card{padding:14px;min-width:0}.watch-fields,.watch-log-grid{grid-template-columns:minmax(0,1fr)}.watch-fields .wide{grid-column:auto}.watch-fields>*{min-width:0}.quick-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.watch-log-title-row{align-items:flex-start;flex-direction:column}.watch-log-title-row>*{min-width:0;max-width:100%} }
   </style>
 </head>
@@ -236,11 +244,12 @@
           <div class="watch-field wide"><label for="watchNotes">Notes</label><textarea id="watchNotes" name="notes"></textarea>
             <div id="dnrFields" class="quick-controls" style="margin-top:8px">
               <label>DNR type<select id="dnrType"><option value="Personal">Personal</option><option value="Partial">Partial</option><option value="Localized">Localized</option></select></label>
-              <label id="dnrSubjectLabel">Name<input id="dnrSubject" placeholder="Person's name"></label>
+              <label id="dnrSubjectLabel">Name<input id="dnrSubject" placeholder="Person's name" autocomplete="off"></label>
               <label id="dnrReasonLabel">Reason<input id="dnrReason" placeholder="Reason for DNR"></label>
               <label>Issued by<select id="dnrIssuer"><option value="">Choose an on-duty callsign</option></select></label>
-              <label>Lasts for (optional)<input id="dnrDuration" type="number" min="1" step="1" placeholder="Duration"></label>
-              <label>Duration unit<select id="dnrDurationUnit"><option value="minutes">Minutes</option><option value="hours">Hours</option></select></label>
+              <label><span><input id="dnrUntilRestart" type="checkbox"> Until Restart</span></label>
+              <label id="dnrDurationWrap">Lasts for (optional)<input id="dnrDuration" type="number" min="1" step="1" placeholder="Duration"></label>
+              <label id="dnrDurationUnitWrap">Duration unit<select id="dnrDurationUnit"><option value="minutes">Minutes</option><option value="hours">Hours</option></select></label>
               <p id="dnrPartialReason" hidden>Reason: AFK/Starving</p>
               <button type="button" class="primary" id="addDnr">Add DNR to Notes</button>
             </div>
@@ -252,8 +261,8 @@
       <section class="watch-card" aria-labelledby="operationalHeading">
         <h2 id="operationalHeading">Operational Notes</h2>
         <div class="watch-fields">
-          <div class="watch-field"><label for="significantCallText">Significant call</label><textarea id="significantCallText" name="significant_call"></textarea>
-            <div class="quick-controls" style="margin-top:8px">
+            <div class="watch-field significant-call-field"><label for="significantCallText">Significant call</label><textarea id="significantCallText" name="significant_call"></textarea>
+            <div class="quick-controls significant-call-controls" style="margin-top:8px">
               <label>Type<select id="callType"><option value="MASCAS">MASCAS</option><option value="Fire dealt with by Engine-1">Fire dealt with by Engine-1</option><option value="Dive Rescue">Dive Rescue</option><option value="Other">Other</option></select></label>
               <label id="callDetailsWrap"><span id="callDetailsLabel">MASCAS number</span><input id="callDetails" type="number" min="1" step="1" placeholder="5"></label>
               <div class="watch-field watch-location-field"><label for="callLocation">Location</label><input id="callLocation" placeholder="Casino" autocomplete="off" aria-controls="savedCallLocations" aria-autocomplete="list"><div id="savedCallLocations" class="watch-place-suggestions" role="list" hidden></div></div>
@@ -292,7 +301,7 @@
   <script src="/static/session-auth.js?v=shared-session-5"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
   <script src="/static/header-controls.js?v=header-controls-1"></script>
-  <script src="/static/watch_command.js?v=77"></script>
+  <script src="/static/watch_command.js?v=83"></script>
   <script src="/static/sidebar.js?v=nested-navigation-8"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 </body>
