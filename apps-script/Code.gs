@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-03-d1-roster-live-15',
+  apiVersion: '2026-10-04-training-hours-sheet2-1',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -1007,6 +1007,7 @@ function clearHertNameIfUnqualified_(sheet, row) {
     const instructor = isGreen_(sheet.getRange(currentRow, 6).getBackground());
     if (!certified && !instructor) sheet.getRange(currentRow, 2).clearContent();
   });
+  SpreadsheetApp.flush();
 }
 
 function hertDirectory_(spreadsheet) {
@@ -1627,8 +1628,10 @@ function findNamedSheetRows_(sheet, nameColumn, name) {
 
 function trainingHoursSheet_() {
   const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
-  const sheet = spreadsheet.getSheetByName('Training Hours');
-  if (!sheet) throw new Error('Training Hours sheet was not found in the roster spreadsheet.');
+  // Training Hours uses the existing Sheet2 tab: B = member, D = date, F = time.
+  // Keep the named tab as a migration fallback for installations that still use it.
+  const sheet = spreadsheet.getSheetByName('Sheet2') || spreadsheet.getSheetByName('Training Hours');
+  if (!sheet) throw new Error('Training Hours data sheet (Sheet2) was not found in the roster spreadsheet.');
   return sheet;
 }
 
@@ -1753,11 +1756,13 @@ function changeInstructor_(callsign, data, user) {
       clearHertNameIfUnqualified_(sheet, row);
     }
     else {
-      findNamedSheetRows_(sheet, nameColumn, member.name).forEach(currentRow => {
-        sheet.getRange(currentRow, nameColumn).clearContent();
-        sheet.getRange(currentRow, statusColumn).clearContent().setBackground('#ffffff');
+      const matchingRows = findNamedSheetRows_(sheet, 1, member.name);
+      matchingRows.forEach(currentRow => {
+        sheet.getRange(currentRow, 1).setValue('');
+        sheet.getRange(currentRow, 2).clearContent().setBackground('#ffffff');
         sheet.getRange(currentRow, 4).clearContent();
       });
+      SpreadsheetApp.flush();
     }
     CacheService.getScriptCache().remove('instructor-directory:v1');
     appendAppLog_({ kind: 'instructor', callsign: member.callsign, member_name: member.name, action: type + ' Instructor Removed', details: type, changed_by: actorName_(user) });

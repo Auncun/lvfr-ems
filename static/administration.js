@@ -326,6 +326,34 @@ document.addEventListener('click', event => {
 document.querySelector('#logoutButton').addEventListener('click', () => {
   window.lvfrLogout?.();
 });
+
+const commandSections = {
+  accounts: document.querySelector('#commandAccountsSection'),
+  permissions: document.querySelector('#commandPermissionsSection'),
+  history: document.querySelector('#commandHistorySection'),
+};
+function showCommandSection(name, updateHash = false) {
+  if (!commandSections[name]) return;
+  Object.entries(commandSections).forEach(([key, section]) => { section.hidden = key !== name; });
+  document.querySelectorAll('[data-command-section]').forEach(button => {
+    const active = button.dataset.commandSection === name;
+    button.classList.toggle('active', active);
+    if (active) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  if (updateHash) {
+    const anchors = { accounts: 'accountsHeading', permissions: 'permissionsHeading', history: 'auditHeading' };
+    history.replaceState(null, '', `#${anchors[name]}`);
+  }
+}
+document.querySelectorAll('[data-command-section]').forEach(button => button.addEventListener('click', () => showCommandSection(button.dataset.commandSection, true)));
+function selectCommandSectionFromHash() {
+  const sections = { '#permissionsHeading': 'permissions', '#auditHeading': 'history', '#accountsHeading': 'accounts' };
+  const section = sections[location.hash];
+  if (section) showCommandSection(section);
+}
+window.addEventListener('hashchange', selectCommandSectionFromHash);
+selectCommandSectionFromHash();
 loadAccounts();
 void loadRolePermissions();
 try {
