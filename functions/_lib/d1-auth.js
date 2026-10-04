@@ -513,16 +513,29 @@ export async function handleD1(context) {
       const expected=String(env.LVFR_D1_WORKER_SECRET||"");
       if(!expected || request.headers.get("X-LVFR-Worker-Secret")!==expected) return json({detail:"Worker authentication failed."},403);
       if(!Array.isArray(data.records)) return json({detail:"Training Hours payload is invalid."},400);
-      const timestamp=new Date().toISOString(), statements=[]; let skipped=0;
+      const timestamp=new Date().toISOString(), statements=[], adoptedLegacy=new Set(); let skipped=0;
       for(const record of data.records) {
         const callsign=String(record.callsign||"").trim().toUpperCase(), time=String(record.time||"").trim();
         if(!callsign||!time) { skipped++; continue; }
         const member=await db.prepare("SELECT callsign,name FROM members WHERE upper(callsign)=upper(?)").bind(callsign).first();
         if(!member) { skipped++; continue; }
         const trainingDate=String(record.date||"").trim()||new Intl.DateTimeFormat("en-US",{timeZone:"UTC",month:"2-digit",day:"2-digit",year:"numeric"}).format(new Date());
-        statements.push(db.prepare(`INSERT INTO training_hours(callsign,name,training_date,time,updated_at,updated_by) VALUES(?,?,?,?,?,?)
-          ON CONFLICT(callsign) DO UPDATE SET name=excluded.name,training_date=excluded.training_date,time=excluded.time,updated_at=excluded.updated_at`)
-          .bind(member.callsign,member.name,trainingDate,time,timestamp,"Sheet migration"));
+        const sourceRow=Number(record.source_row)||null;
+        if(sourceRow) {
+          // Adopt the pre-repeatable one-row-per-member import on its matching
+          // Sheet row instead of duplicating it during the new row-aware import.
+          const legacy=await db.prepare("SELECT id FROM training_hours WHERE source_row IS NULL AND upper(callsign)=upper(?) AND training_date=? AND time=? ORDER BY id LIMIT 1")
+            .bind(member.callsign,trainingDate,time).first();
+          if(legacy&&!adoptedLegacy.has(legacy.id)) {
+            adoptedLegacy.add(legacy.id);
+            statements.push(db.prepare("UPDATE training_hours SET source_row=?,name=?,updated_at=?,updated_by=? WHERE id=?")
+              .bind(sourceRow,member.name,timestamp,"Sheet migration",legacy.id));
+            continue;
+          }
+        }
+        statements.push(db.prepare(`INSERT INTO training_hours(source_row,callsign,name,training_date,time,updated_at,updated_by) VALUES(?,?,?,?,?,?,?)
+          ON CONFLICT(source_row) DO UPDATE SET callsign=excluded.callsign,name=excluded.name,training_date=excluded.training_date,time=excluded.time,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
+          .bind(sourceRow,member.callsign,member.name,trainingDate,time,timestamp,"Sheet migration"));
       }
       for(let i=0;i<statements.length;i+=50) await db.batch(statements.slice(i,i+50));
       return json({ok:true,imported:statements.length,skipped});
@@ -655,7 +668,7 @@ export async function handleD1(context) {
       return json({ok:true});
     }
     if(route==="/api/training-hours" && method==="GET") {
-      const result=await db.prepare("SELECT callsign,name,training_date AS date,time FROM training_hours ORDER BY lower(name),callsign").all();
+      const result=await db.prepare("SELECT id,source_row,callsign,name,training_date AS date,time FROM training_hours ORDER BY lower(name),callsign,training_date,id").all();
       return json(result.results||[]);
     }
     if(route==="/api/training-hours" && method==="POST") {
@@ -664,38 +677,42 @@ export async function handleD1(context) {
       if(!callsign) throw new Error("Choose a roster member.");
       const member=await db.prepare("SELECT callsign,name FROM members WHERE upper(callsign)=upper(?)").bind(callsign).first();
       if(!member) throw Object.assign(new Error("Member was not found on the current roster."),{status:404});
-      const existing=await db.prepare("SELECT time FROM training_hours WHERE callsign=?").bind(member.callsign).first();
+      const recordId=Number(data.id)||0;
+      const existing=recordId?await db.prepare("SELECT id,source_row,callsign,name,training_date,time FROM training_hours WHERE id=?").bind(recordId).first():null;
+      if(action!=="add"&&!existing) throw Object.assign(new Error("Training Hours record was not found."),{status:404});
+      if(existing&&existing.callsign!==member.callsign) throw Object.assign(new Error("Training Hours record does not belong to this member."),{status:400});
       const previousTime=String(existing?.time||"");
       const time=String(data.time||"").trim();
       if(action==="add") {
-        if(existing) throw Object.assign(new Error("This member is already in Training Hours."),{status:409});
         if(!time) throw new Error("Enter a training time.");
       } else if(action==="time") {
-        if(!existing) throw Object.assign(new Error("This member is not in Training Hours."),{status:404});
         if(!time) throw new Error("Enter a training time.");
         if(previousTime===time) return json({ok:true,changed:false,message:"Time is already set."});
-      } else if(action==="remove") {
-        if(!existing) throw Object.assign(new Error("This member is not in Training Hours."),{status:404});
-      } else throw new Error("Choose Add, Remove, or Time.");
+      } else if(action!=="remove") throw new Error("Choose Add, Remove, or Time.");
       const timestamp=new Date().toISOString();
       const trainingDate=new Intl.DateTimeFormat("en-US",{timeZone:"UTC",month:"2-digit",day:"2-digit",year:"numeric"}).format(new Date());
       const newTime=action==="remove"?"":time;
-      const changes=action==="remove"
-        ? db.prepare("DELETE FROM training_hours WHERE callsign=?").bind(member.callsign)
-        : db.prepare(`INSERT INTO training_hours(callsign,name,training_date,time,updated_at,updated_by) VALUES(?,?,?,?,?,?)
-          ON CONFLICT(callsign) DO UPDATE SET name=excluded.name,training_date=excluded.training_date,time=excluded.time,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
-          .bind(member.callsign,member.name,trainingDate,time,timestamp,user.name);
       const logAction=action==="time"?"Time Changed":action==="add"?"Added":"Removed";
       const log=db.prepare("INSERT INTO training_hours_log(log_date,callsign,member_name,action,previous_time,new_time,changed_by) VALUES(?,?,?,?,?,?,?)")
         .bind(timestamp,member.callsign,member.name,logAction,previousTime,newTime,user.name);
-      await db.batch([changes,log]);
+      let savedId=recordId;
+      if(action==="add") {
+        const inserted=await db.prepare("INSERT INTO training_hours(callsign,name,training_date,time,updated_at,updated_by) VALUES(?,?,?,?,?,?) RETURNING id")
+          .bind(member.callsign,member.name,trainingDate,time,timestamp,user.name).first();
+        savedId=Number(inserted?.id)||0;
+        await log.run();
+      } else {
+        const change=action==="remove"?db.prepare("DELETE FROM training_hours WHERE id=?").bind(recordId)
+          :db.prepare("UPDATE training_hours SET time=?,updated_at=?,updated_by=? WHERE id=?").bind(time,timestamp,user.name,recordId);
+        await db.batch([change,log]);
+      }
       if(env.LVFR_D1_AUTH_BRIDGE_SECRET) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET), {proxyToAppsScript}=await import("../[[path]].js");
         const sheetLog={kind:"training_time",log_date:timestamp,callsign:member.callsign,member_name:member.name,action:logAction,details:JSON.stringify({previous_time:previousTime,new_time:newTime}),changed_by:user.name};
         context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,assertion,sheetLog);if(!mirror.ok)console.error("Training Hours log Sheet mirror failed:",await mirror.text());}catch(error){console.error("Training Hours log Sheet mirror failed:",error);}})());
-        context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/training-hours/mirror",url,assertion,{action,callsign:member.callsign,time:newTime,date:trainingDate});if(!mirror.ok)console.error("Training Hours Sheet mirror failed:",await mirror.text());}catch(error){console.error("Training Hours Sheet mirror failed:",error);}})());
+        context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/training-hours/mirror",url,assertion,{action,callsign:member.callsign,id:savedId,source_row:existing?.source_row,time:newTime,date:action==="time"?existing.training_date:trainingDate});if(!mirror.ok){console.error("Training Hours Sheet mirror failed:",await mirror.text());return;}const mirrored=await mirror.json();if(action==="add"&&mirrored.row)await db.prepare("UPDATE training_hours SET source_row=? WHERE id=? AND source_row IS NULL").bind(mirrored.row,savedId).run();}catch(error){console.error("Training Hours Sheet mirror failed:",error);}})());
       }
-      return json({ok:true,changed:true,message:"Training Hours updated."});
+      return json({ok:true,changed:true,id:savedId,message:"Training Hours record updated."});
     }
     if(route==="/api/members" && method==="GET") {
       return json(await readMembers(db,url.searchParams.get("search")||"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET)));

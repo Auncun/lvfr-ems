@@ -36,7 +36,7 @@ function migrateTrainingHoursToD1() {
     if (!time) return result;
     const callsign = callsignByName.get(name.toLowerCase());
     if (!callsign) throw new Error('Training Hours row ' + (index + 2) + ' has a missing or ambiguous roster name: ' + name);
-    result.push({ callsign, date: String(row[2] || '').trim(), time });
+    result.push({ callsign, date: String(row[2] || '').trim(), time, source_row: index + 2 });
     return result;
   }, []) : [];
 

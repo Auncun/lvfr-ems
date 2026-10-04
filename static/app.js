@@ -1260,19 +1260,18 @@ function renderTrainingHours() {
         return !query || `${row.name} ${member?.callsign || ""} ${row.date} ${row.time}`.toLocaleLowerCase().includes(query);
     });
     const canEdit = currentUserHasPermission("training_hours_manage");
-    table.innerHTML = rows.length ? `<table><thead><tr><th>Callsign</th><th>Member</th><th>Date</th><th>Time</th>${canEdit ? "<th>Remove</th>" : ""}</tr></thead><tbody>${rows.map(row => {
+    table.innerHTML = rows.length ? `<table><thead><tr><th>Callsign</th><th>Member</th><th>Date</th><th>Training Hours</th>${canEdit ? "<th>Actions</th>" : ""}</tr></thead><tbody>${rows.map(row => {
         const member = memberByName.get(String(row.name || "").trim().toLocaleLowerCase());
-        const timeCell = canEdit ? `<div class="training-hours-time-edit"><input type="text" data-training-hours-time value="${esc(row.time)}" aria-label="Training time for ${esc(row.name)}"><button type="button" class="primary" data-training-hours-save data-name="${esc(row.name)}" data-callsign="${esc(member?.callsign || "")}">Save</button></div>` : esc(row.time);
-        return `<tr><td><strong>${esc(member?.callsign || "")}</strong></td><td>${esc(row.name)}</td><td>${esc(row.date)}</td><td>${timeCell}</td>${canEdit ? `<td><button type="button" class="danger" data-training-hours-remove data-name="${esc(row.name)}" data-callsign="${esc(member?.callsign || "")}">Remove</button></td>` : ""}</tr>`;
-    }).join("")}</tbody></table>` : '<div class="empty">No Training Hours members match this search.</div>';
+        const timeCell = canEdit ? `<div class="training-hours-time-edit"><input type="text" data-training-hours-time value="${esc(row.time)}" aria-label="Training hours for ${esc(row.name)} on ${esc(row.date)}"><button type="button" class="primary" data-training-hours-save data-id="${esc(row.id)}" data-name="${esc(row.name)}" data-callsign="${esc(row.callsign || member?.callsign || "")}">Save</button></div>` : esc(row.time);
+        return `<tr><td><strong>${esc(row.callsign || member?.callsign || "")}</strong></td><td>${esc(row.name)}</td><td>${esc(row.date)}</td><td>${timeCell}</td>${canEdit ? `<td><button type="button" class="danger" data-training-hours-remove data-id="${esc(row.id)}" data-name="${esc(row.name)}" data-callsign="${esc(row.callsign || member?.callsign || "")}">Remove</button></td>` : ""}</tr>`;
+    }).join("")}</tbody></table>` : '<div class="empty">No Training Hours records match this search.</div>';
 }
 function renderTrainingHoursAddChoices() {
     const choices = $("#trainingHoursAddChoices");
     if (!choices) return;
     const query = String($("#trainingHoursAddSearch")?.value || "").trim().toLocaleLowerCase();
-    const present = new Set(trainingHoursRows.map(row => String(row.name || "").trim().toLocaleLowerCase()));
-    const members = (allMembersCache || []).filter(member => !present.has(String(member.name || "").trim().toLocaleLowerCase()) && (!query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query)));
-    choices.innerHTML = members.length ? members.map(member => `<div class="training-action-choice"><span>${esc(member.name)} / ${esc(member.callsign)}</span><label>Time <input type="text" data-training-hours-new-time placeholder="Enter time"></label><button type="button" class="primary" data-training-hours-add data-name="${esc(member.name)}" data-callsign="${esc(member.callsign)}">Add</button></div>`).join("") : '<div class="empty">No members match this search.</div>';
+    const members = (allMembersCache || []).filter(member => !query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query));
+    choices.innerHTML = members.length ? members.map(member => `<div class="training-action-choice"><span>${esc(member.name)} / ${esc(member.callsign)}</span><label>Training Hours <input type="text" data-training-hours-new-time placeholder="Enter hours"></label><button type="button" class="primary" data-training-hours-add data-name="${esc(member.name)}" data-callsign="${esc(member.callsign)}">Add Record</button></div>`).join("") : '<div class="empty">No members match this search.</div>';
 }
 $("#trainingHoursSearch")?.addEventListener("input", renderTrainingHours);
 $("#trainingHoursAddSearch")?.addEventListener("input", renderTrainingHoursAddChoices);
@@ -1294,7 +1293,7 @@ document.addEventListener("click", async event => {
     button.disabled = true;
     const row = button.closest("tr, .training-action-choice");
     const time = add ? row?.querySelector("[data-training-hours-new-time]")?.value : save ? row?.querySelector("[data-training-hours-time]")?.value : "";
-    const data = { action: add ? "add" : save ? "time" : "remove", name: button.dataset.name, callsign: button.dataset.callsign, time };
+    const data = { action: add ? "add" : save ? "time" : "remove", id: Number(button.dataset.id) || undefined, name: button.dataset.name, callsign: button.dataset.callsign, time };
     try {
         await api("/api/training-hours", { method: "POST", body: JSON.stringify(data) });
         await loadTrainingHours();

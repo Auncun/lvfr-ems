@@ -1665,16 +1665,27 @@ function mirrorTrainingHoursFromD1_(data) {
   const member = watchMemberNameByCallsign_(callsign);
   if (!member) throw new Error('Training Hours member was not found on the roster.');
   const sheet = trainingHoursSheet_();
-  const matchingRows = findNamedSheetRows_(sheet, 2, member.name);
   const action = String(data.action || '').trim().toLowerCase();
+  const sourceRow = Number(data.source_row) || 0;
+  let row = sourceRow;
+  if (row && (row < 2 || row > sheet.getMaxRows())) throw new Error('Invalid Training Hours sheet row.');
+  if (sourceRow && normalizeMemberName_(sheet.getRange(row, 2).getDisplayValue()) !== normalizeMemberName_(member.name)) {
+    throw new Error('Training Hours row no longer matches this roster member.');
+  }
   if (action === 'remove') {
-    matchingRows.forEach(row => { sheet.getRange(row, 2).clearContent(); sheet.getRange(row, 4).clearContent(); sheet.getRange(row, 6).clearContent(); });
-    return { ok: true, changed: Boolean(matchingRows.length) };
+    if (row) { sheet.getRange(row, 2).clearContent(); sheet.getRange(row, 4).clearContent(); sheet.getRange(row, 6).clearContent(); }
+    return { ok: true, changed: Boolean(row), row };
   }
   if (!['add', 'time'].includes(action)) throw new Error('Invalid Training Hours mirror action.');
   const time = String(data.time || '').trim();
   if (!time) throw new Error('Training Hours time is required.');
-  const row = matchingRows[0] || findOrCreateNamedSheetRow_(sheet, 2, member.name, true);
+  if (!row) {
+    const count = Math.max(0, sheet.getMaxRows() - 1);
+    const names = sheet.getRange(2, 2, count, 1).getDisplayValues();
+    const emptyIndex = names.findIndex(values => !String(values[0] || '').trim());
+    if (emptyIndex >= 0) row = emptyIndex + 2;
+    else { sheet.insertRowAfter(sheet.getMaxRows()); row = sheet.getMaxRows(); }
+  }
   const dateValue = String(data.date || '').trim();
   sheet.getRange(row, 2).setValue(member.name);
   sheet.getRange(row, 4).setValue(dateValue || new Date());
@@ -1688,7 +1699,7 @@ function listTrainingHours_() {
   const count = Math.max(0, sheet.getLastRow() - 1);
   if (!count) return [];
   const values = sheet.getRange(2, 2, count, 5).getDisplayValues();
-  return values.map((row, index) => ({ name: String(row[0] || '').trim(), date: String(row[2] || ''), time: String(row[4] || ''), row: index + 2 }))
+  return values.map((row, index) => ({ id: index + 2, name: String(row[0] || '').trim(), date: String(row[2] || ''), time: String(row[4] || ''), row: index + 2 }))
     .filter(record => record.name)
     .reverse();
 }
@@ -1707,13 +1718,15 @@ function changeTrainingHours_(data, user) {
   const sheet = trainingHoursSheet_();
   const now = new Date();
   const date = Utilities.formatDate(now, Session.getScriptTimeZone(), 'MM/dd/yyyy');
-  const matching = name ? findOrCreateNamedSheetRow_(sheet, 2, name, action === 'add') : 0;
-  let row = matching;
+  let row = action === 'add' ? 0 : Number(data.id || data.row) || 0;
   let previousTime = '';
   let newTime = '';
   if (action === 'add') {
     if (!name) throw new Error('Choose a member to add.');
-    if (matching && String(sheet.getRange(matching, 2).getDisplayValue() || '').trim()) throw new Error('This member is already in Training Hours.');
+    const names = sheet.getRange(2, 2, Math.max(0, sheet.getMaxRows() - 1), 1).getDisplayValues();
+    const emptyIndex = names.findIndex(values => !String(values[0] || '').trim());
+    if (emptyIndex >= 0) row = emptyIndex + 2;
+    else { sheet.insertRowAfter(sheet.getMaxRows()); row = sheet.getMaxRows(); }
     newTime = String(data.time || '').trim();
     if (!newTime) throw new Error('Enter a training time.');
     sheet.getRange(row, 2).setValue(name);
@@ -1721,13 +1734,13 @@ function changeTrainingHours_(data, user) {
     sheet.getRange(row, 4).setNumberFormat('MM/dd/yyyy');
     sheet.getRange(row, 6).setValue(newTime);
   } else if (action === 'remove') {
-    if (!matching) throw new Error('This member is not in Training Hours.');
+    if (row < 2 || row > sheet.getLastRow() || normalizeMemberName_(sheet.getRange(row, 2).getDisplayValue()) !== normalizeMemberName_(name)) throw new Error('This Training Hours record was not found.');
     previousTime = String(sheet.getRange(row, 6).getDisplayValue() || '');
     sheet.getRange(row, 2).clearContent();
     sheet.getRange(row, 4).clearContent();
     sheet.getRange(row, 6).clearContent();
   } else if (action === 'time') {
-    if (!matching) throw new Error('This member is not in Training Hours.');
+    if (row < 2 || row > sheet.getLastRow() || normalizeMemberName_(sheet.getRange(row, 2).getDisplayValue()) !== normalizeMemberName_(name)) throw new Error('This Training Hours record was not found.');
     previousTime = String(sheet.getRange(row, 6).getDisplayValue() || '');
     newTime = String(data.time || '').trim();
     if (!newTime) throw new Error('Enter a training time.');
