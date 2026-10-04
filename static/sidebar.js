@@ -21,7 +21,6 @@
           { label: 'Activity Log', tab: 'membersLog', log: 'activity' },
           { label: 'Instructor Log', tab: 'membersLog', log: 'instructor', availability: '#instructorLogTab' }
         ] },
-        { label: 'Instructors Directory', tab: 'instructorsDirectory', availability: '#instructorsDirectoryTab' },
         { label: 'Statistics', tab: 'statistics', availability: '#statisticsTab' },
         { label: 'Supervisors', tab: 'leaders', availability: '#leadersTab', children: [
           { label: 'Pending requests', tab: 'leaders', leader: 'pending', availability: '#leadersTab' },
@@ -222,7 +221,7 @@
     if (entry.dataset.page === currentPath) return false;
     const user = window.lvfrCachedUser?.();
     const role = String(user?.role || '').toLowerCase();
-    if (['#doNotPromoteTab', '#terminationLogTab', '#instructorLogTab', '#instructorsDirectoryTab', '#leadersTab'].includes(selector)) return !!user?.is_admin;
+    if (['#doNotPromoteTab', '#terminationLogTab', '#instructorLogTab', '#leadersTab'].includes(selector)) return !!user?.is_admin;
     if (selector === '#inactiveTab') return !!(user?.is_admin || user?.is_command);
     if (selector === '#statisticsTab') return !!(user?.is_admin || user?.is_command || ['leader', 'supervisor', 'command', 'commander'].includes(role));
     return true;

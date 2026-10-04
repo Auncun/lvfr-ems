@@ -18,7 +18,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=training-side-menus-20261004-2"
+    href="/static/style.css?v=training-side-menus-20261004-3"
 >
 
 <style>
@@ -249,10 +249,6 @@
 
     <button id="trainingTab" data-tab="trainingDirectory" class="tab">Training</button>
 
-    <button id="instructorsDirectoryTab" data-tab="instructorsDirectory" class="tab" style="display:none">
-        Instructors
-    </button>
-
     <button id="statisticsTab" data-tab="statistics" class="tab" style="display:none">
         Statistics
     </button>
@@ -391,8 +387,9 @@
 <section id="trainingDirectory" class="panel">
   <div class="section-head"><div><h2>Training</h2></div></div>
   <div class="training-directory-tabs"><button type="button" class="log-tab active" data-training-view="FORT">FORT</button><button type="button" class="log-tab" data-training-view="HERT">HERT</button></div>
-  <section class="training-directory-view" data-training-panel="FORT"><label class="training-directory-search">Search FORT members and Add / Remove choices<input type="search" aria-label="Search FORT members and Add or Remove choices" placeholder="Search callsign or member"></label><div id="fortTrainingTable" class="table-wrap"></div></section>
-  <section class="training-directory-view" data-training-panel="HERT" hidden><label class="training-directory-search">Search HERT members and Add / Remove choices<input type="search" aria-label="Search HERT members and Add or Remove choices" placeholder="Search callsign or member"></label><div id="hertTrainingTable" class="table-wrap"></div></section>
+  <section class="training-directory-view" data-training-panel="FORT"><label class="training-directory-search">Search FORT list<input type="search" aria-label="Search FORT list" placeholder="Search callsign or member"></label><div id="fortTrainingTable" class="table-wrap"></div></section>
+  <section class="training-directory-view" data-training-panel="HERT" hidden><label class="training-directory-search">Search HERT list<input type="search" aria-label="Search HERT list" placeholder="Search callsign or member"></label><div id="hertTrainingTable" class="table-wrap"></div></section>
+  <div id="trainingActionDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="trainingActionTitle"><div class="modal-box"><button type="button" class="close" id="closeTrainingAction" aria-label="Close">&times;</button><h2 id="trainingActionTitle"></h2><label class="training-directory-search">Search members<input id="trainingActionSearch" type="search" placeholder="Search callsign or member"></label><div id="trainingActionChoices" class="training-action-choices"></div></div></div>
 </section>
 
 
@@ -688,30 +685,6 @@
 </section>
 
 
-<!-- =========================================================
-     INSTRUCTORS DIRECTORY
-     ========================================================= -->
-
-<section id="instructorsDirectory" class="panel">
-    <div class="section-head"><div><h2>Instructors</h2></div></div>
-    <div id="instructorsView">
-        <div class="toolbar">
-            <input id="instructorSearch" type="text" placeholder="Search instructor name" autocomplete="off">
-            <button type="button" id="clearInstructorSearch">Clear</button>
-        </div>
-        <div class="log-filters">
-            <label for="instructorTypeFilter">Type
-                <select id="instructorTypeFilter" aria-label="Filter instructors by type">
-                    <option value="all">All types</option>
-                    <option value="HERT">HERT</option>
-                    <option value="FORT">FORT</option>
-                </select>
-            </label>
-        </div>
-        <div id="instructorsTable" class="table-wrap"></div>
-    </div>
-</section>
-
 <section id="statistics" class="panel">
     <div class="section-head"><div><h2>Statistics</h2><p>Training and instructor coverage</p></div></div>
     <div class="statistics-filters">
@@ -844,8 +817,8 @@
 
 <script src="/static/session-auth.js?v=shared-session-5"></script>
 <script src="/static/account-settings.js?v=account-settings-5"></script>
-<script src="/static/app.js?v=training-side-menus-20261004-2"></script>
-<script src="/static/sidebar.js?v=training-side-menus-20261004-2"></script>
+<script src="/static/app.js?v=training-side-menus-20261004-3"></script>
+<script src="/static/sidebar.js?v=training-side-menus-20261004-3"></script>
 <script src="/static/mobile-popovers.js?v=portal-controls-20261004-1"></script>
 
 

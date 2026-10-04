@@ -969,7 +969,6 @@ async function loadMembers(silent = false, forceFresh = false) {
             allMembersCacheAt = Date.now();
         }
         loadedRows.sort(compareRosterMembers);
-        renderTrainingDirectory(loadedRows);
         renderStatistics();
         try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(loadedRows)); } catch {}
         loadedRows.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
@@ -979,6 +978,7 @@ async function loadMembers(silent = false, forceFresh = false) {
                 .split("/").map(value => value.trim().toUpperCase()).filter(Boolean);
             updateTrainingPermission();
         }
+        renderTrainingDirectory(loadedRows);
         const profileCallsign = String(activeProfileMember?.callsign || "").trim().toUpperCase();
         if (profileCallsign && !$("#modal")?.classList.contains("hidden")) {
             const latestProfileRow = loadedRows.find(member => String(member.callsign || "").trim().toUpperCase() === profileCallsign);
@@ -1139,25 +1139,26 @@ function renderTrainingDirectory(members = allMembersCache || []) {
     const instructorHas = (member, type) => String(member.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes(type);
     const hertSearch = String(document.querySelector('[data-training-panel="HERT"] input[type="search"]')?.value || "").trim().toLocaleLowerCase();
     const fortSearch = String(document.querySelector('[data-training-panel="FORT"] input[type="search"]')?.value || "").trim().toLocaleLowerCase();
-    const toggle = (member, kind, present, label, type) => {
-        const allowed = type === "instructor" ? currentUserIsAdmin : currentUserIsAdmin || currentInstructorTypes.includes(kind);
-        if (!allowed) return present ? esc(label) : "—";
-        return `<button type="button" class="${present ? "danger" : "primary"}" data-training-action data-callsign="${esc(member.callsign)}" data-kind="${esc(kind)}" data-remove="${present ? "true" : "false"}" data-type="${type}">${present ? "Remove" : "Add"} ${esc(label)}</button>`;
+    const headerActions = (group, field) => {
+        const allowed = field === "instructor" ? currentUserIsAdmin : currentUserIsAdmin || currentInstructorTypes.includes(group);
+        return allowed ? `<div class="training-header-actions"><button type="button" class="primary" data-training-open data-group="${group}" data-field="${field}" data-remove="false">Add</button><button type="button" class="danger" data-training-open data-group="${group}" data-field="${field}" data-remove="true">Remove</button></div>` : "";
     };
-    const render = (panel, query, type) => {
+    const render = (query, type) => {
         const container = document.querySelector(type === "FORT" ? "#fortTrainingTable" : "#hertTrainingTable");
         if (!container) return;
         const rows = members.filter(member => !query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query));
-        container.innerHTML = rows.length ? `<table><thead><tr><th>Callsign</th><th>Member</th><th>Training</th><th>Instructor</th></tr></thead><tbody>${rows.map(member => {
-            const trainingActions = type === "FORT"
-                ? `${toggle(member, "FORT", has(member.has_basic_firefighting), "Basic FORT", "training")} ${toggle(member, "FORT", has(member.has_advanced_firefighting), "Advanced FORT", "training")}`
-                : toggle(member, "HERT", has(member.has_hert), "HERT Certified", "training");
-            const instructorActions = toggle(member, type, instructorHas(member, type), `${type} Instructor`, "instructor");
-            return `<tr><td><strong>${esc(member.callsign)}</strong></td><td>${esc(member.name)}</td><td><div class="training-member-actions">${trainingActions}</div></td><td><div class="training-member-actions">${instructorActions}</div></td></tr>`;
-        }).join("")}</tbody></table>` : '<div class="empty">No members found.</div>';
+        const trainingHeader = type === "FORT" ? `Training${headerActions(type, "training")}` : `HERT Certified${headerActions(type, "training")}`;
+        const instructorHeader = `${type} Instructor${headerActions(type, "instructor")}`;
+        container.innerHTML = `<table><thead><tr><th>Callsign</th><th>Member</th>${type === "HERT" ? `<th>${trainingHeader}</th><th>${instructorHeader}</th><th>Basic FORT and Advanced FORT</th>` : `<th>${trainingHeader}</th><th>${instructorHeader}</th>`}</tr></thead><tbody>${rows.length ? rows.map(member => {
+            const trainingValue = type === "FORT" ? `Basic FORT: ${has(member.has_basic_firefighting) ? "Certified" : "Not certified"}<br>Advanced FORT: ${has(member.has_advanced_firefighting) ? "Certified" : "Not certified"}` : has(member.has_hert) ? "Certified" : "Not certified";
+            const instructorValue = instructorHas(member, type) ? "Instructor" : "Not an Instructor";
+            return type === "HERT"
+                ? `<tr><td><strong>${esc(member.callsign)}</strong></td><td>${esc(member.name)}</td><td>${trainingValue}</td><td>${instructorValue}</td><td>Basic FORT: ${has(member.has_basic_firefighting) ? "Certified" : "Not certified"}<br>Advanced FORT: ${has(member.has_advanced_firefighting) ? "Certified" : "Not certified"}</td></tr>`
+                : `<tr><td><strong>${esc(member.callsign)}</strong></td><td>${esc(member.name)}</td><td>${trainingValue}</td><td>${instructorValue}</td></tr>`;
+        }).join("") : `<tr><td colspan="${type === "HERT" ? 5 : 4}">No members found.</td></tr>`}</tbody></table>`;
     };
-    render("fortTrainingTable", fortSearch, "FORT");
-    render("hertTrainingTable", hertSearch, "HERT");
+    render(fortSearch, "FORT");
+    render(hertSearch, "HERT");
 }
 
 document.querySelectorAll(".training-directory-search input").forEach(input => input.addEventListener("input", () => renderTrainingDirectory()));
@@ -1165,6 +1166,41 @@ document.querySelectorAll("[data-training-view]").forEach(button => button.addEv
     document.querySelectorAll("[data-training-view]").forEach(item => item.classList.toggle("active", item === button));
     document.querySelectorAll("[data-training-panel]").forEach(panel => { panel.hidden = panel.dataset.trainingPanel !== button.dataset.trainingView; });
 }));
+const trainingActionDialog = $("#trainingActionDialog"), trainingActionChoices = $("#trainingActionChoices"), trainingActionSearch = $("#trainingActionSearch");
+let activeTrainingAction = null;
+function renderTrainingActionChoices() {
+    if (!trainingActionChoices || !activeTrainingAction) return;
+    const query = String(trainingActionSearch?.value || "").trim().toLocaleLowerCase();
+    const { group, field, remove } = activeTrainingAction;
+    const hasInstructor = member => String(member.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes(group);
+    const has = value => value === true || Number(value) === 1;
+    const choices = [];
+    (allMembersCache || []).filter(member => !query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query)).forEach(member => {
+        if (field === "instructor") {
+            if (hasInstructor(member) === !remove) choices.push({ member, kind: group, label: `${group} Instructor`, type: "instructor" });
+        } else if (group === "HERT") {
+            if (has(member.has_hert) === !remove) choices.push({ member, kind: "Hert", label: "HERT Certified", type: "training" });
+        } else {
+            [{ kind: "Basic Firefighting", label: "Basic FORT", value: member.has_basic_firefighting }, { kind: "Advanced Firefighting", label: "Advanced FORT", value: member.has_advanced_firefighting }]
+                .forEach(skill => { if (has(skill.value) === !remove) choices.push({ member, kind: skill.kind, label: skill.label, type: "training" }); });
+        }
+    });
+    trainingActionChoices.innerHTML = choices.length ? choices.map(choice => `<div class="training-action-choice"><span>${esc(choice.member.name)} / ${esc(choice.member.callsign)}</span><button type="button" class="${remove ? "danger" : "primary"}" data-training-action data-callsign="${esc(choice.member.callsign)}" data-kind="${esc(choice.kind)}" data-remove="${remove}" data-type="${choice.type}">${remove ? "Remove" : "Add"} ${esc(choice.label)}</button></div>`).join("") : '<div class="empty">No members match this action.</div>';
+}
+document.addEventListener("click", event => {
+    const button = event.target.closest("[data-training-open]");
+    if (!button) return;
+    activeTrainingAction = { group: button.dataset.group, field: button.dataset.field, remove: button.dataset.remove === "true" };
+    const title = $("#trainingActionTitle");
+    if (title) title.textContent = `${activeTrainingAction.remove ? "Remove from" : "Add to"} ${activeTrainingAction.group} ${activeTrainingAction.field === "instructor" ? "Instructor" : "Training"}`;
+    if (trainingActionSearch) trainingActionSearch.value = "";
+    trainingActionDialog?.classList.remove("hidden");
+    renderTrainingActionChoices();
+    trainingActionSearch?.focus();
+});
+trainingActionSearch?.addEventListener("input", renderTrainingActionChoices);
+$("#closeTrainingAction")?.addEventListener("click", () => trainingActionDialog?.classList.add("hidden"));
+trainingActionDialog?.addEventListener("click", event => { if (event.target === trainingActionDialog) trainingActionDialog.classList.add("hidden"); });
 document.addEventListener("click", async event => {
     const button = event.target.closest("[data-training-action]");
     if (!button) return;
@@ -1175,10 +1211,11 @@ document.addEventListener("click", async event => {
             await api(`/api/member/${encodeURIComponent(callsign)}/instructor`, { method: "POST", body: JSON.stringify({ instructor_type: kind, assigned: !remove }) });
         } else {
             const field = $("#training"), previous = field?.value;
-            if (field) field.value = kind === "HERT" ? "Hert" : button.textContent.includes("Basic FORT") ? "Basic Firefighting" : "Advanced Firefighting";
+            if (field) field.value = String(kind).toLowerCase() === "hert" ? "Hert" : button.textContent.includes("Basic FORT") ? "Basic Firefighting" : "Advanced Firefighting";
             await training(callsign, remove);
             if (field) field.value = previous;
         }
+        trainingActionDialog?.classList.add("hidden");
     } catch (error) { if (!isBackgroundPending(error)) toast(error.message); }
     finally { button.disabled = false; }
 });
@@ -4393,7 +4430,6 @@ document
                         loadLeaders();
                     }
                     if (b.dataset.tab === "doNotPromote") loadDoNotPromote();
-                    if (b.dataset.tab === "instructorsDirectory") loadInstructors();
                     if (b.dataset.tab === "statistics") renderStatistics();
 
                 }
@@ -4430,11 +4466,7 @@ document
                         "active"
                     );
 
-                    if (b.dataset.log === "instructors") {
-                        loadInstructors();
-                    } else {
-                        loadMembersLog(b.dataset.log);
-                    }
+                    loadMembersLog(b.dataset.log);
 
                 }
             );
@@ -4839,10 +4871,9 @@ function applyAccountUser(user) {
     if (terminationLogTab) terminationLogTab.style.display = user.is_admin ? "" : "none";
     const instructorLogTab = $("#instructorLogTab");
     if (instructorLogTab) instructorLogTab.style.display = user.is_admin ? "" : "none";
-    const instructorsDirectoryTab = $("#instructorsDirectoryTab");
-    if (instructorsDirectoryTab) instructorsDirectoryTab.style.display = user.is_admin ? "" : "none";
     const statisticsTab = $("#statisticsTab");
     if (statisticsTab) statisticsTab.style.display = canViewStatistics(user) ? "" : "none";
+    renderTrainingDirectory();
 }
 
 let doNotPromoteRows = [];
@@ -4988,7 +5019,6 @@ async function loadAccount() {
         if ($("#inactiveTab")) $("#inactiveTab").style.display = (cachedUser.is_admin || cachedUser.is_command) ? "" : "none";
         if ($("#terminationLogTab")) $("#terminationLogTab").style.display = cachedUser.is_admin ? "" : "none";
         if ($("#instructorLogTab")) $("#instructorLogTab").style.display = cachedUser.is_admin ? "" : "none";
-        if ($("#instructorsDirectoryTab")) $("#instructorsDirectoryTab").style.display = cachedUser.is_admin ? "" : "none";
         if ($("#statisticsTab")) $("#statisticsTab").style.display = canViewStatistics(cachedUser) ? "" : "none";
     }
     try {
