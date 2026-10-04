@@ -1139,23 +1139,29 @@ function renderTrainingDirectory(members = allMembersCache || []) {
     const instructorHas = (member, type) => String(member.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes(type);
     const hertSearch = String(document.querySelector('[data-training-panel="HERT"] input[type="search"]')?.value || "").trim().toLocaleLowerCase();
     const fortSearch = String(document.querySelector('[data-training-panel="FORT"] input[type="search"]')?.value || "").trim().toLocaleLowerCase();
-    const headerActions = (group, field) => {
+    const headerActions = (group, field, skill = "") => {
         const allowed = field === "instructor" ? currentUserIsAdmin : currentUserIsAdmin || currentInstructorTypes.includes(group);
-        return allowed ? `<div class="training-header-actions"><button type="button" class="primary" data-training-open data-group="${group}" data-field="${field}" data-remove="false">Add</button><button type="button" class="danger" data-training-open data-group="${group}" data-field="${field}" data-remove="true">Remove</button></div>` : "";
+        return allowed ? `<div class="training-header-actions"><button type="button" class="primary" data-training-open data-group="${group}" data-field="${field}" data-skill="${skill}" data-remove="false">Add</button><button type="button" class="danger" data-training-open data-group="${group}" data-field="${field}" data-skill="${skill}" data-remove="true">Remove</button></div>` : "";
     };
     const render = (query, type) => {
         const container = document.querySelector(type === "FORT" ? "#fortTrainingTable" : "#hertTrainingTable");
         if (!container) return;
-        const rows = members.filter(member => !query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query));
-        const trainingHeader = type === "FORT" ? `Training${headerActions(type, "training")}` : `HERT Certified${headerActions(type, "training")}`;
+        const rows = members.filter(member => {
+            const hasTraining = type === "FORT"
+                ? has(member.has_basic_firefighting) || has(member.has_advanced_firefighting) || instructorHas(member, "FORT")
+                : has(member.has_hert) || instructorHas(member, "HERT");
+            return hasTraining && (!query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query));
+        });
         const instructorHeader = `${type} Instructor${headerActions(type, "instructor")}`;
-        container.innerHTML = `<table><thead><tr><th>Callsign</th><th>Member</th>${type === "HERT" ? `<th>${trainingHeader}</th><th>${instructorHeader}</th><th>Basic FORT and Advanced FORT</th>` : `<th>${trainingHeader}</th><th>${instructorHeader}</th>`}</tr></thead><tbody>${rows.length ? rows.map(member => {
-            const trainingValue = type === "FORT" ? `Basic FORT: ${has(member.has_basic_firefighting) ? "Certified" : "Not certified"}<br>Advanced FORT: ${has(member.has_advanced_firefighting) ? "Certified" : "Not certified"}` : has(member.has_hert) ? "Certified" : "Not certified";
+        const fortBasicHeader = `Basic FORT${headerActions(type, "training", "Basic Firefighting")}`;
+        const fortAdvancedHeader = `Advanced FORT${headerActions(type, "training", "Advanced Firefighting")}`;
+        const hertTrainingHeader = `HERT Certified${headerActions(type, "training", "Hert")}`;
+        container.innerHTML = `<table><thead><tr><th>Callsign</th><th>Member</th>${type === "FORT" ? `<th>${fortBasicHeader}</th><th>${fortAdvancedHeader}</th><th>${instructorHeader}</th>` : `<th>${hertTrainingHeader}</th><th>${instructorHeader}</th>`}</tr></thead><tbody>${rows.length ? rows.map(member => {
             const instructorValue = instructorHas(member, type) ? "Instructor" : "Not an Instructor";
             return type === "HERT"
-                ? `<tr><td><strong>${esc(member.callsign)}</strong></td><td>${esc(member.name)}</td><td>${trainingValue}</td><td>${instructorValue}</td><td>Basic FORT: ${has(member.has_basic_firefighting) ? "Certified" : "Not certified"}<br>Advanced FORT: ${has(member.has_advanced_firefighting) ? "Certified" : "Not certified"}</td></tr>`
-                : `<tr><td><strong>${esc(member.callsign)}</strong></td><td>${esc(member.name)}</td><td>${trainingValue}</td><td>${instructorValue}</td></tr>`;
-        }).join("") : `<tr><td colspan="${type === "HERT" ? 5 : 4}">No members found.</td></tr>`}</tbody></table>`;
+                ? `<tr><td><strong>${esc(member.callsign)}</strong></td><td>${esc(member.name)}</td><td>${has(member.has_hert) ? "Certified" : "Not certified"}</td><td>${instructorValue}</td></tr>`
+                : `<tr><td><strong>${esc(member.callsign)}</strong></td><td>${esc(member.name)}</td><td>${has(member.has_basic_firefighting) ? "Certified" : "Not certified"}</td><td>${has(member.has_advanced_firefighting) ? "Certified" : "Not certified"}</td><td>${instructorValue}</td></tr>`;
+        }).join("") : `<tr><td colspan="${type === "FORT" ? 5 : 4}">No members found.</td></tr>`}</tbody></table>`;
     };
     render(fortSearch, "FORT");
     render(hertSearch, "HERT");
@@ -1177,12 +1183,13 @@ function renderTrainingActionChoices() {
     const choices = [];
     (allMembersCache || []).filter(member => !query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query)).forEach(member => {
         if (field === "instructor") {
-            if (hasInstructor(member) === !remove) choices.push({ member, kind: group, label: `${group} Instructor`, type: "instructor" });
+            if (hasInstructor(member) === remove) choices.push({ member, kind: group, label: `${group} Instructor`, type: "instructor" });
         } else if (group === "HERT") {
-            if (has(member.has_hert) === !remove) choices.push({ member, kind: "Hert", label: "HERT Certified", type: "training" });
+            if (has(member.has_hert) === remove) choices.push({ member, kind: "Hert", label: "HERT Certified", type: "training" });
         } else {
-            [{ kind: "Basic Firefighting", label: "Basic FORT", value: member.has_basic_firefighting }, { kind: "Advanced Firefighting", label: "Advanced FORT", value: member.has_advanced_firefighting }]
-                .forEach(skill => { if (has(skill.value) === !remove) choices.push({ member, kind: skill.kind, label: skill.label, type: "training" }); });
+            const skill = activeTrainingAction.skill;
+            const value = skill === "Basic Firefighting" ? member.has_basic_firefighting : member.has_advanced_firefighting;
+            if (has(value) === remove) choices.push({ member, kind: skill, label: skill === "Basic Firefighting" ? "Basic FORT" : "Advanced FORT", type: "training" });
         }
     });
     trainingActionChoices.innerHTML = choices.length ? choices.map(choice => `<div class="training-action-choice"><span>${esc(choice.member.name)} / ${esc(choice.member.callsign)}</span><button type="button" class="${remove ? "danger" : "primary"}" data-training-action data-callsign="${esc(choice.member.callsign)}" data-kind="${esc(choice.kind)}" data-remove="${remove}" data-type="${choice.type}">${remove ? "Remove" : "Add"} ${esc(choice.label)}</button></div>`).join("") : '<div class="empty">No members match this action.</div>';
@@ -1190,9 +1197,10 @@ function renderTrainingActionChoices() {
 document.addEventListener("click", event => {
     const button = event.target.closest("[data-training-open]");
     if (!button) return;
-    activeTrainingAction = { group: button.dataset.group, field: button.dataset.field, remove: button.dataset.remove === "true" };
+    activeTrainingAction = { group: button.dataset.group, field: button.dataset.field, skill: button.dataset.skill || "", remove: button.dataset.remove === "true" };
     const title = $("#trainingActionTitle");
-    if (title) title.textContent = `${activeTrainingAction.remove ? "Remove from" : "Add to"} ${activeTrainingAction.group} ${activeTrainingAction.field === "instructor" ? "Instructor" : "Training"}`;
+    const actionName = activeTrainingAction.field === "instructor" ? `${activeTrainingAction.group} Instructor` : activeTrainingAction.group === "HERT" ? "HERT Certified" : activeTrainingAction.skill === "Basic Firefighting" ? "Basic FORT" : "Advanced FORT";
+    if (title) title.textContent = `${activeTrainingAction.remove ? "Remove from" : "Add to"} ${actionName}`;
     if (trainingActionSearch) trainingActionSearch.value = "";
     trainingActionDialog?.classList.remove("hidden");
     renderTrainingActionChoices();
