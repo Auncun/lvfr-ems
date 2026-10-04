@@ -1227,10 +1227,7 @@ document.addEventListener("click", async event => {
         if (button.dataset.type === "instructor") {
             await api(`/api/member/${encodeURIComponent(callsign)}/instructor`, { method: "POST", body: JSON.stringify({ instructor_type: kind, assigned: !remove }) });
         } else {
-            const field = $("#training"), previous = field?.value;
-            if (field) field.value = String(kind).toLowerCase() === "hert" ? "Hert" : button.textContent.includes("Basic FORT") ? "Basic Firefighting" : "Advanced Firefighting";
-            await training(callsign, remove);
-            if (field) field.value = previous;
+            await api("/api/training", { method: "POST", body: JSON.stringify({ callsign, training: kind, remove }) });
         }
         trainingActionDialog?.classList.add("hidden");
     } catch (error) { if (!isBackgroundPending(error)) toast(error.message); }
