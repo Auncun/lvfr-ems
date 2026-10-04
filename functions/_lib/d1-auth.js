@@ -513,7 +513,7 @@ export async function handleD1(context) {
       const expected=String(env.LVFR_D1_WORKER_SECRET||"");
       if(!expected || request.headers.get("X-LVFR-Worker-Secret")!==expected) return json({detail:"Worker authentication failed."},403);
       if(!Array.isArray(data.records)) return json({detail:"Training Hours payload is invalid."},400);
-      const timestamp=new Date().toISOString(), statements=[], adoptedLegacy=new Set(); let skipped=0;
+      const timestamp=new Date().toISOString(), adoptedLegacy=new Set(); let skipped=0,imported=0;
       for(const record of data.records) {
         const callsign=String(record.callsign||"").trim().toUpperCase(), time=String(record.time||"").trim();
         if(!callsign||!time) { skipped++; continue; }
@@ -521,24 +521,24 @@ export async function handleD1(context) {
         if(!member) { skipped++; continue; }
         const trainingDate=String(record.date||"").trim()||new Intl.DateTimeFormat("en-US",{timeZone:"UTC",month:"2-digit",day:"2-digit",year:"numeric"}).format(new Date());
         const sourceRow=Number(record.source_row)||null;
+        let target=null;
         if(sourceRow) {
+          target=await db.prepare("SELECT id FROM training_hours WHERE source_row=? ORDER BY id LIMIT 1").bind(sourceRow).first();
           // Adopt the pre-repeatable one-row-per-member import on its matching
           // Sheet row instead of duplicating it during the new row-aware import.
-          const legacy=await db.prepare("SELECT id FROM training_hours WHERE source_row IS NULL AND upper(callsign)=upper(?) AND training_date=? AND time=? ORDER BY id LIMIT 1")
-            .bind(member.callsign,trainingDate,time).first();
-          if(legacy&&!adoptedLegacy.has(legacy.id)) {
-            adoptedLegacy.add(legacy.id);
-            statements.push(db.prepare("UPDATE training_hours SET source_row=?,name=?,updated_at=?,updated_by=? WHERE id=?")
-              .bind(sourceRow,member.name,timestamp,"Sheet migration",legacy.id));
-            continue;
+          if(!target) {
+            const legacy=await db.prepare("SELECT id FROM training_hours WHERE source_row IS NULL AND upper(callsign)=upper(?) AND training_date=? AND time=? ORDER BY id LIMIT 1")
+              .bind(member.callsign,trainingDate,time).first();
+            if(legacy&&!adoptedLegacy.has(legacy.id)) { target=legacy; adoptedLegacy.add(legacy.id); }
           }
         }
-        statements.push(db.prepare(`INSERT INTO training_hours(source_row,callsign,name,training_date,time,updated_at,updated_by) VALUES(?,?,?,?,?,?,?)
-          ON CONFLICT(source_row) DO UPDATE SET callsign=excluded.callsign,name=excluded.name,training_date=excluded.training_date,time=excluded.time,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
-          .bind(sourceRow,member.callsign,member.name,trainingDate,time,timestamp,"Sheet migration"));
+        if(target) await db.prepare("UPDATE training_hours SET source_row=?,callsign=?,name=?,training_date=?,time=?,updated_at=?,updated_by=? WHERE id=?")
+          .bind(sourceRow,member.callsign,member.name,trainingDate,time,timestamp,"Sheet migration",target.id).run();
+        else await db.prepare("INSERT INTO training_hours(source_row,callsign,name,training_date,time,updated_at,updated_by) VALUES(?,?,?,?,?,?,?)")
+          .bind(sourceRow,member.callsign,member.name,trainingDate,time,timestamp,"Sheet migration").run();
+        imported++;
       }
-      for(let i=0;i<statements.length;i+=50) await db.batch(statements.slice(i,i+50));
-      return json({ok:true,imported:statements.length,skipped});
+      return json({ok:true,imported,skipped});
     }
     if(route==="/internal/logs/import" && method==="POST") {
       const expected=String(env.LVFR_D1_WORKER_SECRET||"");
