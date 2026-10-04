@@ -716,9 +716,22 @@ export async function handleD1(context) {
       const bridgeAssertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
       const {proxyToAppsScript}=await import("../[[path]].js");
       const sheetLog={kind:"training_time",log_date:timestamp,callsign:member.callsign,member_name:member.name,action:logAction,details:JSON.stringify({previous_time:previousTime,new_time:newTime}),changed_by:user.name};
-      context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,bridgeAssertion,sheetLog);if(!mirror.ok)console.error("Training Hours log Sheet mirror failed:",await mirror.text());}catch(error){console.error("Training Hours log Sheet mirror failed:",error);}})());
-      context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/training-hours/mirror",url,bridgeAssertion,{action,callsign:member.callsign,id:savedId,source_row:existing?.source_row,time:newTime,date:action==="time"?existing.training_date:trainingDate});if(!mirror.ok){console.error("Training Hours Sheet mirror failed:",await mirror.text());return;}const mirrored=await mirror.json();if(mirrored.row&&!existing?.source_row)await db.prepare("UPDATE training_hours SET source_row=? WHERE id=? AND source_row IS NULL").bind(mirrored.row,savedId).run();}catch(error){console.error("Training Hours Sheet mirror failed:",error);}})());
-      return json({ok:true,changed:true,id:savedId,message:"Training Hours record updated."});
+      try {
+        const logMirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,bridgeAssertion,sheetLog);
+        if(!logMirror.ok) console.error("Training Hours log Sheet mirror failed:",(await logMirror.text()).slice(0,500));
+      } catch(error) { console.error("Training Hours log Sheet mirror failed:",error); }
+      let sheetSynced=true,sheetSyncError="";
+      try {
+        const sheetMirror=await proxyToAppsScript(context,"/internal/training-hours/mirror",url,bridgeAssertion,{action,callsign:member.callsign,id:savedId,source_row:existing?.source_row,time:newTime,date:action==="time"?existing.training_date:trainingDate});
+        const mirrorResult=await sheetMirror.json().catch(()=>({}));
+        if(!sheetMirror.ok||mirrorResult.ok===false) throw new Error(mirrorResult.detail||mirrorResult.error||"Apps Script did not confirm the Sheet1 update.");
+        if(mirrorResult.row&&!existing?.source_row) await db.prepare("UPDATE training_hours SET source_row=? WHERE id=? AND source_row IS NULL").bind(mirrorResult.row,savedId).run();
+      } catch(error) {
+        sheetSynced=false;
+        sheetSyncError=String(error?.message||error).slice(0,500);
+        console.error("Training Hours Sheet mirror failed:",sheetSyncError);
+      }
+      return json({ok:true,changed:true,id:savedId,message:"Training Hours record updated.",sheet_synced:sheetSynced,sheet_sync_error:sheetSyncError});
     }
     if(route==="/api/members" && method==="GET") {
       return json(await readMembers(db,url.searchParams.get("search")||"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET)));

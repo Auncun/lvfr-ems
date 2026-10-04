@@ -1294,7 +1294,6 @@ document.addEventListener("click", async event => {
     const row = button.closest("tr, .training-action-choice");
     const time = add ? row?.querySelector("[data-training-hours-new-time]")?.value : save ? row?.querySelector("[data-training-hours-time]")?.value : "";
     const data = { action: add ? "add" : save ? "time" : "remove", id: Number(button.dataset.id) || undefined, name: button.dataset.name, callsign: button.dataset.callsign, time };
-    const before = trainingHoursRows.slice();
     const selected = trainingHoursRows.find(item => Number(item.id) === data.id);
     const today = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "2-digit", day: "2-digit", year: "numeric" }).format(new Date());
     if (add) trainingHoursRows.unshift({ id: `pending-${Date.now()}`, callsign: data.callsign, name: data.name, date: today, time: data.time });
@@ -1307,13 +1306,15 @@ document.addEventListener("click", async event => {
     button.disabled = false;
     void (async () => {
         try {
-            await api("/api/training-hours", { method: "POST", body: JSON.stringify(data) });
+            const result = await api("/api/training-hours", { method: "POST", body: JSON.stringify(data) });
+            if (result.sheet_synced === false) throw new Error(`D1 saved the record, but Sheet1 sync failed: ${result.sheet_sync_error || "unknown Apps Script error"}`);
             void loadTrainingHours();
         } catch (error) {
-            trainingHoursRows = before;
-            renderTrainingHours();
+            // D1 may already have committed before a Sheet mirror failed.
+            // Reload its authoritative state instead of reverting optimistically.
+            void loadTrainingHours();
             renderTrainingHoursAddChoices();
-            toast(`Training Hours save failed: ${error.message}. The displayed change was reverted.`);
+            toast(`Training Hours save issue: ${error.message}`);
         }
     })();
 });
