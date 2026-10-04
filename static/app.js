@@ -1303,7 +1303,7 @@ document.addEventListener("click", async event => {
     renderTrainingHours();
     renderTrainingHoursAddChoices();
     if (add) $("#trainingHoursAddDialog")?.classList.add("hidden");
-    toast("Training Hours updated; saving in background.");
+    toast("Training Hours updated.");
     button.disabled = false;
     void (async () => {
         try {

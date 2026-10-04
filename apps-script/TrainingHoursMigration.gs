@@ -44,7 +44,7 @@ function migrateTrainingHoursToD1() {
     method: 'post',
     contentType: 'application/json',
     headers: { 'X-LVFR-Worker-Secret': workerSecret },
-    payload: JSON.stringify({ records }),
+    payload: JSON.stringify({ records, reconcile: true }),
     muteHttpExceptions: true
   });
   let result = null;
@@ -58,6 +58,12 @@ function migrateTrainingHoursToD1() {
     throw new Error('Training Hours import was incomplete: source=' + records.length + ', imported=' + imported + ', skipped=' + skipped + '. Sync the roster to D1 and check that every Training Hours name matches one current roster member, then rerun the import.');
   }
   return result;
+}
+
+// Installable Sheet edit trigger calls this after a Training Hours row changes.
+// Importing the full snapshot keeps add, edit, and removal changes aligned with D1.
+function syncTrainingHoursSheetToD1_() {
+  return migrateTrainingHoursToD1();
 }
 
 // One-time history import. It copies existing Sheets logs/notifications into D1;

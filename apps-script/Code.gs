@@ -1109,6 +1109,11 @@ function syncRosterToD1OnEdit_(event) {
     console.log('Roster D1 trigger started: onEdit; spreadsheet=' + event.source.getId() + '; sheet=' + name + '; range=' + event.range.getA1Notation());
     const rosterId = requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID');
     const privateId = requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID');
+    if (event.source.getId() === rosterId && ['Sheet1', 'Training Hours', 'Sheet2'].includes(name)) {
+      if (event.range.getRow() < 2) return;
+      syncTrainingHoursSheetToD1_();
+      return;
+    }
     const allowed = event.source.getId() === rosterId
       ? [LVFR.rosterTab, 'HERT Certified', 'FIREFIGHTER CERT'].includes(name)
       : event.source.getId() === privateId && name === 'Do not Promote';
