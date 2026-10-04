@@ -976,6 +976,12 @@ function hertCertified_(name) {
   return Boolean(hertDirectory_().get(String(name || '').trim().toLowerCase()));
 }
 
+function clearHertNameIfUnqualified_(sheet, row) {
+  const certified = isGreen_(sheet.getRange(row, 4).getBackground());
+  const instructor = isGreen_(sheet.getRange(row, 6).getBackground());
+  if (!certified && !instructor) sheet.getRange(row, 2).clearContent();
+}
+
 function hertDirectory_(spreadsheet) {
   const map = new Map();
   spreadsheet = spreadsheet || SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
@@ -1586,6 +1592,7 @@ function changeTraining_(data, user) {
     if (!row) return { ok: false, changed: false, status: 'already_removed', message: 'Training already removed' };
     if (remove) {
       sheet.getRange(row, 4).clearContent().setBackground('#ffffff');
+      clearHertNameIfUnqualified_(sheet, row);
     } else {
       if (String(sheet.getRange(row, 2).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, 2).setValue(member.name);
       const cell = sheet.getRange(row, 4);
@@ -1629,8 +1636,12 @@ function changeInstructor_(callsign, data, user) {
   const row = findOrCreateNamedSheetRow_(sheet, nameColumn, member.name, assigned);
   if (!row) return { ok: true, changed: false, assigned, instructor_type: type, status: 'unchanged' };
   if (!assigned) {
-    if (type === 'HERT') sheet.getRange(row, statusColumn).clearContent().setBackground('#ffffff');
+    if (type === 'HERT') {
+      sheet.getRange(row, statusColumn).clearContent().setBackground('#ffffff');
+      clearHertNameIfUnqualified_(sheet, row);
+    }
     else {
+      sheet.getRange(row, nameColumn).clearContent();
       sheet.getRange(row, statusColumn).clearContent().setBackground('#ffffff');
       sheet.getRange(row, 4).clearContent();
     }

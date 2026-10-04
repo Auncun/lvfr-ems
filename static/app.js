@@ -979,6 +979,7 @@ async function loadMembers(silent = false, forceFresh = false) {
             updateTrainingPermission();
         }
         renderTrainingDirectory(loadedRows);
+        renderTrainingActionChoices();
         const profileCallsign = String(activeProfileMember?.callsign || "").trim().toUpperCase();
         if (profileCallsign && !$("#modal")?.classList.contains("hidden")) {
             const latestProfileRow = loadedRows.find(member => String(member.callsign || "").trim().toUpperCase() === profileCallsign);
