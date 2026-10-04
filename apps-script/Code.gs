@@ -1102,6 +1102,38 @@ function installRosterD1SyncTriggers() {
     .forSpreadsheet(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')).onChange().create();
 }
 
+// Run once if Training Hours edits in the roster spreadsheet are not reaching D1.
+function installTrainingHoursD1SyncTrigger() {
+  const spreadsheetId = requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID');
+  const installed = ScriptApp.getProjectTriggers().some(trigger =>
+    trigger.getHandlerFunction() === 'syncRosterToD1OnEdit_' &&
+    trigger.getTriggerSourceId() === spreadsheetId
+  );
+  if (!installed) ScriptApp.newTrigger('syncRosterToD1OnEdit_').forSpreadsheet(spreadsheetId).onEdit().create();
+  return diagnoseTrainingHoursD1Sync();
+}
+
+// Reports safe, non-secret setup details to the Apps Script execution log.
+function diagnoseTrainingHoursD1Sync() {
+  const spreadsheetId = String(PropertiesService.getScriptProperties().getProperty('LVFR_ROSTER_SPREADSHEET_ID') || '');
+  const properties = PropertiesService.getScriptProperties();
+  const spreadsheet = spreadsheetId ? SpreadsheetApp.openById(spreadsheetId) : null;
+  const hours = spreadsheet && (spreadsheet.getSheetByName('Sheet1') || spreadsheet.getSheetByName('Training Hours') || spreadsheet.getSheetByName('Sheet2'));
+  const triggers = ScriptApp.getProjectTriggers().filter(trigger =>
+    trigger.getHandlerFunction() === 'syncRosterToD1OnEdit_' && trigger.getTriggerSourceId() === spreadsheetId
+  );
+  const result = {
+    spreadsheet_configured: Boolean(spreadsheetId),
+    source_sheet: hours ? hours.getName() : '',
+    source_rows: hours ? Math.max(0, hours.getLastRow() - 1) : 0,
+    d1_url_configured: Boolean(properties.getProperty('LVFR_D1_SYNC_URL')),
+    worker_secret_configured: Boolean(properties.getProperty('LVFR_D1_WORKER_SECRET')),
+    edit_trigger_installed: triggers.length > 0
+  };
+  console.log('Training Hours sync diagnostic: ' + JSON.stringify(result));
+  return result;
+}
+
 function syncRosterToD1OnEdit_(event) {
   if (!event || !event.range) return;
   try {
