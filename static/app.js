@@ -286,6 +286,20 @@ function applyOptimisticMutation(route, payload, callsign) {
         memberCache.set(key, updated);
         paintCachedMemberRow(updated, key);
     }
+    // The Training tab renders from allMembersCache, so patch it and repaint now
+    // instead of waiting for the background request (which also waits on Google Sheets).
+    if (route === "/api/training" || route === "/api/exam" || /^\/api\/member\/[^/]+\/instructor$/.test(route)) {
+        if (Array.isArray(allMembersCache)) {
+            const index = allMembersCache.findIndex(member => String(member.callsign || "").toUpperCase() === key);
+            if (index >= 0) {
+                allMembersCache[index] = { ...allMembersCache[index], ...updated };
+                allMembersCacheAt = Date.now();
+                memberListRenderKey = "";
+                try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(allMembersCache)); } catch {}
+            }
+        }
+        renderTrainingDirectory();
+    }
     if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(route)) {
         removeEligibleRow(key);
         closeModal();
@@ -5179,7 +5193,10 @@ function refreshVisibleRosterView() {
     if (activeTab === "members" && currentUserHasPermission("members_view")) void loadMembers(true, true);
     else if (activeTab === "eligible" && currentUserHasPermission("eligible_view")) void loadEligible(true);
     else if (activeTab === "inactive" && currentUserHasPermission("inactive_view")) void loadInactive(true);
-    else if (activeTab === "trainingDirectory" && currentUserHasPermission("training_hours_view") && $('[data-training-view="HOURS"]')?.classList.contains("active")) void loadTrainingHours(true);
+    else if (activeTab === "trainingDirectory") {
+        if ($('[data-training-view="HOURS"]')?.classList.contains("active")) { if (currentUserHasPermission("training_hours_view")) void loadTrainingHours(true); }
+        else if (currentUserHasPermission("training_view")) void loadMembers(true, true);
+    }
 }
 setInterval(refreshVisibleRosterView, 3000);
 document.addEventListener("visibilitychange", refreshVisibleRosterView);
