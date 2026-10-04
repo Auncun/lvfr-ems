@@ -70,6 +70,16 @@ body {
 .training-header-actions button { padding:5px 8px; font-size:12px; }
 .training-action-choices { display:grid; gap:7px; max-height:48vh; overflow:auto; }
 .training-action-choice { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:9px; border:1px solid #303945; border-radius:8px; background:#0d1219; }
+.training-hours-time-edit { display:flex; align-items:center; gap:6px; min-width:190px; }
+.training-hours-time-edit input { min-width:80px; width:100%; }
+.role-permissions-panel { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; }
+.role-permission-card { border:1px solid #303945; border-radius:10px; padding:14px; background:#0d1219; }
+.role-permission-card h3 { margin:0 0 12px; }
+.role-permission-list { display:grid; gap:8px; }
+.role-permission-item { display:flex; align-items:flex-start; gap:9px; color:#d6dde6; }
+.role-permission-item input { margin-top:3px; }
+.role-permission-item small { display:block; color:#9aa4b2; }
+.role-permission-card > button { margin-top:14px; }
 .online-user span { color:#9aa4b2; font-size:12px }
 .status-dot {
     font-size:12px;

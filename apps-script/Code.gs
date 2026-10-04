@@ -99,12 +99,12 @@ function dispatch_(route, method, params, data, user) {
     return listMembers_(String(params.search || ''));
   }
   if (route === '/api/eligible' && method === 'GET') { requireLeader_(user); return eligibleMembers_(); }
-  if (route === '/api/do-not-promote' && method === 'GET') { requireAdmin_(user); return listDoNotPromote_(); }
-  if (route === '/api/do-not-promote' && method === 'POST') { requireAdmin_(user); return setDoNotPromote_(data, user); }
+  if (route === '/api/do-not-promote' && method === 'GET') { requireRolePermission_(user, 'do_not_promote_view'); return listDoNotPromote_(); }
+  if (route === '/api/do-not-promote' && method === 'POST') { requireRolePermission_(user, 'do_not_promote_manage'); return setDoNotPromote_(data, user); }
   if (route === '/api/inactive' && method === 'GET') { requireAdmin_(user); return inactiveMembers_(); }
-  if (route === '/api/sync-status' && method === 'GET') { requireLeader_(user); return syncStatus_(); }
+  if (route === '/api/sync-status' && method === 'GET') { requireRolePermission_(user, 'sync_view'); return syncStatus_(); }
   if (route === '/api/sync' && method === 'POST') {
-    requireLeader_(user);
+    requireRolePermission_(user, 'sync_manage');
     const result = syncRosterSnapshotToD1_('manual');
     return Object.assign({}, result, { message: result.skipped ? 'Roster already synchronized' : 'Roster synchronized' });
   }
@@ -117,30 +117,33 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/notifications/read' && method === 'POST') { requireApproved_(user); return markNotificationsRead_(data, user); }
   if (route === '/api/leaders' && method === 'GET') { requireAdmin_(user); return leaderOverview_(); }
   if (route === '/api/leaders/audit' && method === 'GET') { requireAdmin_(user); return accountAudit_(); }
+  if (route === '/api/role-permissions') throw new Error('Role permissions are managed by Cloudflare D1.');
   const accountAction = route.match(/^\/api\/leaders\/([^/]+)\/(allow|deny|admin|demote|member|leader|deactivate|reactivate)$/);
   if (accountAction && method === 'POST') { requireAdmin_(user); return updateAccount_(decodeURIComponent(accountAction[1]), accountAction[2], user); }
   const accountDelete = route.match(/^\/api\/leaders\/([^/]+)$/);
   if (accountDelete && method === 'DELETE') { requireAdmin_(user); return updateAccount_(decodeURIComponent(accountDelete[1]), 'delete', user); }
-  if (route === '/api/instructors' && method === 'GET') { requireAdmin_(user); return instructorDirectory_(); }
-  if (route === '/api/members-log' && method === 'GET') { requireLeader_(user); return memberLogs_(String(params.log_type || 'promotion')); }
-  if (route === '/api/promotions' && method === 'GET') { requireLeader_(user); return memberLogs_('promotion'); }
-  if (route === '/api/training-log' && method === 'GET') { requireLeader_(user); return memberLogs_('training'); }
-  if (route === '/api/exam-log' && method === 'GET') { requireLeader_(user); return memberLogs_('exam'); }
-  if (route === '/api/termination-log' && method === 'GET') { requireAdmin_(user); return memberLogs_('termination'); }
-  if (route === '/api/activity' && method === 'POST') { requireAdmin_(user); return setActivity_(data, user); }
-  if (route === '/api/note' && method === 'POST') { requireLeader_(user); return editNote_(data, user); }
-  if (route === '/api/date' && method === 'POST') { requireAdmin_(user); return changeRankDate_(data, user); }
+  if (route === '/api/instructors' && method === 'GET') { requireRolePermission_(user, 'training_view'); return instructorDirectory_(); }
+  if (route === '/api/members-log' && method === 'GET') { requireRolePermission_(user, 'logs_view'); return memberLogs_(String(params.log_type || 'promotion')); }
+  if (route === '/api/training-hours' && method === 'GET') { requireRolePermission_(user, 'training_hours_view'); return listTrainingHours_(); }
+  if (route === '/api/training-hours' && method === 'POST') { requireRolePermission_(user, 'training_hours_manage'); return changeTrainingHours_(data, user); }
+  if (route === '/api/promotions' && method === 'GET') { requireRolePermission_(user, 'logs_view'); return memberLogs_('promotion'); }
+  if (route === '/api/training-log' && method === 'GET') { requireRolePermission_(user, 'logs_view'); return memberLogs_('training'); }
+  if (route === '/api/exam-log' && method === 'GET') { requireRolePermission_(user, 'logs_view'); return memberLogs_('exam'); }
+  if (route === '/api/termination-log' && method === 'GET') { requireRolePermission_(user, 'logs_view'); return memberLogs_('termination'); }
+  if (route === '/api/activity' && method === 'POST') { requireRolePermission_(user, 'activity_manage'); return setActivity_(data, user); }
+  if (route === '/api/note' && method === 'POST') { requireRolePermission_(user, 'notes_manage'); return editNote_(data, user); }
+  if (route === '/api/date' && method === 'POST') { requireRolePermission_(user, 'rank_date_manage'); return changeRankDate_(data, user); }
   if (route === '/api/training' && method === 'POST') { requireTrainingPermission_(data.training, user); return changeTraining_(data, user); }
-  if (route === '/api/exam' && method === 'POST') { requireCommand_(user); return changeExam_(data, user); }
-  if (route === '/api/promote' && method === 'POST') { requireLeader_(user); return promoteMember_(data, user); }
-  if (route === '/api/force-promote' && method === 'POST') { requireAdmin_(user); return changeMemberRank_(data, user, 'FORCE'); }
-  if (route === '/api/demote' && method === 'POST') { requireAdmin_(user); return changeMemberRank_(data, user, 'DEMOTION'); }
-  if (route === '/api/change-rank' && method === 'POST') { requireAdmin_(user); return changeMemberRank_(data, user, 'CHANGE_RANK'); }
-  if (route === '/api/change-callsign' && method === 'POST') { requireLeader_(user); return changeMemberCallsign_(data, user); }
-  if (route === '/api/terminate' && method === 'POST') { requireAdmin_(user); return terminateMember_(data, user); }
+  if (route === '/api/exam' && method === 'POST') { requireRolePermission_(user, 'exam_manage'); return changeExam_(data, user); }
+  if (route === '/api/promote' && method === 'POST') { requireRolePermission_(user, 'promotion_manage'); return promoteMember_(data, user); }
+  if (route === '/api/force-promote' && method === 'POST') { requireRolePermission_(user, 'rank_manage'); return changeMemberRank_(data, user, 'FORCE'); }
+  if (route === '/api/demote' && method === 'POST') { requireRolePermission_(user, 'rank_manage'); return changeMemberRank_(data, user, 'DEMOTION'); }
+  if (route === '/api/change-rank' && method === 'POST') { requireRolePermission_(user, 'rank_manage'); return changeMemberRank_(data, user, 'CHANGE_RANK'); }
+  if (route === '/api/change-callsign' && method === 'POST') { requireRolePermission_(user, 'callsign_manage'); return changeMemberCallsign_(data, user); }
+  if (route === '/api/terminate' && method === 'POST') { requireRolePermission_(user, 'termination_manage'); return terminateMember_(data, user); }
   const instructorRoute = route.match(/^\/api\/member\/([^/]+)\/instructor$/);
   if (instructorRoute && method === 'POST') {
-    requireAdmin_(user); return changeInstructor_(decodeURIComponent(instructorRoute[1]).toUpperCase(), data, user);
+    requireRolePermission_(user, 'instructor_manage'); return changeInstructor_(decodeURIComponent(instructorRoute[1]).toUpperCase(), data, user);
   }
   if (route.startsWith('/api/member/')) {
     requireLeader_(user);
@@ -148,10 +151,10 @@ function dispatch_(route, method, params, data, user) {
   }
   if (route === '/api/watch-command/current-user' && method === 'GET') {
     requireApproved_(user);
-    return { callsign: user.callsign, name: user.name };
+    return { callsign: user.callsign, name: user.name, permissions: user.permissions || {} };
   }
   if (route === '/api/watch-command/members' && method === 'GET') {
-    requireApproved_(user);
+    requireRolePermission_(user, 'watch_command_roster');
     return watchMemberDirectory_();
   }
   if (route.startsWith('/api/watch-command/member/') && method === 'GET') {
@@ -162,11 +165,11 @@ function dispatch_(route, method, params, data, user) {
     return member;
   }
   if (route === '/api/watch-command' && method === 'GET') {
-    requireApproved_(user);
+    requireRolePermission_(user, 'watch_command_view');
     return listWatchLogs_();
   }
   if (route === '/api/watch-command' && method === 'POST') {
-    requireApproved_(user);
+    requireRolePermission_(user, 'watch_command_edit');
     return saveWatchLog_(data, user);
   }
   throw new Error('This API operation has not yet been migrated to Apps Script: ' + route);
@@ -226,6 +229,7 @@ function requireD1BridgeUser_(bridgeToken, workerSecret) {
     callsign: callsign,
     status: status,
     role: role,
+    permissions: claims.permissions && typeof claims.permissions === 'object' ? claims.permissions : {},
     _d1Bridge: true,
     bridge_expires_at: expiresAt
   };
@@ -733,6 +737,17 @@ function requireAdmin_(user) {
   if (!isAdmin_(user)) throw new Error('Only Commanders can perform this action.');
 }
 
+function requireRolePermission_(user, permission) {
+  requireApproved_(user);
+  if (isAdmin_(user)) return;
+  if (user._d1Bridge) {
+    if (user.permissions && user.permissions[permission] === true) return;
+    throw new Error('Your role does not have permission for this action.');
+  }
+  if (String(user.role || '').toLowerCase() === 'leader' && ['members_view','eligible_view','profile_view','logs_view','training_view','training_fort_manage','training_hert_manage','training_hours_view','training_hours_manage','notes_manage','promotion_manage','callsign_manage','sync_view','sync_manage'].includes(permission)) return;
+  throw new Error('This LVFR account is not authorized for this action.');
+}
+
 function requireCommand_(user) {
   requireApproved_(user);
   if (!isCommand_(user)) {
@@ -743,7 +758,10 @@ function requireCommand_(user) {
 function requireTrainingPermission_(training, user) {
   requireApproved_(user);
   const required = String(training || '').toLowerCase() === 'hert' ? 'HERT' : 'FORT';
-  if (isAdmin_(user) || instructorTypes_(user).includes(required)) return;
+  const capability = required === 'HERT' ? 'training_hert_manage' : 'training_fort_manage';
+  if (isAdmin_(user)) return;
+  if (user._d1Bridge && (!user.permissions || user.permissions[capability] !== true)) throw new Error('Your role does not have permission for this action.');
+  if (instructorTypes_(user).includes(required)) return;
   throw new Error(required + ' Instructor status is required for this training.');
 }
 
@@ -977,9 +995,18 @@ function hertCertified_(name) {
 }
 
 function clearHertNameIfUnqualified_(sheet, row) {
-  const certified = isGreen_(sheet.getRange(row, 4).getBackground());
-  const instructor = isGreen_(sheet.getRange(row, 6).getBackground());
-  if (!certified && !instructor) sheet.getRange(row, 2).clearContent();
+  const name = String(sheet.getRange(row, 2).getDisplayValue() || '').trim().toLowerCase();
+  if (!name) return;
+  const count = Math.max(0, sheet.getLastRow() - 1);
+  if (!count) return;
+  const names = sheet.getRange(2, 2, count, 1).getDisplayValues();
+  names.forEach((values, index) => {
+    if (String(values[0] || '').trim().toLowerCase() !== name) return;
+    const currentRow = index + 2;
+    const certified = isGreen_(sheet.getRange(currentRow, 4).getBackground());
+    const instructor = isGreen_(sheet.getRange(currentRow, 6).getBackground());
+    if (!certified && !instructor) sheet.getRange(currentRow, 2).clearContent();
+  });
 }
 
 function hertDirectory_(spreadsheet) {
@@ -992,7 +1019,7 @@ function hertDirectory_(spreadsheet) {
   const colors = sheet.getRange(2, 2, count, 3).getBackgrounds();
   rows.forEach((row, index) => {
     const name = String(row[0] || '').trim();
-    if (name && hasColor_(colors[index][2])) map.set(name.toLowerCase(), true);
+    if (name && isGreen_(colors[index][2])) map.set(name.toLowerCase(), true);
   });
   return map;
 }
@@ -1313,7 +1340,7 @@ function memberLogs_(kind) {
 
 function invalidateMemberLogsCache_() {
   CacheService.getScriptCache().removeAll([
-    'member-logs:v1:promotion', 'member-logs:v1:callsign', 'member-logs:v1:training',
+    'member-logs:v1:promotion', 'member-logs:v1:callsign', 'member-logs:v1:training', 'member-logs:v1:training_time',
     'member-logs:v1:exam', 'member-logs:v1:note', 'member-logs:v1:activity',
     'member-logs:v1:instructor', 'member-logs:v1:termination'
   ]);
@@ -1327,11 +1354,19 @@ function readMemberLogs_(kind) {
   const lastRow = sheet.getLastRow();
   const rowCount = Math.min(Math.max(0, lastRow - 1), 2000);
   const rows = rowCount ? sheet.getRange(lastRow - rowCount + 1, 1, rowCount, APP_LOG_HEADERS.length).getDisplayValues() : [];
-  const aliases = { promotion: ['promotion'], callsign: ['callsign'], training: ['training'], exam: ['exam'], note: ['note'], activity: ['activity'], instructor: ['instructor'], termination: ['termination'] };
+  const aliases = { promotion: ['promotion'], callsign: ['callsign'], training: ['training'], training_time: ['training_time'], exam: ['exam'], note: ['note'], activity: ['activity'], instructor: ['instructor'], termination: ['termination'] };
   const allowed = aliases[kind] || [];
   const current = rows.filter(row => allowed.includes(String(row[1]).toLowerCase())).map(row => {
     const record = Object.fromEntries(APP_LOG_HEADERS.map((key, index) => [key, row[index]]));
     if (kind === 'training') record.training_name = record.details;
+    if (kind === 'training_time') {
+      record.training_name = 'Training Hours';
+      try {
+        const timeChange = JSON.parse(record.details || '{}');
+        record.previous_time = timeChange.previous_time || '';
+        record.new_time = timeChange.new_time || '';
+      } catch (ignored) { record.previous_time = ''; record.new_time = record.details || ''; }
+    }
     if (kind === 'exam') record.exam_name = record.details;
     if (kind === 'note') record.note = record.details;
     if (kind === 'activity') {
@@ -1581,6 +1616,83 @@ function findOrCreateNamedSheetRow_(sheet, nameColumn, name, create) {
   return maxRows + 1;
 }
 
+function findNamedSheetRows_(sheet, nameColumn, name) {
+  const count = Math.max(0, sheet.getLastRow() - 1);
+  if (!count) return [];
+  const normalizedName = String(name || '').trim().toLowerCase();
+  return sheet.getRange(2, nameColumn, count, 1).getDisplayValues()
+    .map((row, index) => String(row[0] || '').trim().toLowerCase() === normalizedName ? index + 2 : 0)
+    .filter(Boolean);
+}
+
+function trainingHoursSheet_() {
+  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
+  const sheet = spreadsheet.getSheetByName('Training Hours');
+  if (!sheet) throw new Error('Training Hours sheet was not found in the roster spreadsheet.');
+  return sheet;
+}
+
+function listTrainingHours_() {
+  const sheet = trainingHoursSheet_();
+  const count = Math.max(0, sheet.getLastRow() - 1);
+  if (!count) return [];
+  const values = sheet.getRange(2, 2, count, 5).getDisplayValues();
+  return values.map((row, index) => ({ name: String(row[0] || '').trim(), date: String(row[2] || ''), time: String(row[4] || ''), row: index + 2 }))
+    .filter(record => record.name)
+    .reverse();
+}
+
+function changeTrainingHours_(data, user) {
+  const action = String(data.action || '').trim().toLowerCase();
+  let name = String(data.name || '').trim();
+  let callsign = String(data.callsign || '').trim().toUpperCase();
+  if (action === 'add') {
+    const member = memberByCallsign_(callsign);
+    name = member.name;
+  } else if (callsign) {
+    const member = memberByCallsign_(callsign);
+    name = member.name;
+  }
+  const sheet = trainingHoursSheet_();
+  const now = new Date();
+  const date = Utilities.formatDate(now, Session.getScriptTimeZone(), 'MM/dd/yyyy');
+  const matching = name ? findOrCreateNamedSheetRow_(sheet, 2, name, action === 'add') : 0;
+  let row = matching;
+  let previousTime = '';
+  let newTime = '';
+  if (action === 'add') {
+    if (!name) throw new Error('Choose a member to add.');
+    if (matching && String(sheet.getRange(matching, 2).getDisplayValue() || '').trim()) throw new Error('This member is already in Training Hours.');
+    newTime = String(data.time || '').trim();
+    if (!newTime) throw new Error('Enter a training time.');
+    sheet.getRange(row, 2).setValue(name);
+    sheet.getRange(row, 4).setValue(now);
+    sheet.getRange(row, 4).setNumberFormat('MM/dd/yyyy');
+    sheet.getRange(row, 6).setValue(newTime);
+  } else if (action === 'remove') {
+    if (!matching) throw new Error('This member is not in Training Hours.');
+    previousTime = String(sheet.getRange(row, 6).getDisplayValue() || '');
+    sheet.getRange(row, 2).clearContent();
+    sheet.getRange(row, 4).clearContent();
+    sheet.getRange(row, 6).clearContent();
+  } else if (action === 'time') {
+    if (!matching) throw new Error('This member is not in Training Hours.');
+    previousTime = String(sheet.getRange(row, 6).getDisplayValue() || '');
+    newTime = String(data.time || '').trim();
+    if (!newTime) throw new Error('Enter a training time.');
+    if (previousTime === newTime) return { ok: true, changed: false, message: 'Time is already set.' };
+    sheet.getRange(row, 4).setValue(now);
+    sheet.getRange(row, 4).setNumberFormat('MM/dd/yyyy');
+    sheet.getRange(row, 6).setValue(newTime);
+  } else {
+    throw new Error('Choose Add, Remove, or Time.');
+  }
+  appendAppLog_({ kind: 'training_time', log_date: now.toISOString(), callsign, member_name: name,
+    action: action === 'time' ? 'Time Changed' : action === 'add' ? 'Added' : 'Removed',
+    details: JSON.stringify({ previous_time: previousTime, new_time: action === 'remove' ? '' : newTime }), changed_by: actorName_(user) });
+  return { ok: true, changed: true, row, message: 'Training Hours updated.' };
+}
+
 function changeTraining_(data, user) {
   const member = memberByCallsign_(data.callsign);
   const training = String(data.training || '').trim();
@@ -1591,7 +1703,7 @@ function changeTraining_(data, user) {
     const row = findOrCreateNamedSheetRow_(sheet, 2, member.name, !remove);
     if (!row) return { ok: false, changed: false, status: 'already_removed', message: 'Training already removed' };
     if (remove) {
-      sheet.getRange(row, 4).clearContent().setBackground('#ffffff');
+      findNamedSheetRows_(sheet, 2, member.name).forEach(currentRow => sheet.getRange(currentRow, 4).clearContent().setBackground('#ffffff'));
       clearHertNameIfUnqualified_(sheet, row);
     } else {
       if (String(sheet.getRange(row, 2).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, 2).setValue(member.name);
@@ -1637,13 +1749,15 @@ function changeInstructor_(callsign, data, user) {
   if (!row) return { ok: true, changed: false, assigned, instructor_type: type, status: 'unchanged' };
   if (!assigned) {
     if (type === 'HERT') {
-      sheet.getRange(row, statusColumn).clearContent().setBackground('#ffffff');
+      findNamedSheetRows_(sheet, nameColumn, member.name).forEach(currentRow => sheet.getRange(currentRow, statusColumn).clearContent().setBackground('#ffffff'));
       clearHertNameIfUnqualified_(sheet, row);
     }
     else {
-      sheet.getRange(row, nameColumn).clearContent();
-      sheet.getRange(row, statusColumn).clearContent().setBackground('#ffffff');
-      sheet.getRange(row, 4).clearContent();
+      findNamedSheetRows_(sheet, nameColumn, member.name).forEach(currentRow => {
+        sheet.getRange(currentRow, nameColumn).clearContent();
+        sheet.getRange(currentRow, statusColumn).clearContent().setBackground('#ffffff');
+        sheet.getRange(currentRow, 4).clearContent();
+      });
     }
     CacheService.getScriptCache().remove('instructor-directory:v1');
     appendAppLog_({ kind: 'instructor', callsign: member.callsign, member_name: member.name, action: type + ' Instructor Removed', details: type, changed_by: actorName_(user) });

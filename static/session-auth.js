@@ -6,14 +6,9 @@
   const nativeFetch = window.fetch.bind(window);
   const apiPrefix = /^(?:\/api\/|\/auth\/)/;
 
-  const cachedApiRoute = pathname => pathname === '/api/config'
-    || pathname === '/api/members'
-    || pathname === '/api/eligible'
-    || pathname === '/api/inactive'
-    || pathname === '/api/account/profile'
-    || pathname.startsWith('/api/member/')
-    || pathname.startsWith('/api/members-log')
-    || ['/api/promotions', '/api/training-log', '/api/exam-log', '/api/termination-log', '/api/instructors', '/api/watch-command/members'].includes(pathname);
+  // Permission changes must take effect on the next request. Keep only the
+  // static client configuration cacheable; protected records stay server-authoritative.
+  const cachedApiRoute = pathname => pathname === '/api/config';
   const readApiCacheIndex = () => {
     try { return JSON.parse(sessionStorage.getItem(API_CACHE_INDEX) || '[]'); }
     catch { return []; }

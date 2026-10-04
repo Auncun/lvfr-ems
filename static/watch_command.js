@@ -2275,13 +2275,24 @@ document.querySelector('#watchLogout').addEventListener('click', () => {
 
 request('/api/watch-command/current-user')
   .then(user => {
+    const permissions = user.permissions || {};
+    if (permissions.watch_command_view !== true) {
+      location.replace(permissions.portal_access === true ? '/portal' : '/login');
+      return;
+    }
     loggedInCommander = {
       callsign: String(user.callsign || '').trim().toUpperCase(),
       name: String(user.name || '').trim(),
     };
+    if (permissions.watch_command_edit !== true) {
+      document.querySelectorAll('#watchForm input, #watchForm select, #watchForm textarea').forEach(control => { control.disabled = true; });
+      document.querySelectorAll('#watchForm button:not(#copyCurrentWatch)').forEach(button => { button.disabled = true; });
+    }
+    if (permissions.watch_command_roster !== true) {
+      document.querySelectorAll('[data-watch-roster], #memberDirectory, #memberLookup, #initialMemberLookup').forEach(element => { element.hidden = true; });
+    }
     applyLoggedInCommander();
+    loadMemberDirectory();
+    loadHistory();
   })
   .catch(error => setMessage(quickMessage, `Could not load account name: ${error.message}`, 'error'));
-
-loadMemberDirectory();
-loadHistory();

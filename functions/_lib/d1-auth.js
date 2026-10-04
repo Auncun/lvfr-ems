@@ -1,6 +1,48 @@
 const enc = new TextEncoder();
 const json = (body, status = 200, headers = {}) => Response.json(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
 const nowSeconds = () => Math.floor(Date.now() / 1000);
+const ROLE_PERMISSION_KEYS = ["portal_access","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","profile_view","inactive_view","logs_view","training_view","training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage"];
+const DEFAULT_ROLE_PERMISSIONS = {
+  member: { portal_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:false,eligible_view:false,profile_view:false,inactive_view:false,logs_view:false,training_view:false,training_fort_manage:false,training_hert_manage:false,training_hours_view:false,training_hours_manage:false,statistics_view:false,notes_manage:false,promotion_manage:false,callsign_manage:false,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:false,sync_manage:false },
+  leader: { portal_access:true,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true }
+};
+async function rolePermissions(db, role) {
+  const normalized=String(role||"").toLowerCase();
+  const base=DEFAULT_ROLE_PERMISSIONS[normalized]||{};
+  if(!Object.keys(base).length) return Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,true]));
+  const row=await db.prepare("SELECT permissions_json FROM role_permissions WHERE role=?").bind(normalized).first();
+  let saved={}; try { saved=JSON.parse(row?.permissions_json||"{}"); } catch {}
+  return Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,typeof saved[key]==="boolean"?saved[key]:Boolean(base[key])]));
+}
+function permissionForRequest(route, method, data={}) {
+  if(route==="/api/members"&&method==="GET") return ["members_view","training_view","statistics_view"];
+  if(route==="/api/eligible"&&method==="GET") return "eligible_view";
+  if(route==="/api/inactive"&&method==="GET") return "inactive_view";
+  if(route==="/api/members-log"&&method==="GET") return "logs_view";
+  if(["/api/promotions","/api/training-log","/api/exam-log","/api/termination-log"].includes(route)&&method==="GET") return "logs_view";
+  if(route==="/api/training-hours") return method==="GET"?"training_hours_view":"training_hours_manage";
+  if(route==="/api/instructors"&&method==="GET") return "training_view";
+  if(route==="/api/statistics"&&method==="GET") return "statistics_view";
+  if(route==="/api/sync-status"&&method==="GET") return "sync_view";
+  if(route==="/api/sync"&&method==="POST") return "sync_manage";
+  if(route==="/api/do-not-promote"&&method==="GET") return "do_not_promote_view";
+  if(route==="/api/do-not-promote"&&method==="POST") return "do_not_promote_manage";
+  if(route==="/api/member/instructor"||/^\/api\/member\/[^/]+\/instructor$/.test(route)) return "instructor_manage";
+  if(route==="/api/account/profile"&&method==="GET") return "profile_view";
+  if(route==="/api/watch-command/current-user") return null;
+  if(route==="/api/watch-command/members"&&method==="GET") return "watch_command_roster";
+  if(route.startsWith("/api/watch-command/member/")&&method==="GET") return "watch_command_roster";
+  if(route==="/api/watch-command") return method==="GET"?"watch_command_view":"watch_command_edit";
+  if(route.startsWith("/api/member/")&&method==="GET") return "profile_view";
+  if(route==="/api/training"&&method==="POST") return String(data.training||"").toLowerCase()==="hert"?"training_hert_manage":"training_fort_manage";
+  const writes={"/api/note":"notes_manage","/api/promote":"promotion_manage","/api/change-callsign":"callsign_manage","/api/activity":"activity_manage","/api/exam":"exam_manage","/api/date":"rank_date_manage","/api/force-promote":"rank_manage","/api/demote":"rank_manage","/api/change-rank":"rank_manage","/api/terminate":"termination_manage"};
+  return method==="POST"?writes[route]||null:null;
+}
+function requireRolePermission(user, permissions, key) {
+  if(!key || ["admin","commander"].includes(user.role)) return;
+  if(Array.isArray(key)?key.some(item=>permissions[item]):permissions[key]) return;
+  throw Object.assign(new Error("Your role does not have permission for this action."),{status:403});
+}
 const nameKey = value => String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
 const b64url = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const unb64url = text => Uint8Array.from(atob(String(text).replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
@@ -15,7 +57,7 @@ async function passwordHash(password, salt) {
   return b64url(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: unb64url(salt), iterations: 100000 }, material, 256));
 }
 async function signedClaims(account, secret) {
-  const claims = { sub: account.account_id, name: account.name, callsign: account.callsign, status: account.status, role: account.role, exp: nowSeconds() + 90 };
+  const claims = { sub: account.account_id, name: account.name, callsign: account.callsign, status: account.status, role: account.role, permissions: account.permissions || {}, exp: nowSeconds() + 90 };
   const body = b64url(enc.encode(JSON.stringify(claims)));
   return `d1v1.${body}.${await hmac(secret, `d1v1.${body}`)}`;
 }
@@ -276,10 +318,11 @@ async function publicUser(db, account) {
   const member = account.callsign
     ? await db.prepare("SELECT instructor_type FROM members WHERE upper(callsign)=upper(?)").bind(account.callsign).first()
     : null;
+  const permissions=await rolePermissions(db,account.role);
   return { account_id: account.account_id, id: account.account_id, name: account.name, callsign: account.callsign,
     role: account.role, status: account.status, is_admin: ["admin", "commander"].includes(account.role),
     is_command: ["admin", "commander"].includes(account.role) || /^(E|C|DIV|B|CHIEF|COM)-/.test(account.callsign),
-    instructor_type: String(member?.instructor_type || "") };
+    instructor_type: String(member?.instructor_type || ""), permissions };
 }
 async function login(db, data) {
   const name = nameKey(data.username || data.name), password = String(data.password || "");
@@ -427,12 +470,29 @@ export async function handleD1(context) {
     if(!token) return json({detail:"No session token or login cookie reached the API."},401);
     if(!user) return json({detail:"Session token was not found or has expired in D1."},401);
     if(user.status!=="approved") return json({detail:"This D1 account is not approved."},401);
+    user.permissions=await rolePermissions(db,user.role);
+    if(route==="/api/role-permissions"&&method==="GET") {
+      await requireAdmin(db,token);
+      const profiles={member:await rolePermissions(db,"member"),leader:await rolePermissions(db,"leader")};
+      return json({profiles,keys:ROLE_PERMISSION_KEYS});
+    }
+    if(route==="/api/role-permissions"&&method==="POST") {
+      const actor=await requireAdmin(db,token), role=String(data.role||"").toLowerCase();
+      if(!["member","leader"].includes(role)) throw new Error("Choose Member or Leader permissions.");
+      const incoming=data.permissions&&typeof data.permissions==="object"?data.permissions:{};
+      const permissions=Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,Boolean(incoming[key])]));
+      const now=new Date().toISOString();
+      await db.prepare(`INSERT INTO role_permissions(role,permissions_json,updated_at,updated_by) VALUES(?,?,?,?)
+        ON CONFLICT(role) DO UPDATE SET permissions_json=excluded.permissions_json,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
+        .bind(role,JSON.stringify(permissions),now,actor.name).run();
+      await appendAudit(db,{account_id:"role:"+role,name:role,callsign:""},"Updated role permissions",actor.name);
+      return json({ok:true,role,permissions,updated_at:now,updated_by:actor.name});
+    }
+    requireRolePermission(user,user.permissions,permissionForRequest(route,method,data));
     if(route==="/api/members" && method==="GET") {
-      if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can view the roster."),{status:403});
       return json(await readMembers(db,url.searchParams.get("search")||"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET)));
     }
     if(route==="/api/sync-status" && method==="GET") {
-      if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can view roster status."),{status:403});
       const snapshot=await db.prepare("SELECT COUNT(*) AS members,COALESCE(MAX(synced_at),'') AS synced_at FROM members").first();
       return json({synced_at:snapshot?.synced_at||null,members:Number(snapshot?.members||0),sync_running:false,sync_last_source:"",sync_last_success:snapshot?.synced_at||null,sync_error:null,auto_sync_enabled:false,auto_sync_interval_seconds:0,google_write:{running:false,pending:0,last_error:null,last_success:snapshot?.synced_at||null},archive:{enabled:true,status:"idle",pending:0,last_error:null,last_success:snapshot?.synced_at||null}});
     }
@@ -443,7 +503,6 @@ export async function handleD1(context) {
       return json({ranks:["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer"],available_callsigns:available,trainings:["Basic Firefighting","Advanced Firefighting","Hert"],activities:["Active","Semi Active","Inactive","Can Be Terminated"],exams:["Supervisor Exam"]});
     }
     if(route==="/api/eligible" && method==="GET") {
-      if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can view eligibility."),{status:403});
       const rows=await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
       const admin=["admin","commander"].includes(user.role);
       return json(rows.reduce((eligibleRows,row)=>{
@@ -454,9 +513,9 @@ export async function handleD1(context) {
         return eligibleRows;
       },[]));
     }
-    if(route==="/api/inactive" && method==="GET") { await requireAdmin(db,token); return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.activity==="Can Be Terminated").map(({callsign,name})=>({callsign,name}))); }
-    if(route==="/api/do-not-promote" && method==="GET") { await requireAdmin(db,token); return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.do_not_promote).map(({callsign,name})=>({callsign,name,added_at:"",added_by:""}))); }
-    if(route==="/api/instructors" && method==="GET") { await requireAdmin(db,token); return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.instructor_type).map(({name,instructor_type})=>({name,type:instructor_type,date:""}))); }
+    if(route==="/api/inactive" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.activity==="Can Be Terminated").map(({callsign,name})=>({callsign,name})));
+    if(route==="/api/do-not-promote" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.do_not_promote).map(({callsign,name})=>({callsign,name,added_at:"",added_by:""})));
+    if(route==="/api/instructors" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.instructor_type).map(({name,instructor_type})=>({name,type:instructor_type,date:""})));
     const memberRoute=route.match(/^\/api\/member\/([^/]+)$/);
     if(route==="/api/account/profile" && method==="GET") {
       const rows=await readMembers(db,user.callsign,env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
@@ -469,7 +528,6 @@ export async function handleD1(context) {
       return json(member);
     }
     if(memberRoute && method==="GET") {
-      if(!["admin","commander","leader"].includes(user.role)) throw Object.assign(new Error("Only a Supervisor or Commander can view member profiles."),{status:403});
       const rows=await readMembers(db,decodeURIComponent(memberRoute[1]),env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
       const member=rows.find(row=>row.callsign.toUpperCase()===decodeURIComponent(memberRoute[1]).trim().toUpperCase());
       if(!member) return json({detail:"Member not found."},404);
@@ -502,16 +560,13 @@ export async function handleD1(context) {
     const instructorWrite=route.match(/^\/api\/member\/([^/]+)\/instructor$/);
     if(method==="POST" && (MEMBER_WRITE_ROUTES.has(route)||instructorWrite)) {
       const admin=["admin","commander"].includes(user.role), leader=admin||user.role==="leader";
-      if(["/api/activity","/api/date","/api/force-promote","/api/demote","/api/change-rank","/api/terminate","/api/exam"].includes(route)&&!admin) throw Object.assign(new Error("This account is not authorized for that roster change."),{status:403});
-      if(["/api/note","/api/promote","/api/change-callsign"].includes(route)&&!leader) throw Object.assign(new Error("This account is not authorized for EMS Operations."),{status:403});
-      if(route==="/api/do-not-promote"&&!admin) throw Object.assign(new Error("Only Commanders can perform this action."),{status:403});
-      if(instructorWrite&&!admin) throw Object.assign(new Error("Only Commanders can perform this action."),{status:403});
+      if(instructorWrite&&!admin&&!user.permissions.instructor_manage) throw Object.assign(new Error("This account is not authorized to manage instructor status."),{status:403});
       if(route==="/api/training"&&!admin) {
         const needed=String(data.training||"").toLowerCase()==="hert"?"HERT":"FORT";
         const instructor=await db.prepare("SELECT instructor_type FROM members WHERE upper(callsign)=upper(?)").bind(user.callsign).first();
         if(!String(instructor?.instructor_type||"").toUpperCase().split(/\s*\/\s*/).includes(needed)) throw Object.assign(new Error(needed+" Instructor status is required for this training."),{status:403});
       }
-      if(route==="/api/exam"&&!admin&&!/^(E|C|DIV|B|CHIEF|COM)-/.test(user.callsign)) throw Object.assign(new Error("Command rank is required for this action."),{status:403});
+      if(route==="/api/exam"&&!admin&&!user.permissions.exam_manage&&!/^(E|C|DIV|B|CHIEF|COM)-/.test(user.callsign)) throw Object.assign(new Error("Command rank or Exam permission is required for this action."),{status:403});
       const mutationData={...data};
       if(instructorWrite) mutationData.callsign=decodeURIComponent(instructorWrite[1]).toUpperCase();
       const result=await applyRosterMutationD1(db,route,mutationData,user);

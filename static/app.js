@@ -980,6 +980,7 @@ async function loadMembers(silent = false, forceFresh = false) {
         }
         renderTrainingDirectory(loadedRows);
         renderTrainingActionChoices();
+        renderTrainingHoursAddChoices();
         const profileCallsign = String(activeProfileMember?.callsign || "").trim().toUpperCase();
         if (profileCallsign && !$("#modal")?.classList.contains("hidden")) {
             const latestProfileRow = loadedRows.find(member => String(member.callsign || "").trim().toUpperCase() === profileCallsign);
@@ -1101,13 +1102,13 @@ async function loadMembers(silent = false, forceFresh = false) {
 
                                     <td>
 
-                                        <button
+                                        ${currentUserHasPermission("profile_view") ? `<button
                                             type="button"
                                             data-action="profile"
                                             data-callsign="${esc(m.callsign)}"
                                         >
                                             View
-                                        </button>
+                                        </button>` : ""}
 
                                     </td>
 
@@ -1143,7 +1144,8 @@ function renderTrainingDirectory(members = allMembersCache || []) {
     const hertFilter = $("#hertTrainingFilter")?.value || "all";
     const fortFilter = $("#fortTrainingFilter")?.value || "all";
     const headerActions = (group, field, skill = "") => {
-        const allowed = field === "instructor" ? currentUserIsAdmin : currentUserIsAdmin || currentInstructorTypes.includes(group);
+        const capability = group === "HERT" ? "training_hert_manage" : "training_fort_manage";
+        const allowed = field === "instructor" ? currentUserIsAdmin : currentUserIsAdmin || (currentUserPermissions[capability] === true && currentInstructorTypes.includes(group));
         return allowed ? `<div class="training-header-actions"><button type="button" class="primary" data-training-open data-group="${group}" data-field="${field}" data-skill="${skill}" data-remove="false">Add</button><button type="button" class="danger" data-training-open data-group="${group}" data-field="${field}" data-skill="${skill}" data-remove="true">Remove</button></div>` : "";
     };
     const render = (query, type) => {
@@ -1181,6 +1183,7 @@ $("#hertTrainingFilter")?.addEventListener("change", () => renderTrainingDirecto
 document.querySelectorAll("[data-training-view]").forEach(button => button.addEventListener("click", () => {
     document.querySelectorAll("[data-training-view]").forEach(item => item.classList.toggle("active", item === button));
     document.querySelectorAll("[data-training-panel]").forEach(panel => { panel.hidden = panel.dataset.trainingPanel !== button.dataset.trainingView; });
+    if (button.dataset.trainingView === "HOURS") void loadTrainingHours();
 }));
 const trainingActionDialog = $("#trainingActionDialog"), trainingActionChoices = $("#trainingActionChoices"), trainingActionSearch = $("#trainingActionSearch");
 let activeTrainingAction = null;
@@ -1232,6 +1235,73 @@ document.addEventListener("click", async event => {
         }
         trainingActionDialog?.classList.add("hidden");
     } catch (error) { if (!isBackgroundPending(error)) toast(error.message); }
+    finally { button.disabled = false; }
+});
+
+let trainingHoursRows = [];
+async function loadTrainingHours() {
+    const table = $("#trainingHoursTable");
+    if (table) table.innerHTML = '<div class="empty">Loading Training Hours…</div>';
+    try {
+        const result = await api("/api/training-hours");
+        trainingHoursRows = Array.isArray(result) ? result : [];
+        renderTrainingHours();
+    } catch (error) {
+        if (table) table.innerHTML = `<div class="empty">Failed to load Training Hours: ${esc(error.message)}</div>`;
+    }
+}
+function renderTrainingHours() {
+    const table = $("#trainingHoursTable");
+    if (!table) return;
+    const query = String($("#trainingHoursSearch")?.value || "").trim().toLocaleLowerCase();
+    const memberByName = new Map((allMembersCache || []).map(member => [String(member.name || "").trim().toLocaleLowerCase(), member]));
+    const rows = trainingHoursRows.filter(row => {
+        const member = memberByName.get(String(row.name || "").trim().toLocaleLowerCase());
+        return !query || `${row.name} ${member?.callsign || ""} ${row.date} ${row.time}`.toLocaleLowerCase().includes(query);
+    });
+    const canEdit = currentUserHasPermission("training_hours_manage");
+    table.innerHTML = rows.length ? `<table><thead><tr><th>Callsign</th><th>Member</th><th>Date</th><th>Time</th>${canEdit ? "<th>Remove</th>" : ""}</tr></thead><tbody>${rows.map(row => {
+        const member = memberByName.get(String(row.name || "").trim().toLocaleLowerCase());
+        const timeCell = canEdit ? `<div class="training-hours-time-edit"><input type="text" data-training-hours-time value="${esc(row.time)}" aria-label="Training time for ${esc(row.name)}"><button type="button" class="primary" data-training-hours-save data-name="${esc(row.name)}" data-callsign="${esc(member?.callsign || "")}">Save</button></div>` : esc(row.time);
+        return `<tr><td><strong>${esc(member?.callsign || "")}</strong></td><td>${esc(row.name)}</td><td>${esc(row.date)}</td><td>${timeCell}</td>${canEdit ? `<td><button type="button" class="danger" data-training-hours-remove data-name="${esc(row.name)}" data-callsign="${esc(member?.callsign || "")}">Remove</button></td>` : ""}</tr>`;
+    }).join("")}</tbody></table>` : '<div class="empty">No Training Hours members match this search.</div>';
+}
+function renderTrainingHoursAddChoices() {
+    const choices = $("#trainingHoursAddChoices");
+    if (!choices) return;
+    const query = String($("#trainingHoursAddSearch")?.value || "").trim().toLocaleLowerCase();
+    const present = new Set(trainingHoursRows.map(row => String(row.name || "").trim().toLocaleLowerCase()));
+    const members = (allMembersCache || []).filter(member => !present.has(String(member.name || "").trim().toLocaleLowerCase()) && (!query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query)));
+    choices.innerHTML = members.length ? members.map(member => `<div class="training-action-choice"><span>${esc(member.name)} / ${esc(member.callsign)}</span><label>Time <input type="text" data-training-hours-new-time placeholder="Enter time"></label><button type="button" class="primary" data-training-hours-add data-name="${esc(member.name)}" data-callsign="${esc(member.callsign)}">Add</button></div>`).join("") : '<div class="empty">No members match this search.</div>';
+}
+$("#trainingHoursSearch")?.addEventListener("input", renderTrainingHours);
+$("#trainingHoursAddSearch")?.addEventListener("input", renderTrainingHoursAddChoices);
+$("#openTrainingHoursAdd")?.addEventListener("click", () => {
+    if (!currentUserHasPermission("training_hours_manage")) return;
+    if (!allMembersCache?.length) void loadMembers(true);
+    renderTrainingHoursAddChoices();
+    $("#trainingHoursAddDialog")?.classList.remove("hidden");
+    $("#trainingHoursAddSearch")?.focus();
+});
+$("#closeTrainingHoursAdd")?.addEventListener("click", () => $("#trainingHoursAddDialog")?.classList.add("hidden"));
+$("#trainingHoursAddDialog")?.addEventListener("click", event => { if (event.target.id === "trainingHoursAddDialog") event.currentTarget.classList.add("hidden"); });
+document.addEventListener("click", async event => {
+    const add = event.target.closest("[data-training-hours-add]");
+    const save = event.target.closest("[data-training-hours-save]");
+    const remove = event.target.closest("[data-training-hours-remove]");
+    const button = add || save || remove;
+    if (!button) return;
+    button.disabled = true;
+    const row = button.closest("tr, .training-action-choice");
+    const time = add ? row?.querySelector("[data-training-hours-new-time]")?.value : save ? row?.querySelector("[data-training-hours-time]")?.value : "";
+    const data = { action: add ? "add" : save ? "time" : "remove", name: button.dataset.name, callsign: button.dataset.callsign, time };
+    try {
+        await api("/api/training-hours", { method: "POST", body: JSON.stringify(data) });
+        await loadTrainingHours();
+        renderTrainingHoursAddChoices();
+        if (add) $("#trainingHoursAddDialog")?.classList.add("hidden");
+        toast("Training Hours updated.");
+    } catch (error) { toast(error.message); }
     finally { button.disabled = false; }
 });
 
@@ -1547,6 +1617,79 @@ let instructorRows = [];
 let leaderAuditRows = [];
 let currentLeaderView = "all";
 let onlineMembers = [];
+
+let rolePermissionProfiles = null;
+const ROLE_PERMISSION_CATALOG = [
+    ["portal_access", "EMS portal", "Allow a Member to open EMS Operations."],
+    ["watch_command_view", "Watch Command: view", "Open Watch Command logs and activity."],
+    ["watch_command_edit", "Watch Command: edit", "Create and update Watch Command records."],
+    ["watch_command_roster", "Watch Command: roster lookup", "Search member names and callsigns."],
+    ["members_view", "Members list", "View the roster and member list."],
+    ["eligible_view", "Eligible list", "View members eligible for promotion."],
+    ["profile_view", "View / Manage profiles", "Open member View / Manage details."],
+    ["inactive_view", "Can Be Terminated list", "View members marked for termination."],
+    ["logs_view", "Members Log", "View member operation logs."],
+    ["training_view", "Training lists", "Open FORT, HERT, and instructor directories."],
+    ["training_fort_manage", "Manage FORT training", "Change Basic and Advanced FORT status (FORT Instructor status is also required)."],
+    ["training_hert_manage", "Manage HERT training", "Change HERT status (HERT Instructor status is also required)."],
+    ["training_hours_view", "Training Hours: view", "View the Training Hours list."],
+    ["training_hours_manage", "Training Hours: edit", "Add, remove, and change Training Hours records."],
+    ["statistics_view", "Statistics", "View roster statistics."],
+    ["notes_manage", "Member notes", "Add, edit, or remove member notes."],
+    ["promotion_manage", "Promotion", "Promote members using available promotion rules."],
+    ["callsign_manage", "Callsign changes", "Change a member callsign."],
+    ["activity_manage", "Activity status", "Change member activity status."],
+    ["exam_manage", "Supervisor exam", "Add or remove exam status."],
+    ["rank_date_manage", "Rank date", "Change a member rank date."],
+    ["rank_manage", "Rank tools", "Force promote, demote, or change rank."],
+    ["termination_manage", "Termination", "Terminate a member account from the roster."],
+    ["do_not_promote_view", "Do not Promote: view", "View the Do not Promote list."],
+    ["do_not_promote_manage", "Do not Promote: edit", "Add or remove members from that list."],
+    ["instructor_manage", "Instructor assignments", "Assign or remove FORT and HERT Instructor status."],
+    ["sync_view", "Sync status", "View roster synchronization status."],
+    ["sync_manage", "Sync now", "Synchronize the roster with the source sheet."]
+];
+
+function renderRolePermissionProfiles() {
+    const panel = $("#rolePermissionsPanel");
+    if (!panel || !rolePermissionProfiles) return;
+    panel.innerHTML = ["member", "leader"].map(role => `
+        <section class="role-permission-card" data-permission-role="${role}">
+            <h3>${role === "member" ? "Member" : "Leader"}</h3>
+            <div class="role-permission-list">${ROLE_PERMISSION_CATALOG.map(([key,label,description]) => `
+                <label class="role-permission-item"><input type="checkbox" data-role-permission="${key}" ${rolePermissionProfiles[role]?.[key] ? "checked" : ""}><span>${esc(label)}<small>${esc(description)}</small></span></label>
+            `).join("")}</div>
+            <button type="button" class="primary" data-save-role-permissions="${role}">Save ${role === "member" ? "Member" : "Leader"} permissions</button>
+        </section>
+    `).join("");
+}
+
+async function loadRolePermissionProfiles() {
+    const panel = $("#rolePermissionsPanel");
+    if (panel) panel.innerHTML = '<div class="empty">Loading permissions…</div>';
+    try {
+        const result = await api("/api/role-permissions");
+        rolePermissionProfiles = result.profiles || {};
+        renderRolePermissionProfiles();
+    } catch (error) {
+        if (panel) panel.innerHTML = `<div class="empty">Could not load role permissions: ${esc(error.message)}</div>`;
+    }
+}
+
+document.addEventListener("click", async event => {
+    const button = event.target.closest("[data-save-role-permissions]");
+    if (!button) return;
+    const role = button.dataset.saveRolePermissions;
+    const card = button.closest("[data-permission-role]");
+    const permissions = Object.fromEntries(Array.from(card.querySelectorAll("[data-role-permission]")).map(input => [input.dataset.rolePermission, input.checked]));
+    button.disabled = true;
+    try {
+        await api("/api/role-permissions", { method: "POST", body: JSON.stringify({ role, permissions }) });
+        if (rolePermissionProfiles) rolePermissionProfiles[role] = permissions;
+        toast(`${role === "member" ? "Member" : "Leader"} permissions saved. Refresh pages to update visible controls.`);
+    } catch (error) { toast(error.message); }
+    finally { button.disabled = false; }
+});
 
 function setOnlineCount(value, people) {
     const count = Number(value || 0);
@@ -1922,11 +2065,13 @@ document.querySelectorAll(".leader-view-tab").forEach(button => {
         const views = {
             pending: $("#pendingLeadersView"),
             all: $("#allLeadersView"),
-            audit: $("#leaderAuditView")
+            audit: $("#leaderAuditView"),
+            permissions: $("#rolePermissionsView")
         };
         Object.entries(views).forEach(([name, view]) => {
             if (view) view.style.display = currentLeaderView === name ? "block" : "none";
         });
+        if (currentLeaderView === "permissions") void loadRolePermissionProfiles();
     });
 });
 
@@ -1984,7 +2129,7 @@ async function loadMembersLog(
     if (logContent) logContent.style.display = type === "instructor" ? "none" : "";
     if (instructorLog) instructorLog.style.display = type === "instructor" ? "" : "none";
 
-    document.querySelectorAll(".log-tab:not(.leader-view-tab)").forEach(button => {
+    document.querySelectorAll("#membersLog .log-tab:not(.leader-view-tab)").forEach(button => {
         button.classList.toggle("active", button.dataset.log === type);
     });
 
@@ -2183,7 +2328,7 @@ function renderMembersLog() {
             }
 
 
-            else if (currentLogType === "training") {
+            else if (["training", "training_time"].includes(currentLogType)) {
 
                 values = [
                     r.log_date,
@@ -2191,7 +2336,9 @@ function renderMembersLog() {
                     r.member_name,
                     r.training_name,
                     r.action,
-                    r.changed_by
+                    r.changed_by,
+                    r.previous_time,
+                    r.new_time
                 ];
 
             }
@@ -2505,6 +2652,14 @@ function renderMembersLog() {
     // EXAM LOG
     // ========================================================
 
+    if (currentLogType === "training_time") {
+        container.innerHTML = `<table><thead><tr><th>Date</th><th>Callsign</th><th>Member</th><th>Previous Time</th><th>New Time</th><th>Changed By</th></tr></thead><tbody>${rows.map(r => `
+            <tr><td>${esc(r.log_date)}</td><td>${esc(r.callsign)}</td><td>${esc(r.member_name)}</td><td>${esc(r.previous_time || "—")}</td><td>${esc(r.new_time || "—")}</td><td>${esc(r.changed_by)}</td></tr>
+        `).join("")}</tbody></table>`;
+        return;
+    }
+
+
     if (currentLogType === "exam") {
 
         container.innerHTML = `
@@ -2725,6 +2880,8 @@ let activeProfileMember = null;
 let profileRenderToken = 0;
 let currentUserIsAdmin = false;
 let currentUserCanFullSync = false;
+let currentUserPermissions = {};
+function currentUserHasPermission(key) { return currentUserIsAdmin || currentUserPermissions?.[key] === true; }
 let currentUserAccountId = String(window.lvfrCachedUser?.()?.account_id || window.lvfrCachedUser?.()?.id || "");
 let currentInstructorTypes = [];
 let currentUserCallsign = String(window.lvfrCachedUser?.()?.callsign || "").trim().toUpperCase();
@@ -2985,7 +3142,7 @@ async function profile(
                 <div class="actions">
 
 
-                    ${(currentUserIsAdmin && !m.do_not_promote || (m.eligible && String(m.rank || "").trim().toLowerCase() === "emt" && String(m.next_rank || "").trim().toLowerCase() === "aemt")) ? `<button
+                    ${currentUserHasPermission("promotion_manage") && (currentUserIsAdmin && !m.do_not_promote || (m.eligible && String(m.rank || "").trim().toLowerCase() === "emt" && String(m.next_rank || "").trim().toLowerCase() === "aemt")) ? `<button
                         type="button"
                         class="primary"
                         data-action="promote"
@@ -3002,13 +3159,13 @@ async function profile(
                     </button>` : ""}
 
 
-                    <button
+                    ${currentUserHasPermission("profile_view") ? `<button
                         type="button"
                         data-action="open-manage"
                         data-callsign="${esc(m.callsign)}"
                     >
                         Manage
-                    </button>
+                    </button>` : ""}
 
 
                 </div>
@@ -3066,20 +3223,6 @@ function openManage(cs) {
 
     profileRenderToken++;
 
-    if (!currentUserIsAdmin) {
-        $("#modalContent").innerHTML = `
-            <h2>Change callsign for ${esc(cs)}</h2>
-            <label>
-                New callsign
-                <input id="newcs" value="${esc(cs)}" placeholder="New callsign">
-            </label>
-            <button type="button" class="primary" data-action="change-callsign" data-callsign="${esc(cs)}">Change Callsign</button>
-        `;
-        const modal = $("#modal");
-        modal?.classList.remove("hidden");
-        return;
-    }
-
     const existingNote =
         activeProfileMember?.callsign === cs
             ? String(activeProfileMember.notes || "")
@@ -3104,7 +3247,7 @@ function openManage(cs) {
     const leadParamedicIndex = rankNames.findIndex(
         rank => String(rank).trim().toLowerCase() === "lead paramedic"
     );
-    const showRankDate = currentRankIndex < 0 || leadParamedicIndex < 0 || currentRankIndex > leadParamedicIndex;
+    const showRankDate = currentUserHasPermission("rank_date_manage") && (currentRankIndex < 0 || leadParamedicIndex < 0 || currentRankIndex > leadParamedicIndex);
 
     $("#modalContent").innerHTML = `
 
@@ -3145,7 +3288,7 @@ function openManage(cs) {
 
                 <!-- ACTIVITY -->
 
-                <label>
+                ${currentUserHasPermission("activity_manage") ? `<label>
 
                     Activity
 
@@ -3162,7 +3305,7 @@ function openManage(cs) {
 
                     </select>
 
-                </label>
+                </label>` : ""}
 
 
             </div>
@@ -3201,7 +3344,7 @@ function openManage(cs) {
 
                 <!-- RIGHT COLUMN : ACTIVITY -->
 
-                <div class="activity-actions">
+                <div class="activity-actions" ${currentUserHasPermission("activity_manage") ? "" : "hidden"}>
 
                     <button
                         type="button"
@@ -3223,7 +3366,7 @@ function openManage(cs) {
                  EXAM
                  ================================================= -->
 
-            ${currentUserIsCommand ? `
+            ${currentUserHasPermission("exam_manage") ? `
             <div class="form-row">
 
 
@@ -3289,7 +3432,7 @@ function openManage(cs) {
             ` : ""}
 
 
-            <hr>
+            ${currentUserHasPermission("notes_manage") ? `<hr>
 
 
             <!-- =================================================
@@ -3322,7 +3465,7 @@ function openManage(cs) {
                 data-action="note" data-callsign="${esc(cs)}"
             >
                 Save Note
-            </button>
+            </button>` : ""}
 
 
             ${showRankDate ? `
@@ -3356,21 +3499,21 @@ function openManage(cs) {
             <div class="actions">
 
 
-                <button
+                ${currentUserHasPermission("rank_manage") || currentUserHasPermission("callsign_manage") ? `<button
                     type="button"
                     data-action="rank-tools" data-callsign="${esc(cs)}"
                 >
                     Rank / Callsign Tools
-                </button>
+                </button>` : ""}
 
 
-                <button
+                ${currentUserHasPermission("termination_manage") ? `<button
                     type="button"
                     class="danger"
                     data-action="terminate" data-callsign="${esc(cs)}"
                 >
                     Terminate
-                </button>
+                </button>` : ""}
 
 
             </div>
@@ -3404,8 +3547,8 @@ async function setInstructor(cs, assigned) {
 
 function updateTrainingPermission() {
     const selected = String($("#training")?.value || "").trim().toLowerCase() === "hert" ? "HERT" : "FORT";
-    const permissionsKnown = currentInstructorTypes.length > 0;
-    const allowed = currentUserIsAdmin || !permissionsKnown || currentInstructorTypes.includes(selected);
+    const capability = selected === "HERT" ? "training_hert_manage" : "training_fort_manage";
+    const allowed = currentUserIsAdmin || (currentUserPermissions[capability] === true && currentInstructorTypes.includes(selected));
     const trainingField = $("#trainingField");
     if (trainingField) trainingField.style.display = "";
     ["#addTrainingButton", "#deleteTrainingButton"].forEach(selector => {
@@ -3429,7 +3572,8 @@ async function training(
 
     const trainingName = String($("#training")?.value || "").trim();
     const requiredType = trainingName.toLowerCase() === "hert" ? "HERT" : "FORT";
-    if (!currentUserIsAdmin && currentInstructorTypes.length && !currentInstructorTypes.includes(requiredType)) {
+    const capability = requiredType === "HERT" ? "training_hert_manage" : "training_fort_manage";
+    if (!currentUserIsAdmin && (!currentUserHasPermission(capability) || !currentInstructorTypes.includes(requiredType))) {
         toast(`Your account does not have ${requiredType} Instructor access.`);
         return;
     }
@@ -4459,7 +4603,7 @@ document
 // ============================================================
 
 document
-    .querySelectorAll(".log-tab:not(.leader-view-tab)")
+    .querySelectorAll("#membersLog .log-tab:not(.leader-view-tab)")
     .forEach(
         b => {
 
@@ -4843,10 +4987,10 @@ if (modal) {
 // ============================================================
 
 function canViewStatistics(user) {
-    return Boolean(user && (
-        user.is_admin || user.is_command ||
-        ["leader", "supervisor", "command", "commander"].includes(String(user.role || "").toLowerCase())
-    ));
+    if (!user) return false;
+    if (user.is_admin) return true;
+    if (user.permissions) return user.permissions.statistics_view === true;
+    return Boolean(user.is_command || ["leader", "supervisor", "command", "commander"].includes(String(user.role || "").toLowerCase()));
 }
 
 function canRunFullSync(user) {
@@ -4855,17 +4999,18 @@ function canRunFullSync(user) {
 
 function applyAccountUser(user) {
     window.lvfrCacheUser?.(user);
-    if (user.role === "member") {
+    currentUserIsAdmin = Boolean(user.is_admin);
+    currentUserPermissions = user.permissions || {};
+    if (user.role === "member" && !currentUserHasPermission("portal_access")) {
         location.replace("/watch-command");
         return;
     }
-    currentUserIsAdmin = Boolean(user.is_admin);
     currentUserCanFullSync = canRunFullSync(user);
     currentUserAccountId = String(user.account_id || user.id || "");
     currentUserCallsign = String(user.callsign || "").trim().toUpperCase();
     currentUserIsCommand = Boolean(user.is_command);
     const commandSyncPanel = $("#commandSyncPanel");
-    if (commandSyncPanel) commandSyncPanel.hidden = user.role === "member";
+    if (commandSyncPanel) commandSyncPanel.hidden = user.role === "member" && !currentUserHasPermission("portal_access");
     const fullSyncButton = $("#fullSyncBtn");
     if (fullSyncButton) fullSyncButton.hidden = !currentUserCanFullSync;
     currentInstructorTypes = String(user.instructor_type || "")
@@ -4883,11 +5028,25 @@ function applyAccountUser(user) {
     const inactiveTab = $("#inactiveTab");
     if (inactiveTab) inactiveTab.style.display = (user.is_admin || user.is_command) ? "" : "none";
     const terminationLogTab = $("#terminationLogTab");
-    if (terminationLogTab) terminationLogTab.style.display = user.is_admin ? "" : "none";
+    if (terminationLogTab) terminationLogTab.style.display = currentUserHasPermission("logs_view") ? "" : "none";
     const instructorLogTab = $("#instructorLogTab");
-    if (instructorLogTab) instructorLogTab.style.display = user.is_admin ? "" : "none";
+    if (instructorLogTab) instructorLogTab.style.display = currentUserHasPermission("logs_view") ? "" : "none";
     const statisticsTab = $("#statisticsTab");
     if (statisticsTab) statisticsTab.style.display = canViewStatistics(user) ? "" : "none";
+    const tabPermissions = { members: "members_view", eligible: "eligible_view", membersLog: "logs_view", trainingDirectory: "training_view", inactive: "inactive_view", statistics: "statistics_view" };
+    Object.entries(tabPermissions).forEach(([tab, permission]) => {
+        const button = document.querySelector(`.tab[data-tab="${tab}"]`);
+        if (button) button.style.display = currentUserHasPermission(permission) ? "" : "none";
+    });
+    const trainingHoursTab = document.querySelector('[data-training-view="HOURS"]');
+    if (trainingHoursTab) trainingHoursTab.style.display = currentUserHasPermission("training_hours_view") ? "" : "none";
+    const addTrainingHoursButton = $("#openTrainingHoursAdd");
+    if (addTrainingHoursButton) addTrainingHoursButton.style.display = currentUserHasPermission("training_hours_manage") ? "" : "none";
+    if (!currentUserHasPermission("members_view")) sessionStorage.removeItem("lvfr.roster.snapshot.v1");
+    if ($("#doNotPromoteTab")) $("#doNotPromoteTab").style.display = currentUserHasPermission("do_not_promote_view") ? "" : "none";
+    if (!document.querySelector(".tab.active") || document.querySelector(".tab.active").style.display === "none") {
+        [...document.querySelectorAll('.tab')].find(button => getComputedStyle(button).display !== "none")?.click();
+    }
     renderTrainingDirectory();
 }
 
@@ -4919,12 +5078,13 @@ function renderDoNotPromote() {
             <tr>
                 <td>${esc(member.callsign)}</td><td>${esc(member.name)}</td>
                 <td>${esc(member.added_at)}</td><td>${esc(member.added_by)}</td>
-                <td><button type="button" data-action="profile" data-callsign="${esc(member.callsign)}">View</button>
-                    <button type="button" class="danger" data-action="do-not-promote-remove" data-callsign="${esc(member.callsign)}">Remove</button></td>
+                <td>${currentUserHasPermission("profile_view") ? `<button type="button" data-action="profile" data-callsign="${esc(member.callsign)}">View</button>` : ""}
+                    ${currentUserHasPermission("do_not_promote_manage") ? `<button type="button" class="danger" data-action="do-not-promote-remove" data-callsign="${esc(member.callsign)}">Remove</button>` : ""}</td>
             </tr>`).join("")}</tbody></table>` : empty("The Do not Promote list is empty.");
 }
 
 async function setMemberPromotionBlock(callsign, blocked) {
+    if (!currentUserHasPermission("do_not_promote_manage")) return toast("You do not have permission to edit this list.");
     if (blocked && !confirm(`Add ${callsign} to Do not Promote? They will be excluded from Eligible and cannot be promoted.`)) return;
     const key = String(callsign).trim().toUpperCase();
     const rosterMember = memberCache.get(key) || allMembersCache?.find(member => String(member.callsign || "").toUpperCase() === key);
@@ -4998,56 +5158,25 @@ async function setMemberPromotionBlock(callsign, blocked) {
 }
 
 async function loadAccount() {
-    const cached = window.lvfrCachedUser?.();
-    if (cached) {
-        applyAccountUser(cached);
-        // Login already validated and cached this identity. Refresh permissions
-        // and instructor details in the background instead of blocking startup.
-        void api("/auth/me").then(applyAccountUser).catch(() => location.assign("/login"));
-        return;
-    }
     try {
-        applyAccountUser(await api("/auth/me"));
+        const user = await api("/auth/me");
+        applyAccountUser(user);
+        return user.role !== "member" || user.permissions?.portal_access === true || user.is_admin;
     } catch {
         location.assign("/login");
+        return false;
     }
 }
 
 
 (async () => {
-
-    const cachedUser = window.lvfrCachedUser?.();
-    if (cachedUser?.role === "member") {
-        location.replace("/watch-command");
-        return;
-    }
-    if (cachedUser) {
-        currentUserIsAdmin = Boolean(cachedUser.is_admin);
-        currentUserCanFullSync = canRunFullSync(cachedUser);
-        currentUserAccountId = String(cachedUser.account_id || cachedUser.id || "");
-        currentUserIsCommand = Boolean(cachedUser.is_command);
-        const fullSyncButton = $("#fullSyncBtn");
-        if (fullSyncButton) fullSyncButton.hidden = !currentUserCanFullSync;
-        if ($("#accountName")) $("#accountName").textContent = cachedUser.name || "";
-        if ($("#leadersTab")) $("#leadersTab").style.display = cachedUser.is_admin ? "" : "none";
-        if ($("#doNotPromoteTab")) $("#doNotPromoteTab").style.display = cachedUser.is_admin ? "" : "none";
-        if ($("#inactiveTab")) $("#inactiveTab").style.display = (cachedUser.is_admin || cachedUser.is_command) ? "" : "none";
-        if ($("#terminationLogTab")) $("#terminationLogTab").style.display = cachedUser.is_admin ? "" : "none";
-        if ($("#instructorLogTab")) $("#instructorLogTab").style.display = cachedUser.is_admin ? "" : "none";
-        if ($("#statisticsTab")) $("#statisticsTab").style.display = canViewStatistics(cachedUser) ? "" : "none";
-    }
     try {
-        // Each page load reads the current D1 roster. Browser snapshots remain
-        // available for offline recovery but never replace an explicit refresh.
-        const rosterLoad = loadMembers(true, true);
-        await loadAccount();
-        await Promise.all([
-            loadNotifications(),
-            loadConfig(),
-            rosterLoad,
-            loadMembersLog("promotion"),
-        ]);
-        void syncStatus();
+        if (!await loadAccount()) return;
+        const tasks = [loadNotifications(), loadConfig()];
+        if (currentUserHasPermission("members_view") || currentUserHasPermission("training_view") || currentUserHasPermission("statistics_view")) tasks.push(loadMembers(true, true));
+        if (currentUserHasPermission("logs_view")) tasks.push(loadMembersLog("promotion"));
+        await Promise.all(tasks);
+        if (currentUserHasPermission("sync_view")) void syncStatus();
     } catch (e) {
         toast(e.message);
     }
@@ -5063,14 +5192,14 @@ setInterval(refreshOnlineCount, 30000);
 function refreshVisibleRosterView() {
     if (document.hidden) return;
     const activeTab = $(".tab.active")?.dataset.tab;
-    if (activeTab === "members") void loadMembers(true, true);
-    else if (activeTab === "eligible") void loadEligible(true);
-    else if (activeTab === "inactive") void loadInactive(true);
+    if (activeTab === "members" && currentUserHasPermission("members_view")) void loadMembers(true, true);
+    else if (activeTab === "eligible" && currentUserHasPermission("eligible_view")) void loadEligible(true);
+    else if (activeTab === "inactive" && currentUserHasPermission("inactive_view")) void loadInactive(true);
 }
 setInterval(refreshVisibleRosterView, 3000);
 document.addEventListener("visibilitychange", refreshVisibleRosterView);
 
-setInterval(() => { if (!document.hidden) syncStatus(); }, 60000);
+setInterval(() => { if (!document.hidden && currentUserHasPermission("sync_view")) syncStatus(); }, 60000);
 setInterval(() => {
     if (!document.hidden) loadNotifications();
 }, 60000);

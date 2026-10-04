@@ -26,7 +26,7 @@ function routeForUser(user) {
     message.textContent = 'Your account is waiting for Commander approval.';
     return;
   }
-  location.replace(user.role === 'member' ? '/watch-command' : '/portal');
+  location.replace(user.role === 'member' && !user.permissions?.portal_access ? '/watch-command' : '/portal');
 }
 
 async function submitAuth(form, route) {
