@@ -425,6 +425,7 @@ window.addEventListener("lvfr:background-updated", event => {
     void loadConfig();
     syncStatus();
     const activeTab = $(".tab.active")?.dataset.tab;
+    if (activeTab === "trainingDirectory" && (/^\/api\/member\/[^/]+\/instructor$/.test(route) || route === "/api/training")) void loadMembers(true, true);
     if (activeTab === "eligible") loadEligible();
     if (activeTab === "inactive") loadInactive();
     if (String(event.detail?.route || "").startsWith("/api/leaders/")) loadLeaders();
@@ -968,6 +969,7 @@ async function loadMembers(silent = false, forceFresh = false) {
             allMembersCacheAt = Date.now();
         }
         loadedRows.sort(compareRosterMembers);
+        renderTrainingDirectory(loadedRows);
         renderStatistics();
         try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(loadedRows)); } catch {}
         loadedRows.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
@@ -1131,6 +1133,51 @@ async function loadMembers(silent = false, forceFresh = false) {
         }
     }
 }
+
+function renderTrainingDirectory(members = allMembersCache || []) {
+    const has = value => value === true || Number(value) === 1;
+    const fields = {
+        "hert-certified": member => has(member.has_hert),
+        "hert-instructor": member => String(member.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes("HERT"),
+        "basic-fort": member => has(member.has_basic_firefighting),
+        "advanced-fort": member => has(member.has_advanced_firefighting),
+        "fort-instructor": member => String(member.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes("FORT")
+    };
+    document.querySelectorAll(".training-directory-column").forEach(column => {
+        const key = column.dataset.trainingColumn, list = column.querySelector(".training-directory-list");
+        const filter = column.querySelector(".training-directory-filter"), select = column.querySelector("select");
+        if (!list || !fields[key]) return;
+        const qualifies = fields[key];
+        const query = String(filter?.value || "").trim().toLocaleLowerCase();
+        const qualified = members.filter(member => qualifies(member) && (!query || `${member.name} ${member.callsign}`.toLocaleLowerCase().includes(query)));
+        list.innerHTML = qualified.length ? qualified.map(member => `<div class="training-directory-member"><strong>${esc(member.name)}</strong><span>${esc(member.callsign)}</span></div>`).join("") : '<div class="empty">No members found.</div>';
+        if (select && select.dataset.loaded !== "true") {
+            select.insertAdjacentHTML("beforeend", members.map(member => `<option value="${esc(member.callsign)}">${esc(member.name)} / ${esc(member.callsign)}</option>`).join(""));
+            select.dataset.loaded = "true";
+        }
+    });
+}
+
+document.querySelectorAll(".training-directory-filter").forEach(input => input.addEventListener("input", () => renderTrainingDirectory()));
+document.querySelectorAll(".training-directory-add button").forEach(button => button.addEventListener("click", async () => {
+    const column = button.closest(".training-directory-column"), select = column?.querySelector("select"), callsign = select?.value;
+    if (!callsign) { toast("Choose a member first."); return; }
+    button.disabled = true;
+    try {
+        const kind = column.dataset.trainingKind;
+        if (kind.startsWith("instructor:")) {
+            const instructor_type = kind.split(":")[1];
+            await api(`/api/member/${encodeURIComponent(callsign)}/instructor`, { method: "POST", body: JSON.stringify({ instructor_type, assigned: true }) });
+        } else {
+            const field = $("#training"), previous = field?.value;
+            if (field) field.value = kind;
+            await training(callsign, false);
+            if (field) field.value = previous;
+        }
+        select.value = "";
+    } catch (error) { if (!isBackgroundPending(error)) toast(error.message); }
+    finally { button.disabled = false; }
+}));
 
 // ============================================================
 // ELIGIBLE

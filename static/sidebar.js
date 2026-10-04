@@ -4,6 +4,7 @@
     {
       href: '/', title: 'LVFR EMS Operations', items: [
         { label: 'Members', tab: 'members' },
+        { label: 'Training', tab: 'trainingDirectory' },
         { label: 'Eligible', tab: 'eligible' },
         { label: 'Do not Promote', tab: 'doNotPromote', availability: '#doNotPromoteTab' },
         { label: 'Inactive', tab: 'inactive' },
