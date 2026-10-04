@@ -18,7 +18,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=role-permissions-20261004-1"
+    href="/static/style.css?v=command-permissions-20261004-1"
 >
 
 <style>
@@ -749,7 +749,6 @@
         </button>
         <button type="button" class="log-tab leader-view-tab active" data-leader-view="all">All Members</button>
         <button type="button" class="log-tab leader-view-tab" data-leader-view="audit">History</button>
-        <button type="button" class="log-tab leader-view-tab" data-leader-view="permissions">Access Permissions</button>
     </div>
 
     <div id="pendingLeadersView" style="display:none">
@@ -774,10 +773,6 @@
         <div id="leaderAuditTable" class="table-wrap"></div>
     </div>
 
-    <div id="rolePermissionsView" style="display:none">
-        <p class="muted">These profiles apply to every account with that role. Commanders keep full access. The server checks these permissions on each request.</p>
-        <div id="rolePermissionsPanel" class="role-permissions-panel"><div class="empty">Loading permissions…</div></div>
-    </div>
 </section>
 
 
@@ -825,10 +820,10 @@
      APPLICATION JAVASCRIPT
      ========================================================= -->
 
-<script src="/static/session-auth.js?v=shared-session-6"></script>
+<script src="/static/session-auth.js?v=shared-session-7"></script>
 <script src="/static/account-settings.js?v=account-settings-5"></script>
-<script src="/static/app.js?v=role-permissions-20261004-1"></script>
-<script src="/static/sidebar.js?v=training-side-menus-20261004-3"></script>
+<script src="/static/app.js?v=command-permissions-20261004-1"></script>
+<script src="/static/sidebar.js?v=command-permissions-20261004-1"></script>
 <script src="/static/mobile-popovers.js?v=portal-controls-20261004-1"></script>
 
 

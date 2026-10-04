@@ -48,6 +48,7 @@
           { label: 'Active accounts', status: 'approved' },
           { label: 'Deactivated accounts', status: 'deactivated' }
         ] },
+        { label: 'Access Permissions', anchor: '#permissionsHeading' },
         { label: 'Recent account activity', anchor: '#auditHeading' }
       ]
     }

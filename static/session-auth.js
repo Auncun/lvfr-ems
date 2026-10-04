@@ -112,12 +112,7 @@
       if (response.status === 401) {
         if (url.pathname !== '/auth/login') {
           try {
-            const payload = await response.clone().json();
-            localStorage.setItem('lvfr.auth.last-error', JSON.stringify({
-              path: url.pathname,
-              detail: String(payload.detail || 'The API rejected the session.'),
-              saved_at: Date.now()
-            }));
+            localStorage.setItem('lvfr.auth.last-error', JSON.stringify({ saved_at: Date.now() }));
           } catch {}
         }
         window.lvfrForgetSession();

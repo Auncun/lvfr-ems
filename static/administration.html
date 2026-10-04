@@ -5,7 +5,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Operation Command | LVFR EMS</title>
-  <link rel="stylesheet" href="/static/style.css?v=training-side-menus-20261004-3">
+  <link rel="stylesheet" href="/static/style.css?v=command-permissions-20261004-1">
   <style>
     body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:72px 24px 24px}
     .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -16,7 +16,8 @@
     .admin-table-wrap{overflow:auto}.admin-table{width:100%;border-collapse:collapse;min-width:800px}.admin-table th,.admin-table td{text-align:left;vertical-align:top;padding:11px 9px;border-bottom:1px solid #303945}.admin-table th{color:#9aa4b2;font-weight:600}
     .admin-actions{justify-content:flex-start;gap:6px}.admin-actions button{padding:6px 9px}.admin-status{min-height:22px;color:#9aa4b2}.admin-status.error{color:#ff8178}.admin-status.success{color:#56d364}
     .admin-tabs{display:flex;gap:8px;flex-wrap:wrap}.admin-tabs button[aria-pressed="true"]{border-color:#62a0ea;color:#8bbcff}
-    @media(max-width:650px){.admin-shell{padding:14px 14px 28px;min-width:0}.admin-card{padding:14px;min-width:0}.admin-header>*,.admin-toolbar>*{min-width:0;max-width:100%}.admin-table-wrap{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}}
+    @media(max-width:650px){.admin-shell{padding:14px 14px 28px;min-width:0}.admin-card{padding:14px;min-width:0}.admin-header>*,.admin-toolbar>*{min-width:0;max-width:100%}.admin-table-wrap{width:100%;overflow-x:visible;-webkit-overflow-scrolling:touch}.admin-table{display:block;min-width:0!important;width:100%}.admin-table thead{display:none}.admin-table tbody{display:grid;gap:10px}.admin-table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px;padding:10px;border:1px solid #303945;border-radius:12px;background:#0c1219}.admin-table td{display:block;min-width:0;padding:8px 3px!important;border:0!important;border-bottom:1px solid #26313d}.admin-table td::before{content:attr(data-label);display:block;margin-bottom:4px;color:#8b9aaa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}.admin-table td:first-child,.admin-table td:last-child{grid-column:1/-1}.admin-table td:last-child{border:0!important}.admin-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.admin-actions button{min-width:0;overflow-wrap:anywhere}}
+    .permissions-card{border-color:#34485d;background:linear-gradient(145deg,#111b27,#111720 60%)}.permissions-heading{align-items:flex-start}.permissions-heading h2{margin:0}.permissions-heading p{max-width:680px;margin:7px 0 0;line-height:1.5}
   </style>
 </head>
 <body>
@@ -40,7 +41,7 @@
     </header>
     <p id="adminMessage" class="admin-status" role="status" aria-live="polite"></p>
     <section class="admin-card" aria-labelledby="accountsHeading">
-      <div class="admin-header"><div><h2 id="accountsHeading">Accounts</h2><p class="muted">Members can access Watch Command only.</p></div><button type="button" id="refreshAccounts">Refresh</button></div>
+      <div class="admin-header"><div><h2 id="accountsHeading">Accounts</h2><p class="muted">Choose the account role here; role capabilities are managed in Access Permissions.</p></div><button type="button" id="refreshAccounts">Refresh</button></div>
       <div class="admin-tabs" aria-label="Account status filter">
         <button type="button" data-status="all" aria-pressed="true">All</button>
         <button type="button" data-status="pending" aria-pressed="false">Pending</button>
@@ -51,16 +52,22 @@
       <div class="admin-toolbar"><input id="accountSearch" type="search" placeholder="Search name or Callsign"><span id="accountCount" class="muted"></span></div>
       <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Account</th><th>Callsign</th><th>Status</th><th>Role</th><th>Presence</th><th>Created</th><th>Actions</th></tr></thead><tbody id="accountRows"><tr><td colspan="7">Loading accounts…</td></tr></tbody></table></div>
     </section>
+    <section class="admin-card permissions-card" aria-labelledby="permissionsHeading">
+      <div class="admin-header permissions-heading"><div><h2 id="permissionsHeading">Access Permissions</h2><p class="muted">Set what every Member and Leader can access or change. Commanders keep full access.</p></div></div>
+      <label class="permission-search"><span>Find a permission</span><input id="permissionSearch" type="search" placeholder="Search pages and actions"></label>
+      <div id="rolePermissionsPanel" class="role-permissions-panel"><div class="empty">Loading role permissions...</div></div>
+      <p id="permissionStatus" class="permission-status" role="status" aria-live="polite"></p>
+    </section>
     <section class="admin-card" aria-labelledby="auditHeading">
       <div class="admin-header"><h2 id="auditHeading">Recent account activity</h2></div>
       <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Date</th><th>Account</th><th>Action</th><th>By</th></tr></thead><tbody id="auditRows"><tr><td colspan="4">Loading history…</td></tr></tbody></table></div>
     </section>
   </main>
-  <script src="/static/session-auth.js?v=shared-session-6"></script>
+  <script src="/static/session-auth.js?v=shared-session-7"></script>
   <script src="/static/header-controls.js?v=header-controls-1"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
-  <script src="/static/administration.js?v=account-presence-12-notification-cache"></script>
-  <script src="/static/sidebar.js?v=nested-navigation-8"></script>
+  <script src="/static/administration.js?v=command-permissions-20261004-2"></script>
+  <script src="/static/sidebar.js?v=command-permissions-20261004-1"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 </body>
 </html>

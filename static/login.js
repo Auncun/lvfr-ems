@@ -4,8 +4,8 @@ const signupForm = document.querySelector('#signupForm');
 try {
   const diagnostic = JSON.parse(localStorage.getItem('lvfr.auth.last-error') || 'null');
   if (diagnostic && Date.now() - Number(diagnostic.saved_at || 0) < 10 * 60 * 1000) {
-    message.textContent = `Session rejected on ${diagnostic.path}: ${diagnostic.detail}`;
-    message.className = 'auth-message error';
+    message.textContent = 'Your session ended. Please sign in again.';
+    message.className = 'auth-message notice';
     localStorage.removeItem('lvfr.auth.last-error');
   }
 } catch {}

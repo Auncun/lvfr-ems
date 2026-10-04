@@ -75,17 +75,17 @@ function renderAccounts() {
     return;
   }
   accountRows.innerHTML = rows.map(account => `
-    <tr><td><strong>${esc(account.display_name || account.name)}</strong>${account.approved_by ? `<br><small class="muted">Approved by ${esc(account.approved_by)}</small>` : ''}</td>
-      <td>${esc(account.callsign || '—')}</td><td>${esc(account.status)}</td>
-      <td>${account.is_admin ? 'Commander' : account.role === 'member' ? 'Member' : account.status === 'pending' ? '—' : 'Supervisor'}</td>
-      <td><span class="presence-badge ${account.online ? 'online' : 'offline'}">${account.online ? 'Online' : 'Offline'}</span></td>
-      <td>${esc(account.requested_at || '—')}</td><td><div class="admin-actions">${accountActions(account)}</div></td></tr>`).join('');
+    <tr><td data-label="Account"><strong>${esc(account.display_name || account.name)}</strong>${account.approved_by ? `<br><small class="muted">Approved by ${esc(account.approved_by)}</small>` : ''}</td>
+      <td data-label="Callsign">${esc(account.callsign || '—')}</td><td data-label="Status">${esc(account.status)}</td>
+      <td data-label="Role">${account.is_admin ? 'Commander' : account.role === 'member' ? 'Member' : account.status === 'pending' ? '—' : 'Supervisor'}</td>
+      <td data-label="Presence"><span class="presence-badge ${account.online ? 'online' : 'offline'}">${account.online ? 'Online' : 'Offline'}</span></td>
+      <td data-label="Created">${esc(account.requested_at || '—')}</td><td data-label="Actions"><div class="admin-actions">${accountActions(account)}</div></td></tr>`).join('');
 }
 function renderAudit() {
   const rows = overview.audit || [];
   auditRows.innerHTML = rows.length ? rows.map(entry => `
-    <tr><td>${esc(entry.created_at || '—')}</td><td>${esc(entry.name || 'N/A')}${entry.callsign ? ` (${esc(entry.callsign)})` : ''}</td>
-      <td>${esc(String(entry.action || '—').replace(/\bAdmin\b/g, 'Commander'))}</td><td>${esc(String(entry.actor_name || '—').replace(/\bWeb Admin\b/g, 'Web Commander'))}</td></tr>`).join('')
+    <tr><td data-label="Date">${esc(entry.created_at || '—')}</td><td data-label="Account">${esc(entry.name || 'N/A')}${entry.callsign ? ` (${esc(entry.callsign)})` : ''}</td>
+      <td data-label="Action">${esc(String(entry.action || '—').replace(/\bAdmin\b/g, 'Commander'))}</td><td data-label="By">${esc(String(entry.actor_name || '—').replace(/\bWeb Admin\b/g, 'Web Commander'))}</td></tr>`).join('')
     : '<tr><td colspan="4">No account history yet.</td></tr>';
 }
 async function loadAccounts(silent = false) {
@@ -201,6 +201,88 @@ function applyOptimisticAccountAction(source, action) {
   (overview[account.status] || (overview[account.status] = [])).unshift(account);
   renderAccounts();
 }
+
+const permissionGroups = [
+  { name: 'Application access', items: [
+    ['portal_access', 'EMS Operations', 'Open the EMS Operations application.'],
+    ['watch_command_view', 'Watch Command: view', 'Open Watch Command logs and activity.'],
+    ['watch_command_edit', 'Watch Command: edit', 'Create and update Watch Command records.'],
+    ['watch_command_roster', 'Watch Command: roster lookup', 'Search member names and callsigns.'],
+  ] },
+  { name: 'Lists and records', items: [
+    ['members_view', 'Members list', 'View the roster and member list.'], ['eligible_view', 'Eligible list', 'View promotion eligibility.'],
+    ['profile_view', 'Member profiles', 'Open member View / Manage details.'], ['inactive_view', 'Can Be Terminated list', 'View members marked for termination.'],
+    ['logs_view', 'Members Log', 'View member operation logs.'], ['statistics_view', 'Statistics', 'View roster statistics.'],
+    ['training_view', 'Training lists', 'Open FORT, HERT, and instructor directories.'], ['training_hours_view', 'Training Hours: view', 'View Training Hours records.'],
+    ['do_not_promote_view', 'Do not Promote: view', 'View the Do not Promote list.'], ['sync_view', 'Sync status', 'View roster synchronization status.'],
+  ] },
+  { name: 'Training and member changes', items: [
+    ['training_fort_manage', 'Manage FORT training', 'Change Basic and Advanced FORT status; FORT Instructor status is also required.'],
+    ['training_hert_manage', 'Manage HERT training', 'Change HERT status; HERT Instructor status is also required.'],
+    ['training_hours_manage', 'Manage Training Hours', 'Add, remove, and change Training Hours records.'],
+    ['instructor_manage', 'Instructor assignments', 'Assign or remove FORT and HERT Instructor status.'],
+    ['notes_manage', 'Member notes', 'Add, edit, or remove member notes.'], ['activity_manage', 'Activity status', 'Change member activity status.'],
+    ['exam_manage', 'Supervisor exam', 'Add or remove exam status.'], ['rank_date_manage', 'Rank date', 'Change a member rank date.'],
+    ['promotion_manage', 'Promotion', 'Promote members using available rules.'], ['rank_manage', 'Rank tools', 'Force promote, demote, or change rank.'],
+    ['callsign_manage', 'Callsign changes', 'Change a member callsign.'], ['termination_manage', 'Termination', 'Remove a member from the roster.'],
+    ['do_not_promote_manage', 'Do not Promote: edit', 'Add or remove members from that list.'], ['sync_manage', 'Sync now', 'Synchronize with the source sheet.'],
+  ] },
+];
+let rolePermissionProfiles = {};
+function renderRolePermissions() {
+  const panel = document.querySelector('#rolePermissionsPanel');
+  if (!panel) return;
+  const query = document.querySelector('#permissionSearch').value.trim().toLocaleLowerCase();
+  panel.innerHTML = ['member', 'leader'].map(role => {
+    const roleLabel = role === 'member' ? 'Member' : 'Leader';
+    const groups = permissionGroups.map(group => {
+      const items = group.items.filter(([, label, description]) => !query || `${label} ${description} ${group.name}`.toLocaleLowerCase().includes(query));
+      if (!items.length) return '';
+      return `<section class="permission-group"><h4>${esc(group.name)}</h4>${items.map(([key, label, description]) => `
+        <label class="permission-item"><input type="checkbox" data-permission-key="${key}" ${rolePermissionProfiles[role]?.[key] ? 'checked' : ''}><span><strong>${esc(label)}</strong><small>${esc(description)}</small></span></label>`).join('')}</section>`;
+    }).join('');
+    const enabled = Object.values(rolePermissionProfiles[role] || {}).filter(Boolean).length;
+    return `<article class="role-permission-card" data-permission-role="${role}"><header><div><span class="role-kicker">ROLE PROFILE</span><h3>${roleLabel}</h3></div><span class="permission-count">${enabled} enabled</span></header><div class="role-permission-groups">${groups || '<p class="muted">No permissions match your search.</p>'}</div><button type="button" class="primary" data-save-permissions="${role}">Save ${roleLabel} permissions</button></article>`;
+  }).join('');
+}
+async function loadRolePermissions() {
+  const status = document.querySelector('#permissionStatus');
+  try {
+    const result = await api('/api/role-permissions');
+    rolePermissionProfiles = result.profiles || {};
+    renderRolePermissions();
+    status.textContent = 'Role settings loaded. Changes apply to every account with that role.';
+    status.className = 'permission-status';
+  } catch (error) {
+    status.textContent = `Could not load role permissions: ${error.message}`;
+    status.className = 'permission-status error';
+  }
+}
+document.querySelector('#permissionSearch').addEventListener('input', renderRolePermissions);
+document.querySelector('#rolePermissionsPanel').addEventListener('change', event => {
+  const input = event.target.closest('[data-permission-key]');
+  if (!input) return;
+  const role = input.closest('[data-permission-role]').dataset.permissionRole;
+  rolePermissionProfiles[role][input.dataset.permissionKey] = input.checked;
+  const count = input.closest('[data-permission-role]').querySelector('.permission-count');
+  count.textContent = `${Object.values(rolePermissionProfiles[role]).filter(Boolean).length} enabled`;
+});
+document.querySelector('#rolePermissionsPanel').addEventListener('click', async event => {
+  const button = event.target.closest('[data-save-permissions]');
+  if (!button) return;
+  const role = button.dataset.savePermissions, status = document.querySelector('#permissionStatus');
+  button.disabled = true; status.textContent = 'Saving permissions...'; status.className = 'permission-status';
+  try {
+    const result = await api('/api/role-permissions', { method: 'POST', body: JSON.stringify({ role, permissions: rolePermissionProfiles[role] }) });
+    rolePermissionProfiles[role] = result.permissions || rolePermissionProfiles[role];
+    renderRolePermissions();
+    status.textContent = `${role === 'member' ? 'Member' : 'Leader'} permissions saved.`;
+    status.className = 'permission-status success';
+  } catch (error) {
+    status.textContent = `Save failed: ${error.message}`; status.className = 'permission-status error';
+  } finally { button.disabled = false; }
+});
+
 document.querySelector('#accountRows').addEventListener('click', event => {
   const button = event.target.closest('button[data-action]');
   if (button) performAction(button);
@@ -245,6 +327,7 @@ document.querySelector('#logoutButton').addEventListener('click', () => {
   window.lvfrLogout?.();
 });
 loadAccounts();
+void loadRolePermissions();
 try {
   const cached = JSON.parse(localStorage.getItem(notificationCacheKey) || 'null');
   if (Array.isArray(cached)) { notificationItems = cached; renderNotifications(); }

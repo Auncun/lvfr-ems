@@ -1618,79 +1618,6 @@ let leaderAuditRows = [];
 let currentLeaderView = "all";
 let onlineMembers = [];
 
-let rolePermissionProfiles = null;
-const ROLE_PERMISSION_CATALOG = [
-    ["portal_access", "EMS portal", "Allow a Member to open EMS Operations."],
-    ["watch_command_view", "Watch Command: view", "Open Watch Command logs and activity."],
-    ["watch_command_edit", "Watch Command: edit", "Create and update Watch Command records."],
-    ["watch_command_roster", "Watch Command: roster lookup", "Search member names and callsigns."],
-    ["members_view", "Members list", "View the roster and member list."],
-    ["eligible_view", "Eligible list", "View members eligible for promotion."],
-    ["profile_view", "View / Manage profiles", "Open member View / Manage details."],
-    ["inactive_view", "Can Be Terminated list", "View members marked for termination."],
-    ["logs_view", "Members Log", "View member operation logs."],
-    ["training_view", "Training lists", "Open FORT, HERT, and instructor directories."],
-    ["training_fort_manage", "Manage FORT training", "Change Basic and Advanced FORT status (FORT Instructor status is also required)."],
-    ["training_hert_manage", "Manage HERT training", "Change HERT status (HERT Instructor status is also required)."],
-    ["training_hours_view", "Training Hours: view", "View the Training Hours list."],
-    ["training_hours_manage", "Training Hours: edit", "Add, remove, and change Training Hours records."],
-    ["statistics_view", "Statistics", "View roster statistics."],
-    ["notes_manage", "Member notes", "Add, edit, or remove member notes."],
-    ["promotion_manage", "Promotion", "Promote members using available promotion rules."],
-    ["callsign_manage", "Callsign changes", "Change a member callsign."],
-    ["activity_manage", "Activity status", "Change member activity status."],
-    ["exam_manage", "Supervisor exam", "Add or remove exam status."],
-    ["rank_date_manage", "Rank date", "Change a member rank date."],
-    ["rank_manage", "Rank tools", "Force promote, demote, or change rank."],
-    ["termination_manage", "Termination", "Terminate a member account from the roster."],
-    ["do_not_promote_view", "Do not Promote: view", "View the Do not Promote list."],
-    ["do_not_promote_manage", "Do not Promote: edit", "Add or remove members from that list."],
-    ["instructor_manage", "Instructor assignments", "Assign or remove FORT and HERT Instructor status."],
-    ["sync_view", "Sync status", "View roster synchronization status."],
-    ["sync_manage", "Sync now", "Synchronize the roster with the source sheet."]
-];
-
-function renderRolePermissionProfiles() {
-    const panel = $("#rolePermissionsPanel");
-    if (!panel || !rolePermissionProfiles) return;
-    panel.innerHTML = ["member", "leader"].map(role => `
-        <section class="role-permission-card" data-permission-role="${role}">
-            <h3>${role === "member" ? "Member" : "Leader"}</h3>
-            <div class="role-permission-list">${ROLE_PERMISSION_CATALOG.map(([key,label,description]) => `
-                <label class="role-permission-item"><input type="checkbox" data-role-permission="${key}" ${rolePermissionProfiles[role]?.[key] ? "checked" : ""}><span>${esc(label)}<small>${esc(description)}</small></span></label>
-            `).join("")}</div>
-            <button type="button" class="primary" data-save-role-permissions="${role}">Save ${role === "member" ? "Member" : "Leader"} permissions</button>
-        </section>
-    `).join("");
-}
-
-async function loadRolePermissionProfiles() {
-    const panel = $("#rolePermissionsPanel");
-    if (panel) panel.innerHTML = '<div class="empty">Loading permissions…</div>';
-    try {
-        const result = await api("/api/role-permissions");
-        rolePermissionProfiles = result.profiles || {};
-        renderRolePermissionProfiles();
-    } catch (error) {
-        if (panel) panel.innerHTML = `<div class="empty">Could not load role permissions: ${esc(error.message)}</div>`;
-    }
-}
-
-document.addEventListener("click", async event => {
-    const button = event.target.closest("[data-save-role-permissions]");
-    if (!button) return;
-    const role = button.dataset.saveRolePermissions;
-    const card = button.closest("[data-permission-role]");
-    const permissions = Object.fromEntries(Array.from(card.querySelectorAll("[data-role-permission]")).map(input => [input.dataset.rolePermission, input.checked]));
-    button.disabled = true;
-    try {
-        await api("/api/role-permissions", { method: "POST", body: JSON.stringify({ role, permissions }) });
-        if (rolePermissionProfiles) rolePermissionProfiles[role] = permissions;
-        toast(`${role === "member" ? "Member" : "Leader"} permissions saved. Refresh pages to update visible controls.`);
-    } catch (error) { toast(error.message); }
-    finally { button.disabled = false; }
-});
-
 function setOnlineCount(value, people) {
     const count = Number(value || 0);
     const summary = $("#onlineAccountCount");
@@ -1832,13 +1759,13 @@ function renderLeaders() {
                 </tr></thead>
                 <tbody>${filteredRows.map(row => `
                     <tr>
-                        <td class="leader-account-cell"><strong>${esc(row.name || row.display_name)}</strong><small>${row.callsign ? `Callsign ${esc(row.callsign)}` : "No Callsign linked"}</small></td>
-                        <td>${esc(row.linked_at || "—")}</td>
-                        <td class="leader-detail-cell"><span>${esc(row.approved_at || "—")}</span><small>By ${esc(row.approved_by || "—")}</small></td>
-                        <td>${row.is_admin ? "Commander" : row.role === "member" ? "Member" : "Supervisor"}</td>
-                        <td><span class="presence-badge ${row.online ? "online" : "offline"}">${row.online ? "Online" : "Offline"}</span></td>
-                        <td class="leader-detail-cell">${row.admin_changed_at ? `<span>${esc(row.admin_changed_at)}</span><small>By ${esc(row.admin_changed_by || "—")}</small>` : "—"}</td>
-                        <td class="leader-request-actions">${accountActions(row)}</td></tr>
+                        <td data-label="Account" class="leader-account-cell"><strong>${esc(row.name || row.display_name)}</strong><small>${row.callsign ? `Callsign ${esc(row.callsign)}` : "No Callsign linked"}</small></td>
+                        <td data-label="Linked">${esc(row.linked_at || "—")}</td>
+                        <td data-label="Approved" class="leader-detail-cell"><span>${esc(row.approved_at || "—")}</span><small>By ${esc(row.approved_by || "—")}</small></td>
+                        <td data-label="Role">${row.is_admin ? "Commander" : row.role === "member" ? "Member" : "Supervisor"}</td>
+                        <td data-label="Presence"><span class="presence-badge ${row.online ? "online" : "offline"}">${row.online ? "Online" : "Offline"}</span></td>
+                        <td data-label="Role changed" class="leader-detail-cell">${row.admin_changed_at ? `<span>${esc(row.admin_changed_at)}</span><small>By ${esc(row.admin_changed_by || "—")}</small>` : "—"}</td>
+                        <td data-label="Actions" class="leader-request-actions">${accountActions(row)}</td></tr>
                 `).join("")}</tbody>
             </table>
         ` : empty("No members match this role.");
@@ -2066,12 +1993,10 @@ document.querySelectorAll(".leader-view-tab").forEach(button => {
             pending: $("#pendingLeadersView"),
             all: $("#allLeadersView"),
             audit: $("#leaderAuditView"),
-            permissions: $("#rolePermissionsView")
         };
         Object.entries(views).forEach(([name, view]) => {
             if (view) view.style.display = currentLeaderView === name ? "block" : "none";
         });
-        if (currentLeaderView === "permissions") void loadRolePermissionProfiles();
     });
 });
 
