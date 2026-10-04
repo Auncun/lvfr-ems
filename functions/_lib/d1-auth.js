@@ -513,39 +513,43 @@ export async function handleD1(context) {
       const expected=String(env.LVFR_D1_WORKER_SECRET||"");
       if(!expected || request.headers.get("X-LVFR-Worker-Secret")!==expected) return json({detail:"Worker authentication failed."},403);
       if(!Array.isArray(data.records)) return json({detail:"Training Hours payload is invalid."},400);
-      const timestamp=new Date().toISOString(), adoptedLegacy=new Set(), liveSourceRows=new Set(); let skipped=0,imported=0;
+      const timestamp=new Date().toISOString();
+      const today=new Intl.DateTimeFormat("en-US",{timeZone:"UTC",month:"2-digit",day:"2-digit",year:"numeric"}).format(new Date());
+      // Two reads, then one batch containing only rows that actually changed.
+      const memberRows=(await db.prepare("SELECT callsign,name FROM members").all()).results||[];
+      const memberByCallsign=new Map(memberRows.map(row=>[String(row.callsign||"").toUpperCase(),row]));
+      const existingRows=(await db.prepare("SELECT id,source_row,callsign,name,training_date,time FROM training_hours").all()).results||[];
+      const bySourceRow=new Map(), legacyRows=[];
+      for(const row of existingRows) { if(row.source_row!==null&&row.source_row!==undefined) bySourceRow.set(Number(row.source_row),row); else legacyRows.push(row); }
+      const liveSourceRows=new Set(), statements=[]; let imported=0, skipped=0, unchanged=0;
       for(const record of data.records) {
-        const callsign=String(record.callsign||"").trim().toUpperCase(), time=String(record.time||"").trim();
-        if(!callsign||!time) { skipped++; continue; }
-        const member=await db.prepare("SELECT callsign,name FROM members WHERE upper(callsign)=upper(?)").bind(callsign).first();
-        if(!member) { skipped++; continue; }
-        const trainingDate=String(record.date||"").trim()||new Intl.DateTimeFormat("en-US",{timeZone:"UTC",month:"2-digit",day:"2-digit",year:"numeric"}).format(new Date());
         const sourceRow=Number(record.source_row)||null;
+        // A Sheet row that exists but cannot be matched right now is still "live":
+        // never let it be deleted as stale.
         if(sourceRow) liveSourceRows.add(sourceRow);
-        let target=null;
-        if(sourceRow) {
-          target=await db.prepare("SELECT id FROM training_hours WHERE source_row=? ORDER BY id LIMIT 1").bind(sourceRow).first();
-          // Adopt the pre-repeatable one-row-per-member import on its matching
-          // Sheet row instead of duplicating it during the new row-aware import.
-          if(!target) {
-            const legacy=await db.prepare("SELECT id FROM training_hours WHERE source_row IS NULL AND upper(callsign)=upper(?) AND training_date=? AND time=? ORDER BY id LIMIT 1")
-              .bind(member.callsign,trainingDate,time).first();
-            if(legacy&&!adoptedLegacy.has(legacy.id)) { target=legacy; adoptedLegacy.add(legacy.id); }
-          }
+        const callsign=String(record.callsign||"").trim().toUpperCase(), time=String(record.time||"").trim();
+        const member=memberByCallsign.get(callsign);
+        if(!callsign||!time||!member) { skipped++; continue; }
+        const trainingDate=String(record.date||"").trim()||today;
+        let target=sourceRow?bySourceRow.get(sourceRow):null;
+        if(sourceRow&&!target) {
+          const index=legacyRows.findIndex(row=>String(row.callsign||"").toUpperCase()===member.callsign&&row.training_date===trainingDate&&row.time===time);
+          if(index>=0) target=legacyRows.splice(index,1)[0];
         }
-        if(target) await db.prepare("UPDATE training_hours SET source_row=?,callsign=?,name=?,training_date=?,time=?,updated_at=?,updated_by=? WHERE id=?")
-          .bind(sourceRow,member.callsign,member.name,trainingDate,time,timestamp,"Sheet migration",target.id).run();
-        else await db.prepare("INSERT INTO training_hours(source_row,callsign,name,training_date,time,updated_at,updated_by) VALUES(?,?,?,?,?,?,?)")
-          .bind(sourceRow,member.callsign,member.name,trainingDate,time,timestamp,"Sheet migration").run();
         imported++;
+        if(target&&target.callsign===member.callsign&&target.name===member.name&&target.training_date===trainingDate&&target.time===time&&Number(target.source_row)===sourceRow) { unchanged++; continue; }
+        if(target) statements.push(db.prepare("UPDATE training_hours SET source_row=?,callsign=?,name=?,training_date=?,time=?,updated_at=?,updated_by=? WHERE id=?")
+          .bind(sourceRow,member.callsign,member.name,trainingDate,time,timestamp,"Sheet sync",target.id));
+        else statements.push(db.prepare("INSERT INTO training_hours(source_row,callsign,name,training_date,time,updated_at,updated_by) VALUES(?,?,?,?,?,?,?) ON CONFLICT(source_row) DO UPDATE SET callsign=excluded.callsign,name=excluded.name,training_date=excluded.training_date,time=excluded.time,updated_at=excluded.updated_at,updated_by=excluded.updated_by")
+          .bind(sourceRow,member.callsign,member.name,trainingDate,time,timestamp,"Sheet sync"));
       }
       if(data.reconcile===true) {
-        if(skipped) return json({detail:"Training Hours Sheet sync skipped invalid or unmatched rows; no stale D1 records were removed."},400);
-        const existing=await db.prepare("SELECT id,source_row FROM training_hours WHERE source_row IS NOT NULL").all();
-        const stale=(existing.results||[]).filter(row=>!liveSourceRows.has(Number(row.source_row)));
-        if(stale.length) await db.batch(stale.map(row=>db.prepare("DELETE FROM training_hours WHERE id=?").bind(row.id)));
+        for(const row of existingRows) {
+          if(row.source_row!==null&&row.source_row!==undefined&&!liveSourceRows.has(Number(row.source_row))) statements.push(db.prepare("DELETE FROM training_hours WHERE id=?").bind(row.id));
+        }
       }
-      return json({ok:true,imported,skipped});
+      for(let index=0;index<statements.length;index+=50) await db.batch(statements.slice(index,index+50));
+      return json({ok:true,imported,skipped,unchanged,written:statements.length});
     }
     if(route==="/internal/logs/import" && method==="POST") {
       const expected=String(env.LVFR_D1_WORKER_SECRET||"");
@@ -722,7 +726,7 @@ export async function handleD1(context) {
       } catch(error) { console.error("Training Hours log Sheet mirror failed:",error); }
       let sheetSynced=true,sheetSyncError="";
       try {
-        const sheetMirror=await proxyToAppsScript(context,"/internal/training-hours/mirror",url,bridgeAssertion,{action,callsign:member.callsign,id:savedId,source_row:existing?.source_row,time:newTime,date:action==="time"?existing.training_date:trainingDate});
+        const sheetMirror=await proxyToAppsScript(context,"/internal/training-hours/mirror",url,bridgeAssertion,{action,callsign:member.callsign,id:savedId,source_row:existing?.source_row,time:newTime,previous_time:previousTime,date:action==="add"?trainingDate:existing.training_date});
         const mirrorResult=await sheetMirror.json().catch(()=>({}));
         if(!sheetMirror.ok||mirrorResult.ok!==true) {
           const responseDetail=mirrorResult.detail||mirrorResult.error||JSON.stringify(mirrorResult);
@@ -838,8 +842,13 @@ export async function handleD1(context) {
       }
       return json(result);
     }
-    await db.prepare("INSERT INTO account_presence(account_id,last_seen) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET last_seen=excluded.last_seen").bind(user.account_id,nowSeconds()).run();
-    if (route==="/api/presence" && method==="POST") return json({ok:true});
+    // Only the heartbeat writes presence, and only when the stored value is older
+    // than 45 s. Writing on every request (the members view polls every 3 s)
+    // consumed D1 rows for no benefit.
+    if (route==="/api/presence" && method==="POST") {
+      await db.prepare("INSERT INTO account_presence(account_id,last_seen) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET last_seen=excluded.last_seen WHERE account_presence.last_seen < excluded.last_seen - 45").bind(user.account_id,nowSeconds()).run();
+      return json({ok:true});
+    }
     if (route==="/api/presence/summary" && method==="GET") { const r=await db.prepare("SELECT a.name,a.callsign FROM account_presence p JOIN accounts a ON a.account_id=p.account_id WHERE a.status='approved' AND p.last_seen>? ORDER BY lower(a.name)").bind(nowSeconds()-90).all(); const online=(r.results||[]).map(x=>({name:x.name,callsign:x.callsign})); return json({online_count:online.length,online}); }
     if (route==="/api/leaders" && method==="GET") { const admin=await requireAdmin(db,token); return json(await leaders(db,admin)); }
     if (route==="/api/leaders/audit" && method==="GET") { await requireAdmin(db,token); const r=await db.prepare("SELECT id,created_at,account_id,name,callsign,action,actor_name,actor_name AS by FROM account_audit ORDER BY id DESC LIMIT 200").all(); return json(r.results||[]); }

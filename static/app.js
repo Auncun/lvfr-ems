@@ -1239,15 +1239,34 @@ document.addEventListener("click", async event => {
 });
 
 let trainingHoursRows = [];
-async function loadTrainingHours() {
+let trainingHoursSignature = "";
+let trainingHoursSaves = 0;
+let trainingHoursLoading = false;
+function trainingHoursHasUnsavedInput() {
+    const active = document.activeElement;
+    return Boolean(active && $("#trainingHoursTable")?.contains(active) && active.matches?.("input") && active.value !== active.defaultValue);
+}
+// silent=true is the background refresh: no "Loading…" flash, no re-render when
+// nothing changed, and it never overwrites a time the user is still typing.
+async function loadTrainingHours(silent = false) {
     const table = $("#trainingHoursTable");
-    if (table) table.innerHTML = '<div class="empty">Loading Training Hours…</div>';
+    if (trainingHoursLoading) return;
+    if (silent && (trainingHoursSaves > 0 || trainingHoursHasUnsavedInput())) return;
+    trainingHoursLoading = true;
+    if (!silent && table) table.innerHTML = '<div class="empty">Loading Training Hours…</div>';
     try {
         const result = await api("/api/training-hours");
-        trainingHoursRows = Array.isArray(result) ? result : [];
+        if (silent && (trainingHoursSaves > 0 || trainingHoursHasUnsavedInput())) return;
+        const rows = Array.isArray(result) ? result : [];
+        const signature = JSON.stringify(rows);
+        if (silent && signature === trainingHoursSignature) return;
+        trainingHoursSignature = signature;
+        trainingHoursRows = rows;
         renderTrainingHours();
     } catch (error) {
-        if (table) table.innerHTML = `<div class="empty">Failed to load Training Hours: ${esc(error.message)}</div>`;
+        if (!silent && table) table.innerHTML = `<div class="empty">Failed to load Training Hours: ${esc(error.message)}</div>`;
+    } finally {
+        trainingHoursLoading = false;
     }
 }
 function renderTrainingHours() {
@@ -1304,18 +1323,25 @@ document.addEventListener("click", async event => {
     if (add) $("#trainingHoursAddDialog")?.classList.add("hidden");
     toast("Training Hours updated.");
     button.disabled = false;
+    trainingHoursSaves++;
     void (async () => {
+        let failure = null;
         try {
             const result = await api("/api/training-hours", { method: "POST", body: JSON.stringify(data) });
             if (result.sheet_synced === false) throw new Error(`D1 saved the record, but Sheet1 sync failed: ${result.sheet_sync_error || "unknown Apps Script error"}`);
             if (result.sheet_synced !== true && !result.row) throw new Error("The deployed API did not confirm the Sheet1 update. Deploy the latest Cloudflare Worker and Apps Script versions.");
-            void loadTrainingHours();
         } catch (error) {
-            // D1 may already have committed before a Sheet mirror failed.
-            // Reload its authoritative state instead of reverting optimistically.
-            void loadTrainingHours();
+            failure = error;
+        } finally {
+            trainingHoursSaves = Math.max(0, trainingHoursSaves - 1);
+        }
+        // D1 may already have committed even when the Sheet mirror failed, so
+        // always show its authoritative state afterwards.
+        trainingHoursSignature = "";
+        await loadTrainingHours(true);
+        if (failure) {
             renderTrainingHoursAddChoices();
-            toast(`Training Hours save issue: ${error.message}`);
+            toast(`Training Hours save issue: ${failure.message}`);
         }
     })();
 });
@@ -5153,6 +5179,7 @@ function refreshVisibleRosterView() {
     if (activeTab === "members" && currentUserHasPermission("members_view")) void loadMembers(true, true);
     else if (activeTab === "eligible" && currentUserHasPermission("eligible_view")) void loadEligible(true);
     else if (activeTab === "inactive" && currentUserHasPermission("inactive_view")) void loadInactive(true);
+    else if (activeTab === "trainingDirectory" && currentUserHasPermission("training_hours_view") && $('[data-training-view="HOURS"]')?.classList.contains("active")) void loadTrainingHours(true);
 }
 setInterval(refreshVisibleRosterView, 3000);
 document.addEventListener("visibilitychange", refreshVisibleRosterView);
