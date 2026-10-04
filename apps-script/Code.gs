@@ -809,6 +809,7 @@ function instructorDirectory_(spreadsheet) {
     const values = sheet.getRange(2, start, last - 1, end - start + 1).getDisplayValues();
     const colors = sheet.getRange(2, start, last - 1, end - start + 1).getBackgrounds();
     values.forEach((row, index) => {
+      if (title === 'HERT Certified' && index + 2 === 3) return;
       const name = String(row[nameColumn - start] || '').trim();
       const color = colors[index][statusColumn - start];
       if (!name || !isGreen_(color)) return;
@@ -1041,6 +1042,7 @@ function hertDirectory_(spreadsheet) {
   const rows = sheet.getRange(2, 2, count, 3).getDisplayValues();
   const colors = sheet.getRange(2, 2, count, 3).getBackgrounds();
   rows.forEach((row, index) => {
+    if (index + 2 === 3) return;
     const name = String(row[0] || '').trim();
     if (name && isGreen_(colors[index][2])) map.set(name.toLowerCase(), true);
   });
@@ -1626,25 +1628,27 @@ function terminateMember_(data, user) {
   return { ok: true };
 }
 
-function findOrCreateNamedSheetRow_(sheet, nameColumn, name, create) {
+function findOrCreateNamedSheetRow_(sheet, nameColumn, name, create, ignoredRows) {
+  ignoredRows = ignoredRows || [];
   const maxRows = sheet.getMaxRows();
   const names = sheet.getRange(2, nameColumn, Math.max(0, maxRows - 1), 1).getDisplayValues();
   const normalizedName = String(name || '').trim().toLowerCase();
-  const existingIndex = names.findIndex(row => String(row[0] || '').trim().toLowerCase() === normalizedName);
+  const existingIndex = names.findIndex((row, index) => !ignoredRows.includes(index + 2) && String(row[0] || '').trim().toLowerCase() === normalizedName);
   if (existingIndex >= 0) return existingIndex + 2;
   if (!create) return 0;
-  const emptyIndex = names.findIndex(row => !String(row[0] || '').trim());
+  const emptyIndex = names.findIndex((row, index) => !ignoredRows.includes(index + 2) && !String(row[0] || '').trim());
   if (emptyIndex >= 0) return emptyIndex + 2;
   sheet.insertRowAfter(maxRows);
   return maxRows + 1;
 }
 
-function findNamedSheetRows_(sheet, nameColumn, name) {
+function findNamedSheetRows_(sheet, nameColumn, name, ignoredRows) {
+  ignoredRows = ignoredRows || [];
   const count = Math.max(0, sheet.getMaxRows() - 1);
   if (!count) return [];
   const normalizedName = normalizeMemberName_(name);
   return sheet.getRange(2, nameColumn, count, 1).getDisplayValues()
-    .map((row, index) => normalizeMemberName_(row[0]) === normalizedName ? index + 2 : 0)
+    .map((row, index) => !ignoredRows.includes(index + 2) && normalizeMemberName_(row[0]) === normalizedName ? index + 2 : 0)
     .filter(Boolean);
 }
 
@@ -1764,8 +1768,8 @@ function changeTraining_(data, user) {
   if (training === 'Hert') {
     const sheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')).getSheetByName('HERT Certified');
     if (!sheet) throw new Error('HERT Certified sheet was not found.');
-    const matchingRows = findNamedSheetRows_(sheet, 2, member.name);
-    const row = matchingRows[0] || (remove ? 0 : findOrCreateNamedSheetRow_(sheet, 2, member.name, true));
+    const matchingRows = findNamedSheetRows_(sheet, 2, member.name, [3]);
+    const row = matchingRows[0] || (remove ? 0 : findOrCreateNamedSheetRow_(sheet, 2, member.name, true, [3]));
     if (!row) return { ok: false, changed: false, status: 'already_removed', message: 'Training already removed' };
     if (remove) {
       matchingRows.forEach(currentRow => sheet.getRange(currentRow, 4).clearContent().setBackground('#ffffff'));
@@ -1811,7 +1815,7 @@ function changeInstructor_(callsign, data, user) {
   const statusColumn = type === 'HERT' ? 6 : 2;
   const sheet = spreadsheet.getSheetByName(title);
   if (!sheet) throw new Error(title + ' sheet was not found.');
-  const matchingRows = findNamedSheetRows_(sheet, nameColumn, member.name);
+  const matchingRows = findNamedSheetRows_(sheet, nameColumn, member.name, type === 'HERT' ? [3] : []);
   if (!assigned) {
     if (type === 'HERT') {
       matchingRows.forEach(currentRow => sheet.getRange(currentRow, statusColumn).clearContent().setBackground('#ffffff'));
@@ -1831,7 +1835,7 @@ function changeInstructor_(callsign, data, user) {
     appendAppLog_({ kind: 'instructor', callsign: member.callsign, member_name: member.name, action: type + ' Instructor Removed', details: type, changed_by: actorName_(user) });
     return { ok: true, changed: true, assigned: false, instructor_type: type, status: 'removed' };
   }
-  const row = matchingRows[0] || findOrCreateNamedSheetRow_(sheet, nameColumn, member.name, true);
+  const row = matchingRows[0] || findOrCreateNamedSheetRow_(sheet, nameColumn, member.name, true, type === 'HERT' ? [3] : []);
   if (String(sheet.getRange(row, nameColumn).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, nameColumn).setValue(member.name);
   const cell = sheet.getRange(row, statusColumn);
   const current = isGreen_(cell.getBackground());
