@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-04-training-hours-sheet2-1',
+  apiVersion: '2026-10-04-training-hours-d1-1',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -995,18 +995,22 @@ function hertCertified_(name) {
 }
 
 function clearHertNameIfUnqualified_(sheet, row) {
-  const name = String(sheet.getRange(row, 2).getDisplayValue() || '').trim().toLowerCase();
+  SpreadsheetApp.flush();
+  const name = String(sheet.getRange(row, 2).getDisplayValue() || '').trim().toLocaleLowerCase();
   if (!name) return;
   const count = Math.max(0, sheet.getLastRow() - 1);
   if (!count) return;
   const names = sheet.getRange(2, 2, count, 1).getDisplayValues();
+  const rows = [];
   names.forEach((values, index) => {
-    if (String(values[0] || '').trim().toLowerCase() !== name) return;
+    if (String(values[0] || '').trim().toLocaleLowerCase() !== name) return;
     const currentRow = index + 2;
     const certified = isGreen_(sheet.getRange(currentRow, 4).getBackground());
     const instructor = isGreen_(sheet.getRange(currentRow, 6).getBackground());
-    if (!certified && !instructor) sheet.getRange(currentRow, 2).clearContent();
+    if (certified || instructor) return;
+    rows.push(currentRow);
   });
+  rows.forEach(currentRow => sheet.getRange(currentRow, 2).clearContent());
   SpreadsheetApp.flush();
 }
 
@@ -1645,6 +1649,32 @@ function listTrainingHours_() {
     .reverse();
 }
 
+// Run once after applying migration 0007 to move existing Sheet2 entries into D1.
+function migrateTrainingHoursToD1() {
+  const workerUrl = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_SYNC_URL') || '').trim().replace(/\/$/, '');
+  const workerSecret = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
+  if (!workerUrl || !workerSecret) throw new Error('Configure LVFR_D1_SYNC_URL and LVFR_D1_WORKER_SECRET in Script Properties.');
+  const sheet = trainingHoursSheet_(), count = Math.max(0, sheet.getLastRow() - 1);
+  const members = rosterMembersByName_();
+  const records = count ? sheet.getRange(2, 2, count, 5).getDisplayValues().reduce((result, row) => {
+    const name = String(row[0] || '').trim(), time = String(row[4] || '').trim();
+    const member = members.get(normalizeMemberName_(name));
+    if (member && time) result.push({ callsign: member.callsign, date: String(row[2] || '').trim(), time });
+    return result;
+  }, []) : [];
+  const response = UrlFetchApp.fetch(workerUrl + '/internal/training-hours/import', {
+    method: 'post', contentType: 'application/json',
+    headers: { 'X-LVFR-Worker-Secret': workerSecret },
+    payload: JSON.stringify({ records }), muteHttpExceptions: true
+  });
+  let result = null;
+  try { result = JSON.parse(response.getContentText()); } catch (ignored) {}
+  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300 || !result || result.ok !== true) {
+    throw new Error('Training Hours D1 import failed: HTTP ' + response.getResponseCode() + ' ' + response.getContentText());
+  }
+  return { ok: true, imported: Number(result.imported || 0), message: 'Training Hours migrated to D1.' };
+}
+
 function changeTrainingHours_(data, user) {
   const action = String(data.action || '').trim().toLowerCase();
   let name = String(data.name || '').trim();
@@ -1753,12 +1783,13 @@ function changeInstructor_(callsign, data, user) {
   if (!assigned) {
     if (type === 'HERT') {
       findNamedSheetRows_(sheet, nameColumn, member.name).forEach(currentRow => sheet.getRange(currentRow, statusColumn).clearContent().setBackground('#ffffff'));
+      SpreadsheetApp.flush();
       clearHertNameIfUnqualified_(sheet, row);
     }
     else {
       const matchingRows = findNamedSheetRows_(sheet, 1, member.name);
       matchingRows.forEach(currentRow => {
-        sheet.getRange(currentRow, 1).setValue('');
+        sheet.getRange(currentRow, 1).clearContent();
         sheet.getRange(currentRow, 2).clearContent().setBackground('#ffffff');
         sheet.getRange(currentRow, 4).clearContent();
       });

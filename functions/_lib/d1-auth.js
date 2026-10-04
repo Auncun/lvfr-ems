@@ -441,6 +441,24 @@ export async function handleD1(context) {
       if(data.callsign_slots||data.available_callsigns) await saveCallsignSlots(db,data.callsign_slots||data.available_callsigns);
       return json(result);
     }
+    if(route==="/internal/training-hours/import" && method==="POST") {
+      const expected=String(env.LVFR_D1_WORKER_SECRET||"");
+      if(!expected || request.headers.get("X-LVFR-Worker-Secret")!==expected) return json({detail:"Worker authentication failed."},403);
+      if(!Array.isArray(data.records)) return json({detail:"Training Hours payload is invalid."},400);
+      const timestamp=new Date().toISOString(), statements=[];
+      for(const record of data.records) {
+        const callsign=String(record.callsign||"").trim().toUpperCase(), time=String(record.time||"").trim();
+        if(!callsign||!time) continue;
+        const member=await db.prepare("SELECT callsign,name FROM members WHERE upper(callsign)=upper(?)").bind(callsign).first();
+        if(!member) continue;
+        const trainingDate=String(record.date||"").trim()||new Intl.DateTimeFormat("en-US",{timeZone:"UTC",month:"2-digit",day:"2-digit",year:"numeric"}).format(new Date());
+        statements.push(db.prepare(`INSERT INTO training_hours(callsign,name,training_date,time,updated_at,updated_by) VALUES(?,?,?,?,?,?)
+          ON CONFLICT(callsign) DO UPDATE SET name=excluded.name,training_date=excluded.training_date,time=excluded.time,updated_at=excluded.updated_at`)
+          .bind(member.callsign,member.name,trainingDate,time,timestamp,"Sheet migration"));
+      }
+      for(let i=0;i<statements.length;i+=50) await db.batch(statements.slice(i,i+50));
+      return json({ok:true,imported:statements.length});
+    }
     const session=await accountForRequest(db,request), token=session.token, authRoute=route.startsWith("/auth/");
     if (route==="/api/health" && method==="GET") return json({ok:true,backend:"Cloudflare D1",auth_store:"D1"});
     if (route==="/auth/signup" && method==="POST") return json(await signup(db,env,data));
@@ -489,6 +507,47 @@ export async function handleD1(context) {
       return json({ok:true,role,permissions,updated_at:now,updated_by:actor.name});
     }
     requireRolePermission(user,user.permissions,permissionForRequest(route,method,data));
+    if(route==="/api/training-hours" && method==="GET") {
+      const result=await db.prepare("SELECT callsign,name,training_date AS date,time FROM training_hours ORDER BY lower(name),callsign").all();
+      return json(result.results||[]);
+    }
+    if(route==="/api/training-hours" && method==="POST") {
+      const action=String(data.action||"").trim().toLowerCase();
+      const callsign=String(data.callsign||"").trim().toUpperCase();
+      if(!callsign) throw new Error("Choose a roster member.");
+      const member=await db.prepare("SELECT callsign,name FROM members WHERE upper(callsign)=upper(?)").bind(callsign).first();
+      if(!member) throw Object.assign(new Error("Member was not found on the current roster."),{status:404});
+      const existing=await db.prepare("SELECT time FROM training_hours WHERE callsign=?").bind(member.callsign).first();
+      const previousTime=String(existing?.time||"");
+      const time=String(data.time||"").trim();
+      if(action==="add") {
+        if(existing) throw Object.assign(new Error("This member is already in Training Hours."),{status:409});
+        if(!time) throw new Error("Enter a training time.");
+      } else if(action==="time") {
+        if(!existing) throw Object.assign(new Error("This member is not in Training Hours."),{status:404});
+        if(!time) throw new Error("Enter a training time.");
+        if(previousTime===time) return json({ok:true,changed:false,message:"Time is already set."});
+      } else if(action==="remove") {
+        if(!existing) throw Object.assign(new Error("This member is not in Training Hours."),{status:404});
+      } else throw new Error("Choose Add, Remove, or Time.");
+      const timestamp=new Date().toISOString();
+      const trainingDate=new Intl.DateTimeFormat("en-US",{timeZone:"UTC",month:"2-digit",day:"2-digit",year:"numeric"}).format(new Date());
+      const newTime=action==="remove"?"":time;
+      const changes=action==="remove"
+        ? db.prepare("DELETE FROM training_hours WHERE callsign=?").bind(member.callsign)
+        : db.prepare(`INSERT INTO training_hours(callsign,name,training_date,time,updated_at,updated_by) VALUES(?,?,?,?,?,?)
+          ON CONFLICT(callsign) DO UPDATE SET name=excluded.name,training_date=excluded.training_date,time=excluded.time,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
+          .bind(member.callsign,member.name,trainingDate,time,timestamp,user.name);
+      const logAction=action==="time"?"Time Changed":action==="add"?"Added":"Removed";
+      const log=db.prepare("INSERT INTO training_hours_log(log_date,callsign,member_name,action,previous_time,new_time,changed_by) VALUES(?,?,?,?,?,?,?)")
+        .bind(timestamp,member.callsign,member.name,logAction,previousTime,newTime,user.name);
+      await db.batch([changes,log]);
+      return json({ok:true,changed:true,message:"Training Hours updated."});
+    }
+    if(route==="/api/members-log" && method==="GET" && url.searchParams.get("log_type")==="training_time") {
+      const result=await db.prepare("SELECT id,log_date,callsign,member_name,action,previous_time,new_time,changed_by FROM training_hours_log ORDER BY id DESC LIMIT 200").all();
+      return json(result.results||[]);
+    }
     if(route==="/api/members" && method==="GET") {
       return json(await readMembers(db,url.searchParams.get("search")||"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET)));
     }
