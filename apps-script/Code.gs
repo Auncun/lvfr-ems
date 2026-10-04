@@ -48,6 +48,24 @@ function doPost(e) {
       if (!member) throw new Error('Name was not found on the LVFR roster.');
       return output_({ ok: true, data: member });
     }
+    if (route === '/internal/logs/mirror' && String(input.method || '') === 'POST') {
+      const expected = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
+      if (!expected || !input.workerSecret || !constantTimeEquals_(String(input.workerSecret), expected)) throw new Error('Log mirror authentication failed.');
+      const record = input.data || {};
+      if (record.kind === 'account_audit') {
+        recordAccountAudit_(String(record.account_id || ''), String(record.name || ''), String(record.callsign || ''), String(record.action || ''), String(record.actor_name || ''));
+      } else {
+        const allowedKinds = ['promotion', 'callsign', 'termination', 'training', 'training_time', 'exam', 'note', 'activity', 'instructor', 'date'];
+        if (!allowedKinds.includes(String(record.kind || ''))) throw new Error('Unsupported log mirror kind.');
+        appendAppLog_(record);
+      }
+      return output_({ ok: true, data: { ok: true } });
+    }
+    if (route === '/internal/training-hours/mirror' && String(input.method || '') === 'POST') {
+      const expected = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
+      if (!expected || !input.workerSecret || !constantTimeEquals_(String(input.workerSecret), expected)) throw new Error('Training Hours mirror authentication failed.');
+      return output_({ ok: true, data: mirrorTrainingHoursFromD1_(input.data || {}) });
+    }
     if (route === '/auth/login' && String(input.method || 'GET') === 'POST') return output_({ ok: true, data: loginWithPassword_(input.data || {}) });
     if (route === '/auth/logout' && String(input.method || 'GET') === 'POST') { logoutSession_(input.sessionToken); return output_({ ok: true, data: { ok: true } }); }
     const method = String(input.method || 'GET');
@@ -994,16 +1012,16 @@ function hertCertified_(name) {
   return Boolean(hertDirectory_().get(String(name || '').trim().toLowerCase()));
 }
 
-function clearHertNameIfUnqualified_(sheet, row) {
+function clearHertNameIfUnqualified_(sheet, memberName) {
   SpreadsheetApp.flush();
-  const name = String(sheet.getRange(row, 2).getDisplayValue() || '').trim().toLocaleLowerCase();
+  const name = normalizeMemberName_(memberName);
   if (!name) return;
-  const count = Math.max(0, sheet.getLastRow() - 1);
+  const count = Math.max(0, sheet.getMaxRows() - 1);
   if (!count) return;
   const names = sheet.getRange(2, 2, count, 1).getDisplayValues();
   const rows = [];
   names.forEach((values, index) => {
-    if (String(values[0] || '').trim().toLocaleLowerCase() !== name) return;
+    if (normalizeMemberName_(values[0]) !== name) return;
     const currentRow = index + 2;
     const certified = isGreen_(sheet.getRange(currentRow, 4).getBackground());
     const instructor = isGreen_(sheet.getRange(currentRow, 6).getBackground());
@@ -1622,11 +1640,11 @@ function findOrCreateNamedSheetRow_(sheet, nameColumn, name, create) {
 }
 
 function findNamedSheetRows_(sheet, nameColumn, name) {
-  const count = Math.max(0, sheet.getLastRow() - 1);
+  const count = Math.max(0, sheet.getMaxRows() - 1);
   if (!count) return [];
-  const normalizedName = String(name || '').trim().toLowerCase();
+  const normalizedName = normalizeMemberName_(name);
   return sheet.getRange(2, nameColumn, count, 1).getDisplayValues()
-    .map((row, index) => String(row[0] || '').trim().toLowerCase() === normalizedName ? index + 2 : 0)
+    .map((row, index) => normalizeMemberName_(row[0]) === normalizedName ? index + 2 : 0)
     .filter(Boolean);
 }
 
@@ -1637,6 +1655,32 @@ function trainingHoursSheet_() {
   const sheet = spreadsheet.getSheetByName('Sheet2') || spreadsheet.getSheetByName('Training Hours');
   if (!sheet) throw new Error('Training Hours data sheet (Sheet2) was not found in the roster spreadsheet.');
   return sheet;
+}
+
+// D1 is the write authority; this endpoint mirrors committed values to the
+// legacy Sheet so existing workflows and exports continue to see them.
+function mirrorTrainingHoursFromD1_(data) {
+  const callsign = String(data.callsign || '').trim().toUpperCase();
+  if (!/^[A-Z]+-\d+$/.test(callsign)) throw new Error('Invalid Training Hours Callsign.');
+  const member = watchMemberNameByCallsign_(callsign);
+  if (!member) throw new Error('Training Hours member was not found on the roster.');
+  const sheet = trainingHoursSheet_();
+  const matchingRows = findNamedSheetRows_(sheet, 2, member.name);
+  const action = String(data.action || '').trim().toLowerCase();
+  if (action === 'remove') {
+    matchingRows.forEach(row => { sheet.getRange(row, 2).clearContent(); sheet.getRange(row, 4).clearContent(); sheet.getRange(row, 6).clearContent(); });
+    return { ok: true, changed: Boolean(matchingRows.length) };
+  }
+  if (!['add', 'time'].includes(action)) throw new Error('Invalid Training Hours mirror action.');
+  const time = String(data.time || '').trim();
+  if (!time) throw new Error('Training Hours time is required.');
+  const row = matchingRows[0] || findOrCreateNamedSheetRow_(sheet, 2, member.name, true);
+  const dateValue = String(data.date || '').trim();
+  sheet.getRange(row, 2).setValue(member.name);
+  sheet.getRange(row, 4).setValue(dateValue || new Date());
+  sheet.getRange(row, 4).setNumberFormat('MM/dd/yyyy');
+  sheet.getRange(row, 6).setValue(time);
+  return { ok: true, changed: true, row };
 }
 
 function listTrainingHours_() {
@@ -1707,11 +1751,13 @@ function changeTraining_(data, user) {
   if (training === 'Hert') {
     const sheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')).getSheetByName('HERT Certified');
     if (!sheet) throw new Error('HERT Certified sheet was not found.');
-    const row = findOrCreateNamedSheetRow_(sheet, 2, member.name, !remove);
+    const matchingRows = findNamedSheetRows_(sheet, 2, member.name);
+    const row = matchingRows[0] || (remove ? 0 : findOrCreateNamedSheetRow_(sheet, 2, member.name, true));
     if (!row) return { ok: false, changed: false, status: 'already_removed', message: 'Training already removed' };
     if (remove) {
-      findNamedSheetRows_(sheet, 2, member.name).forEach(currentRow => sheet.getRange(currentRow, 4).clearContent().setBackground('#ffffff'));
-      clearHertNameIfUnqualified_(sheet, row);
+      matchingRows.forEach(currentRow => sheet.getRange(currentRow, 4).clearContent().setBackground('#ffffff'));
+      SpreadsheetApp.flush();
+      clearHertNameIfUnqualified_(sheet, member.name);
     } else {
       if (String(sheet.getRange(row, 2).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, 2).setValue(member.name);
       const cell = sheet.getRange(row, 4);
@@ -1752,16 +1798,14 @@ function changeInstructor_(callsign, data, user) {
   const statusColumn = type === 'HERT' ? 6 : 2;
   const sheet = spreadsheet.getSheetByName(title);
   if (!sheet) throw new Error(title + ' sheet was not found.');
-  const row = findOrCreateNamedSheetRow_(sheet, nameColumn, member.name, assigned);
-  if (!row) return { ok: true, changed: false, assigned, instructor_type: type, status: 'unchanged' };
+  const matchingRows = findNamedSheetRows_(sheet, nameColumn, member.name);
   if (!assigned) {
     if (type === 'HERT') {
-      findNamedSheetRows_(sheet, nameColumn, member.name).forEach(currentRow => sheet.getRange(currentRow, statusColumn).clearContent().setBackground('#ffffff'));
+      matchingRows.forEach(currentRow => sheet.getRange(currentRow, statusColumn).clearContent().setBackground('#ffffff'));
       SpreadsheetApp.flush();
-      clearHertNameIfUnqualified_(sheet, row);
+      clearHertNameIfUnqualified_(sheet, member.name);
     }
     else {
-      const matchingRows = findNamedSheetRows_(sheet, 1, member.name);
       matchingRows.forEach(currentRow => {
         sheet.getRange(currentRow, 1).clearContent();
         sheet.getRange(currentRow, 2).clearContent().setBackground('#ffffff');
@@ -1770,9 +1814,11 @@ function changeInstructor_(callsign, data, user) {
       SpreadsheetApp.flush();
     }
     CacheService.getScriptCache().remove('instructor-directory:v1');
+    if (!matchingRows.length) return { ok: true, changed: false, assigned: false, instructor_type: type, status: 'unchanged' };
     appendAppLog_({ kind: 'instructor', callsign: member.callsign, member_name: member.name, action: type + ' Instructor Removed', details: type, changed_by: actorName_(user) });
     return { ok: true, changed: true, assigned: false, instructor_type: type, status: 'removed' };
   }
+  const row = matchingRows[0] || findOrCreateNamedSheetRow_(sheet, nameColumn, member.name, true);
   if (String(sheet.getRange(row, nameColumn).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, nameColumn).setValue(member.name);
   const cell = sheet.getRange(row, statusColumn);
   const current = isGreen_(cell.getBackground());

@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS account_audit (
   name TEXT NOT NULL DEFAULT '',
   callsign TEXT NOT NULL DEFAULT '',
   action TEXT NOT NULL,
-  actor_name TEXT NOT NULL DEFAULT ''
+  actor_name TEXT NOT NULL DEFAULT '',
+  source_key TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS account_audit_created_at_idx
   ON account_audit(created_at DESC, id DESC);

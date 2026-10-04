@@ -4878,6 +4878,23 @@ if (membersLogClear) {
 
 }
 
+const membersLogDelete = $("#membersLogDeleteBtn");
+membersLogDelete?.addEventListener("click", async event => {
+    event.preventDefault();
+    if (!currentUserIsAdmin || !currentLogType) return;
+    if (!window.confirm(`Delete all ${currentLogType} entries from the website's D1 log? Google Sheets will remain unchanged.`)) return;
+    membersLogDelete.disabled = true;
+    try {
+        await api("/api/members-log/clear", { method: "POST", body: JSON.stringify({ log_type: currentLogType }) });
+        try { sessionStorage.removeItem(`lvfr.log.${currentUserAccountId}.${currentLogType}.v1`); } catch {}
+        currentLogRows = [];
+        renderMembersLog();
+        toast("D1 log cleared. Google Sheets was not changed.");
+    } catch (error) {
+        toast(`Could not clear D1 log: ${error.message}`);
+    } finally { membersLogDelete.disabled = false; }
+});
+
 
 // ============================================================
 // MODAL CLICK OUTSIDE
@@ -4925,6 +4942,7 @@ function canRunFullSync(user) {
 function applyAccountUser(user) {
     window.lvfrCacheUser?.(user);
     currentUserIsAdmin = Boolean(user.is_admin);
+    if (membersLogDelete) membersLogDelete.hidden = !currentUserIsAdmin;
     currentUserPermissions = user.permissions || {};
     if (user.role === "member" && !currentUserHasPermission("portal_access")) {
         location.replace("/watch-command");

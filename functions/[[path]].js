@@ -9,7 +9,9 @@ export async function onRequest(context) {
     return context.next();
   }
 
-  if (String(env.D1_AUTH_MODE || "").toLowerCase() === "enabled") {
+  // Private D1 endpoints are never Apps Script API routes. Always send them
+  // to the D1 handler, even while public API auth is in migration mode.
+  if (incoming.pathname.startsWith("/internal/") || String(env.D1_AUTH_MODE || "").toLowerCase() === "enabled") {
     const { handleD1 } = await import("./_lib/d1-auth.js");
     return handleD1(context);
   }

@@ -427,6 +427,74 @@ async function accountAction(db, id, action, actor) {
   ]);
   return { ok:true, status:"saving" };
 }
+function isCommandRank(user) {
+  return ["admin","commander"].includes(String(user.role||"").toLowerCase()) || /^(E|C|DIV|B|CHIEF|COM)-/i.test(String(user.callsign||""));
+}
+function notificationVisible(row,user) {
+  if(row.kind==="request") return ["admin","commander"].includes(String(user.role||""));
+  if(row.kind==="inactive") return isCommandRank(user);
+  if(row.kind!=="eligible") return false;
+  return ["admin","commander"].includes(String(user.role||"")) || isCommandRank(user) || ["AEMT","Senior Volunteer"].includes(String(row.target_rank||""));
+}
+async function refreshD1Notifications(db,user) {
+  const rows=(await db.prepare("SELECT * FROM members").all()).results||[];
+  const stateRows=(await db.prepare("SELECT state_key,state_value FROM notification_state").all()).results||[];
+  const state=new Map(stateRows.map(row=>[row.state_key,row.state_value]));
+  const additions=[],now=new Date().toISOString();
+  for(const member of rows) {
+    const eligible=rankEligibility(memberFromRow(member));
+    if(eligible.eligible&&eligible.next_rank) additions.push({kind:"eligible",eventKey:"eligible:"+member.callsign+":"+eligible.next_rank,title:"New eligible promotion",message:member.name+" ("+member.callsign+") is eligible for "+eligible.next_rank+".",callsign:member.callsign,targetRank:eligible.next_rank,stateKey:"eligible:"+member.callsign,stateValue:eligible.next_rank});
+  }
+  const command=isCommandRank(user);
+  if(command) for(const member of rows) if(member.activity==="Can Be Terminated") additions.push({kind:"inactive",eventKey:"inactive:"+member.callsign,title:"Can Be Terminated",message:member.name+" ("+member.callsign+") is marked Can Be Terminated.",callsign:member.callsign,targetRank:"",stateKey:"inactive:"+member.callsign,stateValue:"1"});
+  if(["admin","commander"].includes(String(user.role||""))) {
+    const pending=(await db.prepare("SELECT account_id,name,callsign,created_at FROM accounts WHERE status='pending'").all()).results||[];
+    for(const account of pending) additions.push({kind:"request",eventKey:"request:"+account.account_id,title:"New account request",message:(account.name||"New account")+" requested an account.",callsign:account.callsign||"",targetRank:"",stateKey:"request:"+account.account_id,stateValue:"1",createdAt:account.created_at});
+  }
+  const statements=[];
+  for(const item of additions) {
+    const seeded=state.has(item.stateKey);
+    const isEligible=item.kind==="eligible";
+    const shouldNotify=isEligible || item.kind==="request" || (item.kind==="inactive" && state.has("inactive_seeded"));
+    if(shouldNotify) {
+      statements.push(db.prepare("INSERT OR IGNORE INTO notifications(kind,event_key,title,message,callsign,target_rank,created_at) VALUES(?,?,?,?,?,?,?)")
+        .bind(item.kind,item.eventKey,item.title,item.message,item.callsign,item.targetRank,item.createdAt||now));
+    }
+    state.set(item.stateKey,item.stateValue);
+  }
+  for(const key of [...state.keys()]) {
+    if(key.startsWith("eligible:")&&!additions.some(item=>item.stateKey===key)) state.delete(key);
+    if(command&&key.startsWith("inactive:")&&!additions.some(item=>item.stateKey===key)) state.delete(key);
+  }
+  if(!state.has("eligibility_seeded")) state.set("eligibility_seeded","1");
+  if(command&&!state.has("inactive_seeded")) state.set("inactive_seeded","1");
+  if(statements.length) await db.batch(statements);
+  const lastState=(await db.prepare("SELECT state_key FROM notification_state").all()).results||[];
+  const existing=new Set(lastState.map(row=>row.state_key));
+  const writes=[];
+  for(const key of existing) if(!state.has(key)) writes.push(db.prepare("DELETE FROM notification_state WHERE state_key=?").bind(key));
+  for(const [key,value] of state) writes.push(db.prepare("INSERT INTO notification_state(state_key,state_value) VALUES(?,?) ON CONFLICT(state_key) DO UPDATE SET state_value=excluded.state_value").bind(key,value));
+  if(writes.length) await db.batch(writes);
+}
+async function writeOperationalLog(db,old,route,data,result,user) {
+  const now=new Date().toISOString(), callsign=String(old.callsign||data.callsign||"");
+  let kind="",action="",details="",newRank="",newCallsign="";
+  if(route==="/api/activity") { kind="activity"; action="Activity Changed"; details=String(old.activity||"")+" -> "+String(data.activity||""); }
+  else if(route==="/api/note") { kind="note"; action=String(data.action||"").toUpperCase(); details=String(result.note||"")||"Deleted"; }
+  else if(route==="/api/date") { kind="date"; action="Rank Date Changed"; details=String(data.date_str||""); }
+  else if(route==="/api/training") { kind="training"; action=data.remove?"REMOVED":"ADDED"; details=String(data.training||""); }
+  else if(route==="/api/exam") { kind="exam"; action=data.remove?"REMOVED":"ADDED"; details="Supervisor Exam"; }
+  else if(route==="/api/do-not-promote") { kind="activity"; action=data.blocked?"Do Not Promote Added":"Do Not Promote Removed"; details=action; }
+  else if(route==="/api/terminate") { kind="termination"; action="Terminated"; details=String(data.note||""); }
+  else if(route==="/api/member/"+callsign+"/instructor") { kind="instructor"; const type=String(data.instructor_type||"").toUpperCase(); action=type+" Instructor "+(data.assigned?"Assigned":"Removed"); details=type; }
+  else if(route==="/api/change-callsign") { kind="callsign"; action="Callsign Changed"; newCallsign=String(result.new_callsign||data.new_callsign||""); newRank=String(result.new_rank||old.rank||""); }
+  else if(["/api/promote","/api/force-promote","/api/demote","/api/change-rank"].includes(route)) { kind="promotion"; action=route==="/api/demote"?"Demoted":route==="/api/change-rank"?"Rank Changed":"Promoted"; newCallsign=String(result.new_callsign||""); newRank=String(result.new_rank||""); }
+  if(!kind) return;
+  if(!newCallsign) newCallsign=callsign;
+  await db.prepare(`INSERT INTO operational_logs(kind,log_date,callsign,member_name,action,details,changed_by,old_rank,new_rank,old_callsign,new_callsign)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?)`).bind(kind,now,callsign,String(old.name||""),action,details,String(user.name||""),String(old.rank||""),newRank||String(old.rank||""),kind==="callsign"||kind==="promotion"?callsign:"",kind==="callsign"||kind==="promotion"?newCallsign:"").run();
+}
+
 export async function handleD1(context) {
   const { request, env } = context, url = new URL(request.url), route = url.pathname, method=request.method;
   const db=env.LVFR_DB;
@@ -445,19 +513,39 @@ export async function handleD1(context) {
       const expected=String(env.LVFR_D1_WORKER_SECRET||"");
       if(!expected || request.headers.get("X-LVFR-Worker-Secret")!==expected) return json({detail:"Worker authentication failed."},403);
       if(!Array.isArray(data.records)) return json({detail:"Training Hours payload is invalid."},400);
-      const timestamp=new Date().toISOString(), statements=[];
+      const timestamp=new Date().toISOString(), statements=[]; let skipped=0;
       for(const record of data.records) {
         const callsign=String(record.callsign||"").trim().toUpperCase(), time=String(record.time||"").trim();
-        if(!callsign||!time) continue;
+        if(!callsign||!time) { skipped++; continue; }
         const member=await db.prepare("SELECT callsign,name FROM members WHERE upper(callsign)=upper(?)").bind(callsign).first();
-        if(!member) continue;
+        if(!member) { skipped++; continue; }
         const trainingDate=String(record.date||"").trim()||new Intl.DateTimeFormat("en-US",{timeZone:"UTC",month:"2-digit",day:"2-digit",year:"numeric"}).format(new Date());
         statements.push(db.prepare(`INSERT INTO training_hours(callsign,name,training_date,time,updated_at,updated_by) VALUES(?,?,?,?,?,?)
           ON CONFLICT(callsign) DO UPDATE SET name=excluded.name,training_date=excluded.training_date,time=excluded.time,updated_at=excluded.updated_at`)
           .bind(member.callsign,member.name,trainingDate,time,timestamp,"Sheet migration"));
       }
       for(let i=0;i<statements.length;i+=50) await db.batch(statements.slice(i,i+50));
-      return json({ok:true,imported:statements.length});
+      return json({ok:true,imported:statements.length,skipped});
+    }
+    if(route==="/internal/logs/import" && method==="POST") {
+      const expected=String(env.LVFR_D1_WORKER_SECRET||"");
+      if(!expected || request.headers.get("X-LVFR-Worker-Secret")!==expected) return json({detail:"Worker authentication failed."},403);
+      const statements=[];
+      for(const row of (Array.isArray(data.operational_logs)?data.operational_logs:[])) statements.push(db.prepare(`INSERT OR IGNORE INTO operational_logs(source_key,kind,log_date,callsign,member_name,action,details,changed_by,old_rank,new_rank,old_callsign,new_callsign)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).bind(String(row.source_key||""),String(row.kind||""),String(row.log_date||""),String(row.callsign||""),String(row.member_name||""),String(row.action||""),String(row.details||""),String(row.changed_by||""),String(row.old_rank||""),String(row.new_rank||""),String(row.old_callsign||""),String(row.new_callsign||"")));
+      for(const row of (Array.isArray(data.account_audit)?data.account_audit:[])) statements.push(db.prepare("INSERT OR IGNORE INTO account_audit(source_key,created_at,account_id,name,callsign,action,actor_name) VALUES(?,?,?,?,?,?,?)")
+        .bind(String(row.source_key||""),String(row.created_at||""),String(row.account_id||""),String(row.name||""),String(row.callsign||""),String(row.action||""),String(row.actor_name||"")));
+      for(const row of (Array.isArray(data.notifications)?data.notifications:[])) statements.push(db.prepare("INSERT OR IGNORE INTO notifications(kind,event_key,title,message,callsign,target_rank,created_at) VALUES(?,?,?,?,?,?,?)")
+        .bind(String(row.kind||""),String(row.event_key||("legacy-sheet:"+String(row.id||""))),String(row.title||""),String(row.message||""),String(row.callsign||""),String(row.target_rank||""),String(row.created_at||new Date().toISOString())));
+      for(let i=0;i<statements.length;i+=50) await db.batch(statements.slice(i,i+50));
+      const reads=Array.isArray(data.notification_reads)?data.notification_reads:[];
+      for(const row of reads) {
+        const key=String(row.event_key||("legacy-sheet:"+String(row.notification_id||"")));
+        const id=await db.prepare("SELECT id FROM notifications WHERE event_key=?").bind(key).first();
+        if(id&&row.account_id) await db.prepare("INSERT OR IGNORE INTO notification_reads(account_id,notification_id,read_at) VALUES(?,?,?)").bind(String(row.account_id),id.id,String(row.read_at||new Date().toISOString())).run();
+      }
+      for(const row of (Array.isArray(data.notification_state)?data.notification_state:[])) await db.prepare("INSERT INTO notification_state(state_key,state_value) VALUES(?,?) ON CONFLICT(state_key) DO UPDATE SET state_value=excluded.state_value").bind(String(row.key||""),String(row.value||"")).run();
+      return json({ok:true,operational_logs:(data.operational_logs||[]).length,account_audit:(data.account_audit||[]).length,notifications:(data.notifications||[]).length});
     }
     const session=await accountForRequest(db,request), token=session.token, authRoute=route.startsWith("/auth/");
     if (route==="/api/health" && method==="GET") return json({ok:true,backend:"Cloudflare D1",auth_store:"D1"});
@@ -507,6 +595,65 @@ export async function handleD1(context) {
       return json({ok:true,role,permissions,updated_at:now,updated_by:actor.name});
     }
     requireRolePermission(user,user.permissions,permissionForRequest(route,method,data));
+    if(route==="/api/notifications" && method==="GET") {
+      await refreshD1Notifications(db,user);
+      const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? ORDER BY n.id DESC LIMIT 250").bind(user.account_id).all()).results||[];
+      const items=recent.filter(item=>notificationVisible(item,user)).slice(0,100);
+      const response=json({items,unread_count:items.filter(item=>!Number(item.is_read)).length});
+      // Keep the legacy notification sheet in sync without delaying the D1 response.
+      if(env.LVFR_D1_AUTH_BRIDGE_SECRET) {
+        const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
+        const {proxyToAppsScript}=await import("../[[path]].js");
+        context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,route,url,assertion,{});if(!mirror.ok)console.error("Notification Sheet mirror failed:",await mirror.text());}catch(error){console.error("Notification Sheet mirror failed:",error);}})());
+      }
+      return response;
+    }
+    if(route==="/api/notifications/read" && method==="POST") {
+      const requested=Array.isArray(data.ids)?[...new Set(data.ids.map(value=>Number(value)).filter(Number.isSafeInteger))]:[];
+      const now=new Date().toISOString();
+      if(requested.length) await db.batch(requested.map(id=>db.prepare("INSERT OR IGNORE INTO notification_reads(account_id,notification_id,read_at) VALUES(?,?,?)").bind(user.account_id,id,now)));
+      else await db.prepare("INSERT OR IGNORE INTO notification_reads(account_id,notification_id,read_at) SELECT ?,id,? FROM notifications").bind(user.account_id,now).run();
+      if(env.LVFR_D1_AUTH_BRIDGE_SECRET) {
+        const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET), {proxyToAppsScript}=await import("../[[path]].js");
+        context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,route,url,assertion,data);if(!mirror.ok)console.error("Notification read Sheet mirror failed:",await mirror.text());}catch(error){console.error("Notification read Sheet mirror failed:",error);}})());
+      }
+      return json({ok:true});
+    }
+    if(route==="/api/members-log/clear" && method==="POST") {
+      await requireAdmin(db,token);
+      const kind=String(data.log_type||"").trim().toLowerCase();
+      const allowed=["promotion","callsign","termination","training","training_time","exam","note","activity","instructor"];
+      if(!allowed.includes(kind)) throw new Error("Choose a valid log category.");
+      if(kind==="training_time") await db.prepare("DELETE FROM training_hours_log").run();
+      else await db.prepare("DELETE FROM operational_logs WHERE kind=?").bind(kind).run();
+      return json({ok:true,kind});
+    }
+    const directLogKind={"/api/promotions":"promotion","/api/training-log":"training","/api/exam-log":"exam","/api/termination-log":"termination"}[route];
+    if((route==="/api/members-log"||directLogKind) && method==="GET") {
+      const kind=directLogKind||String(url.searchParams.get("log_type")||"promotion").toLowerCase();
+      const allowed=["promotion","callsign","termination","training","training_time","exam","note","activity","instructor"];
+      if(!allowed.includes(kind)) throw Object.assign(new Error("Invalid log type: "+kind),{status:400});
+      if(kind==="termination") await requireAdmin(db,token);
+      if(kind==="training_time") {
+        const rows=await db.prepare("SELECT id,log_date,callsign,member_name,action,previous_time,new_time,changed_by FROM training_hours_log ORDER BY id DESC LIMIT 200").all();
+        return json(rows.results||[]);
+      }
+      const rows=await db.prepare("SELECT id,kind,log_date,callsign,member_name,action,details,changed_by,old_rank,new_rank,old_callsign,new_callsign FROM operational_logs WHERE kind=? ORDER BY id DESC LIMIT 200").bind(kind).all();
+      return json((rows.results||[]).map(row=>({ ...row,
+        ...(kind==="training"?{training_name:row.details}:{}),
+        ...(kind==="exam"?{exam_name:row.details}:{}),
+        ...(kind==="note"?{note:row.details}:{}),
+        ...(kind==="instructor"?{instructor_type:row.details}:{}),
+        ...(kind==="activity"?{old_status:String(row.details||"").split(" -> ")[0]||"",new_status:String(row.details||"").split(" -> ")[1]||"",changed_at:row.log_date}:{}),
+        ...(kind==="termination"?{termination_date:row.log_date,rank:row.old_rank,terminated_by:row.changed_by,reason:row.details}:{}),
+        ...(["promotion","callsign"].includes(kind)?{promo_date:row.log_date,promoted_by:row.changed_by}:{}),
+      })));
+    }
+    if(route==="/api/leaders/audit/clear" && method==="POST") {
+      await requireAdmin(db,token);
+      await db.prepare("DELETE FROM account_audit").run();
+      return json({ok:true});
+    }
     if(route==="/api/training-hours" && method==="GET") {
       const result=await db.prepare("SELECT callsign,name,training_date AS date,time FROM training_hours ORDER BY lower(name),callsign").all();
       return json(result.results||[]);
@@ -542,11 +689,13 @@ export async function handleD1(context) {
       const log=db.prepare("INSERT INTO training_hours_log(log_date,callsign,member_name,action,previous_time,new_time,changed_by) VALUES(?,?,?,?,?,?,?)")
         .bind(timestamp,member.callsign,member.name,logAction,previousTime,newTime,user.name);
       await db.batch([changes,log]);
+      if(env.LVFR_D1_AUTH_BRIDGE_SECRET) {
+        const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET), {proxyToAppsScript}=await import("../[[path]].js");
+        const sheetLog={kind:"training_time",log_date:timestamp,callsign:member.callsign,member_name:member.name,action:logAction,details:JSON.stringify({previous_time:previousTime,new_time:newTime}),changed_by:user.name};
+        context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,assertion,sheetLog);if(!mirror.ok)console.error("Training Hours log Sheet mirror failed:",await mirror.text());}catch(error){console.error("Training Hours log Sheet mirror failed:",error);}})());
+        context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/training-hours/mirror",url,assertion,{action,callsign:member.callsign,time:newTime,date:trainingDate});if(!mirror.ok)console.error("Training Hours Sheet mirror failed:",await mirror.text());}catch(error){console.error("Training Hours Sheet mirror failed:",error);}})());
+      }
       return json({ok:true,changed:true,message:"Training Hours updated."});
-    }
-    if(route==="/api/members-log" && method==="GET" && url.searchParams.get("log_type")==="training_time") {
-      const result=await db.prepare("SELECT id,log_date,callsign,member_name,action,previous_time,new_time,changed_by FROM training_hours_log ORDER BY id DESC LIMIT 200").all();
-      return json(result.results||[]);
     }
     if(route==="/api/members" && method==="GET") {
       return json(await readMembers(db,url.searchParams.get("search")||"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET)));
@@ -628,12 +777,21 @@ export async function handleD1(context) {
       if(route==="/api/exam"&&!admin&&!user.permissions.exam_manage&&!/^(E|C|DIV|B|CHIEF|COM)-/.test(user.callsign)) throw Object.assign(new Error("Command rank or Exam permission is required for this action."),{status:403});
       const mutationData={...data};
       if(instructorWrite) mutationData.callsign=decodeURIComponent(instructorWrite[1]).toUpperCase();
+      const oldMember=await db.prepare("SELECT * FROM members WHERE upper(callsign)=upper(?)").bind(mutationData.callsign).first();
       const result=await applyRosterMutationD1(db,route,mutationData,user);
+      if(result.changed!==false && oldMember) await writeOperationalLog(db,oldMember,route,mutationData,result,user);
       const isHertTraining=route==="/api/training" && String(mutationData.training||"").trim().toLowerCase()==="hert";
       // Sheets can be out of sync with D1 (for example after a manual edit or
       // a prior background write failure). Always mirror instructor changes,
-      // even when D1 already has the requested instructor state.
-      if(result.changed!==false || isHertTraining || instructorWrite) {
+      // even when D1 already has the requested instructor state. Wait for the
+      // Sheet write so the UI can report a failed cleanup instead of silently
+      // claiming the instructor was removed.
+      if(instructorWrite) {
+        const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
+        const { proxyToAppsScript } = await import("../[[path]].js");
+        const sheetResponse=await proxyToAppsScript(context,route,url,assertion,mutationData);
+        if(!sheetResponse.ok) return json({detail:"Instructor state was saved in D1, but Google Sheets could not be updated: "+await sheetResponse.text()},502);
+      } else if(result.changed!==false || isHertTraining) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
         const { proxyToAppsScript } = await import("../[[path]].js");
         const bg=(async()=>{ try { const response=await proxyToAppsScript(context,route,url,assertion,mutationData); if(!response.ok) console.error("Background Sheet write failed after D1 commit:",await response.text()); } catch(error) { console.error("Background Sheet write failed after D1 commit:",error); } })();
@@ -647,9 +805,26 @@ export async function handleD1(context) {
     if (route==="/api/leaders" && method==="GET") { const admin=await requireAdmin(db,token); return json(await leaders(db,admin)); }
     if (route==="/api/leaders/audit" && method==="GET") { await requireAdmin(db,token); const r=await db.prepare("SELECT id,created_at,account_id,name,callsign,action,actor_name,actor_name AS by FROM account_audit ORDER BY id DESC LIMIT 200").all(); return json(r.results||[]); }
     const action=route.match(/^\/api\/leaders\/([^/]+)\/(allow|deny|admin|demote|member|leader|deactivate|reactivate)$/);
-    if(action && method==="POST") { const admin=await requireAdmin(db,token); return json(await accountAction(db,decodeURIComponent(action[1]),action[2],admin)); }
+    if(action && method==="POST") {
+      const admin=await requireAdmin(db,token), target=await db.prepare("SELECT account_id,name,callsign FROM accounts WHERE account_id=?").bind(decodeURIComponent(action[1])).first();
+      const result=await accountAction(db,decodeURIComponent(action[1]),action[2],admin);
+      if(target&&env.LVFR_D1_AUTH_BRIDGE_SECRET) {
+        const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET), {proxyToAppsScript}=await import("../[[path]].js");
+        context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,assertion,{kind:"account_audit",account_id:target.account_id,name:target.name,callsign:target.callsign,action:action[2],actor_name:admin.name});if(!mirror.ok)console.error("Account Audit Sheet mirror failed:",await mirror.text());}catch(error){console.error("Account Audit Sheet mirror failed:",error);}})());
+      }
+      return json(result);
+    }
     const deletion=route.match(/^\/api\/leaders\/([^/]+)$/);
-    if(deletion && method==="DELETE") { const admin=await requireAdmin(db,token); return json(await accountAction(db,decodeURIComponent(deletion[1]),"delete",admin)); }
+    if(deletion && method==="DELETE") {
+      const admin=await requireAdmin(db,token), id=decodeURIComponent(deletion[1]);
+      const target=await db.prepare("SELECT account_id,name,callsign FROM accounts WHERE account_id=?").bind(id).first();
+      const result=await accountAction(db,id,"delete",admin);
+      if(target&&env.LVFR_D1_AUTH_BRIDGE_SECRET) {
+        const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET), {proxyToAppsScript}=await import("../[[path]].js");
+        context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,assertion,{kind:"account_audit",account_id:target.account_id,name:target.name,callsign:target.callsign,action:"delete",actor_name:admin.name});if(!mirror.ok)console.error("Account Audit Sheet mirror failed:",await mirror.text());}catch(error){console.error("Account Audit Sheet mirror failed:",error);}})());
+      }
+      return json(result);
+    }
     if(route==="/api/account/password" && method==="POST") {
       const current=await db.prepare("SELECT * FROM accounts WHERE account_id=?").bind(user.account_id).first();
       if(await passwordHash(String(data.current_password||""),current.password_salt)!==current.password_hash) throw Object.assign(new Error("Current password is incorrect."),{status:400});

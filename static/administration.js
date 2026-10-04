@@ -88,6 +88,21 @@ function renderAudit() {
       <td data-label="Action">${esc(String(entry.action || '—').replace(/\bAdmin\b/g, 'Commander'))}</td><td data-label="By">${esc(String(entry.actor_name || '—').replace(/\bWeb Admin\b/g, 'Web Commander'))}</td></tr>`).join('')
     : '<tr><td colspan="4">No account history yet.</td></tr>';
 }
+document.querySelector('#clearAccountAuditBtn')?.addEventListener('click', async event => {
+  const button = event.currentTarget;
+  if (!currentUser?.is_admin) return;
+  if (!window.confirm("Clear the account audit from D1 and the website? Google Sheets will remain unchanged.")) return;
+  button.disabled = true;
+  try {
+    await api('/api/leaders/audit/clear', { method: 'POST' });
+    overview.audit = [];
+    renderAudit();
+    void loadAccounts(true);
+    setMessage('D1 account audit cleared. Google Sheets was not changed.', 'success');
+  } catch (error) {
+    setMessage(`Could not clear D1 account audit: ${error.message}`, 'error');
+  } finally { button.disabled = false; }
+});
 async function loadAccounts(silent = false) {
   const cachedUser = window.lvfrCachedUser?.();
   const cacheKey = `lvfr.admin.accounts.${cachedUser?.account_id || cachedUser?.id || 'current'}.v1`;
