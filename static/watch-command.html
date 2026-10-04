@@ -74,10 +74,10 @@
     .watch-place-option .watch-place-remove { flex:none; min-width:34px; min-height:34px; border:0; color:#b9c3d0; background:transparent; font-size:20px; }
     .watch-place-option .watch-place-remove:hover { color:#ff8178; background:#422b31; }
     .significant-call-controls { grid-template-columns:repeat(4,minmax(0,1fr)); }
-    .significant-call-controls .watch-location-field { grid-column:1/-1; }
+    .significant-call-controls .watch-location-field { grid-column:span 2; }
     .significant-call-field { grid-column:1/-1; min-width:0; }
-    .significant-call-controls > .watch-location-field { grid-column:1/-1; width:100%; min-width:0; }
-    #callLocation { display:block; box-sizing:border-box; width:100% !important; min-width:100%; min-height:62px; padding:15px 16px; font-size:18px; }
+    .significant-call-controls > .watch-location-field { grid-column:span 2; width:100%; min-width:0; }
+    #callLocation { display:block; box-sizing:border-box; width:100% !important; min-width:0; min-height:48px; padding:10px 12px; font-size:16px; }
     #savedCallLocations { width:100%; box-sizing:border-box; }
     .watch-section-toggle { grid-column:1/-1; display:flex; align-items:center; gap:9px; width:100%; min-height:40px; margin:3px 0; padding:9px 12px; border:1px solid #354456; border-radius:8px; background:#151e29; color:#dce6f2; text-align:left; font-weight:600; }
     .watch-section-toggle:hover { border-color:#6182a8; background:#1b2939; }
@@ -97,7 +97,7 @@
     .watch-log-grid p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; color:#d5dce5; }
     .watch-log-grid p.watch-na { color:#788391; }
     .watch-empty { color:#9aa4b2; }
-    @media(max-width:850px) { .quick-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.significant-call-controls{grid-template-columns:repeat(2,minmax(0,1fr))} }
+    @media(max-width:850px) { .quick-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.significant-call-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.significant-call-controls .watch-location-field{grid-column:span 1} }
     @media(max-width:650px) { .watch-shell{width:100%;min-width:0;padding:14px 14px 28px}.watch-card{padding:14px;min-width:0}.watch-fields,.watch-log-grid{grid-template-columns:minmax(0,1fr)}.watch-fields .wide{grid-column:auto}.watch-fields>*{min-width:0}.quick-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.watch-log-title-row{align-items:flex-start;flex-direction:column}.watch-log-title-row>*{min-width:0;max-width:100%} }
   </style>
 </head>
@@ -301,7 +301,7 @@
   <script src="/static/session-auth.js?v=shared-session-5"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
   <script src="/static/header-controls.js?v=header-controls-1"></script>
-  <script src="/static/watch_command.js?v=83"></script>
+  <script src="/static/watch_command.js?v=84"></script>
   <script src="/static/sidebar.js?v=nested-navigation-8"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 </body>

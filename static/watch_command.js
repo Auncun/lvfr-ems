@@ -60,9 +60,15 @@ function renderSavedCallLocations(show = false) {
       savedCallLocationInput.dispatchEvent(new Event('input', { bubbles: true }));
       renderSavedCallLocations(false);
     });
+    choose.addEventListener('keydown', event => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      choose.click();
+    });
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'watch-place-remove';
+    remove.tabIndex = -1;
     remove.textContent = '×';
     remove.title = `Remove ${value} from saved places`;
     remove.setAttribute('aria-label', `Remove ${value} from saved places`);
