@@ -1654,10 +1654,9 @@ function findNamedSheetRows_(sheet, nameColumn, name, ignoredRows) {
 
 function trainingHoursSheet_() {
   const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
-  // Training Hours uses the existing Sheet2 tab: B = member, D = date, F = time.
-  // Keep the named tab as a migration fallback for installations that still use it.
-  const sheet = spreadsheet.getSheetByName('Sheet2') || spreadsheet.getSheetByName('Training Hours');
-  if (!sheet) throw new Error('Training Hours data sheet (Sheet2) was not found in the roster spreadsheet.');
+  // Training Hours lives in Sheet1: B = member, D = date, F = time.
+  const sheet = spreadsheet.getSheetByName('Sheet1') || spreadsheet.getSheetByName('Training Hours') || spreadsheet.getSheetByName('Sheet2');
+  if (!sheet) throw new Error('Training Hours data sheet (Sheet1) was not found in the roster spreadsheet.');
   return sheet;
 }
 

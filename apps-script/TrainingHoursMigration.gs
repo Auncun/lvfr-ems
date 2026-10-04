@@ -1,5 +1,5 @@
 /**
- * One-time importer for existing Training Hours rows in Sheet2 into D1.
+ * One-time importer for existing Training Hours rows in Sheet1 into D1.
  * Add this file to the LVFR Apps Script project, then run
  * migrateTrainingHoursToD1 from the Apps Script function picker.
  */
@@ -13,9 +13,9 @@ function migrateTrainingHoursToD1() {
 
   const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
   const roster = spreadsheet.getSheetByName('Ranks🎖️');
-  const hours = spreadsheet.getSheetByName('Sheet2') || spreadsheet.getSheetByName('Training Hours');
+  const hours = spreadsheet.getSheetByName('Sheet1') || spreadsheet.getSheetByName('Training Hours') || spreadsheet.getSheetByName('Sheet2');
   if (!roster) throw new Error('Roster tab Ranks🎖️ was not found.');
-  if (!hours) throw new Error('Training Hours tab Sheet2 was not found.');
+  if (!hours) throw new Error('Training Hours tab Sheet1 was not found.');
 
   const rosterCount = Math.max(0, roster.getLastRow() - 1);
   const callsignByName = new Map();
@@ -31,7 +31,7 @@ function migrateTrainingHoursToD1() {
   const records = count ? hours.getRange(2, 2, count, 5).getDisplayValues().reduce((result, row, index) => {
     const name = String(row[0] || '').trim().replace(/\s+/g, ' ');
     const time = String(row[4] || '').trim();
-    // Sheet2 may have a second header row below a title/blank row.
+    // The source tab may have a second header row below a title/blank row.
     if (!name || /^(name|member|member name|callsign|date|time|training hours?)$/i.test(name)) return result;
     if (!time) return result;
     const callsign = callsignByName.get(name.toLowerCase());

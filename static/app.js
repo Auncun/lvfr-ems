@@ -1294,14 +1294,28 @@ document.addEventListener("click", async event => {
     const row = button.closest("tr, .training-action-choice");
     const time = add ? row?.querySelector("[data-training-hours-new-time]")?.value : save ? row?.querySelector("[data-training-hours-time]")?.value : "";
     const data = { action: add ? "add" : save ? "time" : "remove", id: Number(button.dataset.id) || undefined, name: button.dataset.name, callsign: button.dataset.callsign, time };
-    try {
-        await api("/api/training-hours", { method: "POST", body: JSON.stringify(data) });
-        await loadTrainingHours();
-        renderTrainingHoursAddChoices();
-        if (add) $("#trainingHoursAddDialog")?.classList.add("hidden");
-        toast("Training Hours updated.");
-    } catch (error) { toast(error.message); }
-    finally { button.disabled = false; }
+    const before = trainingHoursRows.slice();
+    const selected = trainingHoursRows.find(item => Number(item.id) === data.id);
+    const today = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "2-digit", day: "2-digit", year: "numeric" }).format(new Date());
+    if (add) trainingHoursRows.unshift({ id: `pending-${Date.now()}`, callsign: data.callsign, name: data.name, date: today, time: data.time });
+    else if (save && selected) selected.time = data.time;
+    else if (remove) trainingHoursRows = trainingHoursRows.filter(item => Number(item.id) !== data.id);
+    renderTrainingHours();
+    renderTrainingHoursAddChoices();
+    if (add) $("#trainingHoursAddDialog")?.classList.add("hidden");
+    toast("Training Hours updated; saving in background.");
+    button.disabled = false;
+    void (async () => {
+        try {
+            await api("/api/training-hours", { method: "POST", body: JSON.stringify(data) });
+            void loadTrainingHours();
+        } catch (error) {
+            trainingHoursRows = before;
+            renderTrainingHours();
+            renderTrainingHoursAddChoices();
+            toast(`Training Hours save failed: ${error.message}. The displayed change was reverted.`);
+        }
+    })();
 });
 
 // ============================================================
