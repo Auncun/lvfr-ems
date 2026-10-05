@@ -80,7 +80,9 @@ body {
 .role-editor-main { min-width:0; }
 .custom-role-tools { display:flex; flex-wrap:wrap; align-items:end; gap:10px; margin-top:18px; }
 .custom-role-tools label { display:grid; gap:5px; color:var(--muted,#667085); font-size:.85rem; }
-.permission-member-results { display:grid; flex-basis:100%; gap:5px; }
+.permission-member-picker { display:grid; gap:8px; margin:14px 0 18px; max-width:520px; }
+.permission-member-picker label { display:grid; gap:5px; color:var(--muted,#667085); font-size:.85rem; }
+.permission-member-results { display:grid; gap:5px; }
 .permission-member-results button { text-align:left; }
 @media(max-width:760px) { .role-editor-layout { grid-template-columns:1fr; } .permission-role-nav { display:flex; overflow-x:auto; position:static; } .permission-role-nav button { flex:0 0 auto; } }
 .role-permission-card { min-width:0; overflow:hidden; border:1px solid #303d4b; border-radius:16px; padding:18px; background:linear-gradient(155deg,#151e29,#0d1219 70%); box-shadow:0 14px 34px #0003; }

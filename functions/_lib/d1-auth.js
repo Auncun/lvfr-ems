@@ -874,6 +874,7 @@ export async function handleD1(context) {
       member.instructor_date="";
       return json(member);
     }
+    if(route==="/api/watch-command/current-user" && method==="GET") return json({account_id:user.account_id,callsign:user.callsign,name:user.name,role:user.role,permissions:user.permissions||{}});
     if(route==="/api/watch-command/members" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).map(({callsign,name,rank})=>({callsign,name,rank})));
     const watchMember=route.match(/^\/api\/watch-command\/member\/([^/]+)$/);
     if(watchMember && method==="GET") {
