@@ -249,7 +249,7 @@ const permissionGroups = [
     ['watch_command_roster', 'Watch Command: roster lookup', 'Search member names and callsigns.'],
   ] },
   { name: 'Lists and records', items: [
-    ['members_view', 'Members list', 'View the roster and member list.'], ['eligible_view', 'Eligible list', 'View promotion eligibility.'],
+    ['members_view', 'Members list', 'View the roster and member list.'], ['eligible_view', 'Eligible list', 'View promotion eligibility.'], ['promotion_access', 'Access Promotion', 'Open the Promotion page and view eligible members.'],
     ['profile_view', 'Member profiles', 'Open member View / Manage details.'], ['inactive_view', 'Can Be Terminated list', 'View members marked for termination.'],
     ['logs_view', 'Members Log', 'View member operation logs.'], ['statistics_view', 'Statistics', 'View roster statistics.'],
     ['training_view', 'Training lists', 'Open FORT, HERT, and instructor directories.'], ['training_hours_view', 'Training Hours: view', 'View Training Hours records.'],
@@ -258,7 +258,7 @@ const permissionGroups = [
   { name: 'Training and member changes', items: [
     ['training_fort_manage', 'Manage FORT training', 'Change Basic and Advanced FORT status; FORT Instructor status is also required.'],
     ['training_hert_manage', 'Manage HERT training', 'Change HERT status; HERT Instructor status is also required.'],
-    ['training_hours_manage', 'Manage Training Hours', 'Add, remove, and change Training Hours records.'],
+    ['training_hours_manage', 'Manage Training Hours', 'Add, remove, and change Training Hours records.'], ['loi_manage', 'Manage LOI lists', 'Add LOI candidates and record Passed or Failed results.'],
     ['instructor_manage', 'Instructor assignments', 'Assign or remove FORT and HERT Instructor status.'],
     ['notes_manage', 'Member notes', 'Add, edit, or remove member notes.'], ['activity_manage', 'Activity status', 'Change member activity status.'],
     ['exam_manage', 'Supervisor exam', 'Add or remove exam status.'], ['rank_date_manage', 'Rank date', 'Change a member rank date.'],
@@ -537,7 +537,7 @@ const commandSections = {
   history: document.querySelector('#commandHistorySection'),
 };
 function showCommandSection(name, updateHash = false) {
-  if (name === 'permissions' && currentUser?.role !== 'admin') name = 'accounts';
+  if (name === 'permissions' && !['admin', 'commander'].includes(currentUser?.role)) name = 'accounts';
   if (!commandSections[name]) return;
   Object.entries(commandSections).forEach(([key, section]) => { section.hidden = key !== name; });
   document.querySelectorAll('[data-command-section]').forEach(button => {

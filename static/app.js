@@ -1199,7 +1199,90 @@ document.querySelectorAll("[data-training-view]").forEach(button => button.addEv
     document.querySelectorAll("[data-training-view]").forEach(item => item.classList.toggle("active", item === button));
     document.querySelectorAll("[data-training-panel]").forEach(panel => { panel.hidden = panel.dataset.trainingPanel !== button.dataset.trainingView; });
     if (button.dataset.trainingView === "HOURS") void loadTrainingHours();
+    if (button.dataset.trainingView === "LOI") void loadLoiLists();
 }));
+document.querySelectorAll("[data-loi-type]").forEach(button => button.addEventListener("click", () => {
+    document.querySelectorAll("[data-loi-type]").forEach(item => item.classList.toggle("active", item === button));
+    document.querySelectorAll("[data-loi-panel]").forEach(panel => { panel.hidden = panel.dataset.loiPanel !== button.dataset.loiType; });
+}));
+
+let loiLists = { hert: [], fort: [] };
+let loiLoadPromise = null;
+async function loadLoiLists() {
+    if (loiLoadPromise) return loiLoadPromise;
+    loiLoadPromise = (async () => {
+        const tables = [$("#hertLoiTable"), $("#fortLoiTable")];
+        tables.forEach(table => { if (table) table.innerHTML = '<div class="empty">Loading LOI lists…</div>'; });
+        try {
+            const result = await api("/api/loi");
+            loiLists = { hert: Array.isArray(result.hert) ? result.hert : [], fort: Array.isArray(result.fort) ? result.fort : [] };
+            renderLoiLists();
+        } catch (error) {
+            tables.forEach(table => { if (table) table.innerHTML = `<div class="empty">Could not load LOI lists: ${esc(error.message)}</div>`; });
+        } finally { loiLoadPromise = null; }
+    })();
+    return loiLoadPromise;
+}
+function renderLoiLists() {
+    const canManage = currentUserHasPermission("loi_manage");
+    const memberByName = new Map((allMembersCache || []).map(member => [String(member.name || "").trim().toLocaleLowerCase(), member]));
+    [["HERT", "hert", "#hertLoiTable", "#hertLoiSearch"], ["FORT", "fort", "#fortLoiTable", "#fortLoiSearch"]].forEach(([type,key,selector,searchSelector]) => {
+        const table = $(selector);
+        if (!table) return;
+        const query = String($(searchSelector)?.value || "").trim().toLocaleLowerCase();
+        const rows = loiLists[key].filter(item => `${item.name} ${memberByName.get(String(item.name).toLocaleLowerCase())?.callsign || ""} ${item.test_percent || ""}`.toLocaleLowerCase().includes(query));
+        const callsign = name => memberByName.get(String(name).trim().toLocaleLowerCase())?.callsign || "";
+        table.innerHTML = rows.length ? `<table><thead><tr><th>Callsign</th><th>Member</th>${type === "FORT" ? "<th>% on test</th>" : ""}${canManage ? "<th>Result</th>" : ""}</tr></thead><tbody>${rows.map(item => `<tr><td><strong>${esc(callsign(item.name))}</strong></td><td>${esc(item.name)}</td>${type === "FORT" ? `<td>${esc(item.test_percent)}%</td>` : ""}${canManage ? `<td><button type="button" data-loi-result="passed" data-loi-type="${type}" data-loi-row="${Number(item.row)}" data-loi-name="${esc(item.name)}" data-loi-callsign="${esc(callsign(item.name))}" data-loi-percent="${esc(item.test_percent || "")}">Passed</button> <button type="button" class="danger" data-loi-result="failed" data-loi-type="${type}" data-loi-row="${Number(item.row)}" data-loi-name="${esc(item.name)}" data-loi-callsign="${esc(callsign(item.name))}" data-loi-percent="${esc(item.test_percent || "")}">Failed</button></td>` : ""}</tr>`).join("")}</tbody></table>` : `<div class="empty">No ${type} LOI entries match this search.</div>`;
+    });
+}
+$("#hertLoiSearch")?.addEventListener("input", renderLoiLists);
+$("#fortLoiSearch")?.addEventListener("input", renderLoiLists);
+let loiAddType = "HERT";
+function renderLoiAddChoices() {
+    const choices = $("#loiAddChoices");
+    if (!choices) return;
+    const query = String($("#loiAddSearch")?.value || "").trim().toLocaleLowerCase();
+    const members = (allMembersCache || []).filter(member => !query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query));
+    choices.innerHTML = members.length ? members.map(member => `<div class="training-action-choice"><span>${esc(member.name)} / ${esc(member.callsign)}</span>${loiAddType === "FORT" ? `<label>% on test <input type="number" min="0" max="100" step="any" data-loi-percent placeholder="Enter percent"></label>` : ""}<button type="button" class="primary" data-loi-add data-loi-type="${loiAddType}" data-loi-name="${esc(member.name)}" data-loi-callsign="${esc(member.callsign)}">Add</button></div>`).join("") : '<div class="empty">No members match this search.</div>';
+}
+document.querySelectorAll("[data-open-loi-add]").forEach(button => button.addEventListener("click", async () => {
+    if (!currentUserHasPermission("loi_manage")) return;
+    loiAddType = button.dataset.openLoiAdd;
+    if (!allMembersCache?.length) await loadMembers(true, true);
+    $("#loiAddTitle").textContent = `Add ${loiAddType} LOI`;
+    $("#loiAddSearch").value = "";
+    renderLoiAddChoices();
+    $("#loiAddDialog")?.classList.remove("hidden");
+}));
+$("#loiAddSearch")?.addEventListener("input", renderLoiAddChoices);
+$("#closeLoiAdd")?.addEventListener("click", () => $("#loiAddDialog")?.classList.add("hidden"));
+$("#loiAddDialog")?.addEventListener("click", event => { if (event.target.id === "loiAddDialog") event.currentTarget.classList.add("hidden"); });
+document.addEventListener("click", async event => {
+    const add = event.target.closest("[data-loi-add]"), result = event.target.closest("[data-loi-result]"), button = add || result;
+    if (!button || !currentUserHasPermission("loi_manage")) return;
+    const row = button.closest(".training-action-choice");
+    const action = add ? "add" : button.dataset.loiResult;
+    const type = button.dataset.loiType;
+    const payload = { action, type, name: button.dataset.loiName, callsign: button.dataset.loiCallsign };
+    if (add && type === "FORT") {
+        const entered = String(row?.querySelector("[data-loi-percent]")?.value || "").trim();
+        if (!entered || !Number.isFinite(Number(entered)) || Number(entered) < 0 || Number(entered) > 100) return toast("Enter a FORT LOI percentage from 0 to 100.");
+        payload.test_percent = Number(entered);
+    }
+    if (result) {
+        payload.row = Number(button.dataset.loiRow);
+        payload.test_percent = button.dataset.loiPercent;
+        if (!window.confirm(`Mark ${payload.name}'s ${type} LOI as ${action}? This removes the entry from the Sheet.`)) return;
+    }
+    button.disabled = true;
+    try {
+        await api("/api/loi", { method: "POST", body: JSON.stringify(payload) });
+        $("#loiAddDialog")?.classList.add("hidden");
+        await loadLoiLists();
+        toast(add ? `${type} LOI added.` : `${type} LOI marked ${action}.`);
+    } catch (error) { toast(`LOI update failed: ${error.message}`); }
+    finally { button.disabled = false; }
+});
 const trainingActionDialog = $("#trainingActionDialog"), trainingActionChoices = $("#trainingActionChoices"), trainingActionSearch = $("#trainingActionSearch");
 let activeTrainingAction = null;
 function renderTrainingActionChoices() {
@@ -2380,6 +2463,10 @@ function renderMembersLog() {
                 values = [r.log_date, r.callsign, r.member_name, r.instructor_type, r.action, r.changed_by];
             }
 
+            else if (currentLogType === "loi") {
+                values = [r.log_date, r.loi_type, r.test_percent, r.callsign, r.member_name, r.action, r.changed_by];
+            }
+
 
             return values.some(
                 value =>
@@ -2848,6 +2935,20 @@ function renderMembersLog() {
                 `).join("")}</tbody>
             </table>
         `;
+        return;
+    }
+
+    if (currentLogType === "loi") {
+        container.innerHTML = `
+            <table>
+                <thead><tr><th>Date</th><th>LOI</th><th>Callsign</th><th>Member</th><th>% on test</th><th>Result / Action</th><th>By</th></tr></thead>
+                <tbody>${rows.map(r => `
+                    <tr>
+                        <td>${esc(r.log_date || "")}</td><td>${esc(r.loi_type || "")} LOI</td><td>${esc(r.callsign || "")}</td>
+                        <td>${esc(r.member_name || "")}</td><td>${r.test_percent === "" || r.test_percent == null ? "—" : `${esc(r.test_percent)}%`}</td>
+                        <td><strong>${esc(r.action || "")}</strong></td><td>${esc(r.changed_by || "")}</td>
+                    </tr>`).join("")}</tbody>
+            </table>`;
         return;
     }
 }
@@ -5054,15 +5155,22 @@ function applyAccountUser(user) {
     if (instructorLogTab) instructorLogTab.style.display = currentUserHasPermission("logs_view") ? "" : "none";
     const statisticsTab = $("#statisticsTab");
     if (statisticsTab) statisticsTab.style.display = canViewStatistics(user) ? "" : "none";
-    const tabPermissions = { members: "members_view", eligible: "eligible_view", membersLog: "logs_view", trainingDirectory: "training_view", inactive: "inactive_view", statistics: "statistics_view" };
+    const tabPermissions = { members: "members_view", eligible: ["eligible_view", "promotion_access"], membersLog: "logs_view", trainingDirectory: "training_view", inactive: "inactive_view", statistics: "statistics_view" };
     Object.entries(tabPermissions).forEach(([tab, permission]) => {
         const button = document.querySelector(`.tab[data-tab="${tab}"]`);
-        if (button) button.style.display = currentUserHasPermission(permission) ? "" : "none";
+        if (button) button.style.display = (Array.isArray(permission) ? permission.some(key => currentUserHasPermission(key)) : currentUserHasPermission(permission)) ? "" : "none";
     });
     const trainingHoursTab = document.querySelector('[data-training-view="HOURS"]');
     if (trainingHoursTab) trainingHoursTab.style.display = currentUserHasPermission("training_hours_view") ? "" : "none";
+    const loiViewTab = document.querySelector('[data-training-view="LOI"]');
+    const canViewLoi = currentUserHasPermission("training_view") || currentUserHasPermission("loi_manage");
+    if (loiViewTab) loiViewTab.style.display = canViewLoi ? "" : "none";
+    const trainingDirectoryTab = document.querySelector('.tab[data-tab="trainingDirectory"]');
+    if (trainingDirectoryTab) trainingDirectoryTab.style.display = canViewLoi ? "" : "none";
+    document.querySelectorAll('[data-training-view="FORT"], [data-training-view="HERT"]').forEach(button => { button.style.display = currentUserHasPermission("training_view") ? "" : "none"; });
     const addTrainingHoursButton = $("#openTrainingHoursAdd");
     if (addTrainingHoursButton) addTrainingHoursButton.style.display = currentUserHasPermission("training_hours_manage") ? "" : "none";
+    document.querySelectorAll("[data-open-loi-add]").forEach(button => { button.hidden = !currentUserHasPermission("loi_manage"); });
     if (!currentUserHasPermission("members_view")) sessionStorage.removeItem("lvfr.roster.snapshot.v1");
     if ($("#doNotPromoteTab")) $("#doNotPromoteTab").style.display = currentUserHasPermission("do_not_promote_view") ? "" : "none";
     if (!document.querySelector(".tab.active") || document.querySelector(".tab.active").style.display === "none") {
@@ -5214,10 +5322,11 @@ function refreshVisibleRosterView() {
     if (document.hidden) return;
     const activeTab = $(".tab.active")?.dataset.tab;
     if (activeTab === "members" && currentUserHasPermission("members_view")) void loadMembers(true, true);
-    else if (activeTab === "eligible" && currentUserHasPermission("eligible_view")) void loadEligible(true);
+    else if (activeTab === "eligible" && (currentUserHasPermission("eligible_view") || currentUserHasPermission("promotion_access"))) void loadEligible(true);
     else if (activeTab === "inactive" && currentUserHasPermission("inactive_view")) void loadInactive(true);
     else if (activeTab === "trainingDirectory") {
         if ($('[data-training-view="HOURS"]')?.classList.contains("active")) { if (currentUserHasPermission("training_hours_view")) void loadTrainingHours(true); }
+        else if ($('[data-training-view="LOI"]')?.classList.contains("active")) { if (currentUserHasPermission("training_view") || currentUserHasPermission("loi_manage")) void loadLoiLists(); }
         else if (currentUserHasPermission("training_view")) void loadMembers(true, true);
     }
 }

@@ -386,11 +386,17 @@
 
 <section id="trainingDirectory" class="panel">
   <div class="section-head"><div><h2>Training</h2></div></div>
-  <div class="training-directory-tabs"><button type="button" class="log-tab active" data-training-view="FORT">FORT</button><button type="button" class="log-tab" data-training-view="HERT">HERT</button><button type="button" class="log-tab" data-training-view="HOURS">Training Hours</button></div>
+  <div class="training-directory-tabs"><button type="button" class="log-tab active" data-training-view="FORT">FORT</button><button type="button" class="log-tab" data-training-view="HERT">HERT</button><button type="button" class="log-tab" data-training-view="HOURS">Training Hours</button><button type="button" class="log-tab" data-training-view="LOI">LOI</button></div>
   <section class="training-directory-view" data-training-panel="FORT"><div class="training-directory-filters"><label class="training-directory-search">Search FORT list<input type="search" aria-label="Search FORT list" placeholder="Search callsign or member"></label><label>Filter FORT<select id="fortTrainingFilter" aria-label="Filter FORT list"><option value="all">All FORT members</option><option value="basic">Basic FORT</option><option value="advanced">Advanced FORT</option><option value="instructor">FORT Instructor</option></select></label></div><div id="fortTrainingTable" class="table-wrap"></div></section>
   <section class="training-directory-view" data-training-panel="HERT" hidden><div class="training-directory-filters"><label class="training-directory-search">Search HERT list<input type="search" aria-label="Search HERT list" placeholder="Search callsign or member"></label><label>Filter HERT<select id="hertTrainingFilter" aria-label="Filter HERT list"><option value="all">All HERT members</option><option value="certified">HERT Certified</option><option value="instructor">HERT Instructor</option></select></label></div><div id="hertTrainingTable" class="table-wrap"></div></section>
   <section class="training-directory-view" data-training-panel="HOURS" hidden><div class="training-directory-filters"><label class="training-directory-search">Search Training Hours<input id="trainingHoursSearch" type="search" aria-label="Search Training Hours" placeholder="Search callsign or member"></label><button type="button" class="primary" id="openTrainingHoursAdd">Add Training Record</button></div><div id="trainingHoursTable" class="table-wrap"></div></section>
+  <section class="training-directory-view" data-training-panel="LOI" hidden>
+    <div class="training-directory-tabs loi-subtabs"><button type="button" class="log-tab active" data-loi-type="HERT">HERT LOI</button><button type="button" class="log-tab" data-loi-type="FORT">FORT LOI</button></div>
+    <section data-loi-panel="HERT"><div class="training-directory-filters"><label class="training-directory-search">Search HERT LOI<input id="hertLoiSearch" type="search" placeholder="Search member"></label><button type="button" class="primary" data-open-loi-add="HERT">Add HERT LOI</button></div><div id="hertLoiTable" class="table-wrap"></div></section>
+    <section data-loi-panel="FORT" hidden><div class="training-directory-filters"><label class="training-directory-search">Search FORT LOI<input id="fortLoiSearch" type="search" placeholder="Search member"></label><button type="button" class="primary" data-open-loi-add="FORT">Add FORT LOI</button></div><div id="fortLoiTable" class="table-wrap"></div></section>
+  </section>
   <div id="trainingHoursAddDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="trainingHoursAddTitle"><div class="modal-box"><button type="button" class="close" id="closeTrainingHoursAdd" aria-label="Close">&times;</button><h2 id="trainingHoursAddTitle">Add Training Record</h2><label class="training-directory-search">Search members<input id="trainingHoursAddSearch" type="search" placeholder="Search callsign or member"></label><div id="trainingHoursAddChoices" class="training-action-choices"></div></div></div>
+  <div id="loiAddDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="loiAddTitle"><div class="modal-box"><button type="button" class="close" id="closeLoiAdd" aria-label="Close">&times;</button><h2 id="loiAddTitle">Add LOI</h2><label class="training-directory-search">Search members<input id="loiAddSearch" type="search" placeholder="Search callsign or member"></label><div id="loiAddChoices" class="training-action-choices"></div></div></div>
   <div id="trainingActionDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="trainingActionTitle"><div class="modal-box"><button type="button" class="close" id="closeTrainingAction" aria-label="Close">&times;</button><h2 id="trainingActionTitle"></h2><label class="training-directory-search">Search members<input id="trainingActionSearch" type="search" placeholder="Search callsign or member"></label><div id="trainingActionChoices" class="training-action-choices"></div></div></div>
 </section>
 
@@ -580,6 +586,8 @@
         </button>
 
         <button type="button" class="log-tab" data-log="training_time">Training Time Log</button>
+
+        <button type="button" class="log-tab" data-log="loi">LOI Log</button>
 
 
         <button
@@ -827,7 +835,7 @@
 
 <script src="/static/session-auth.js?v=shared-session-7"></script>
 <script src="/static/account-settings.js?v=account-settings-5"></script>
-<script src="/static/app.js?v=role-permission-persistence-20261005-1"></script>
+<script src="/static/app.js?v=promotion-access-20261005-1"></script>
 <script src="/static/sidebar.js?v=command-permissions-20261004-1"></script>
 <script src="/static/mobile-popovers.js?v=portal-controls-20261004-1"></script>
 

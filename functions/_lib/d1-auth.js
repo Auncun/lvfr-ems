@@ -1,10 +1,10 @@
 const enc = new TextEncoder();
 const json = (body, status = 200, headers = {}) => Response.json(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
 const nowSeconds = () => Math.floor(Date.now() / 1000);
-const ROLE_PERMISSION_KEYS = ["portal_access","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","profile_view","inactive_view","logs_view","training_view","training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
+const ROLE_PERMISSION_KEYS = ["portal_access","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view","training_view","training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
 const DEFAULT_ROLE_PERMISSIONS = {
-  member: { portal_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:false,eligible_view:false,profile_view:false,inactive_view:false,logs_view:false,training_view:false,training_fort_manage:false,training_hert_manage:false,training_hours_view:false,training_hours_manage:false,statistics_view:false,notes_manage:false,promotion_manage:false,callsign_manage:false,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:false,sync_manage:false },
-  leader: { portal_access:true,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true },
+  member: { portal_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:false,eligible_view:false,promotion_access:false,profile_view:false,inactive_view:false,logs_view:false,training_view:false,training_fort_manage:false,training_hert_manage:false,training_hours_view:false,training_hours_manage:false,loi_manage:false,statistics_view:false,notes_manage:false,promotion_manage:false,callsign_manage:false,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:false,sync_manage:false },
+  leader: { portal_access:true,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,promotion_access:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,loi_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true },
   commander: Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,true]))
 };
 async function rolePermissions(db, role) {
@@ -26,12 +26,13 @@ async function accountPermissions(db, account) {
   return Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,Object.hasOwn(overrides,key)?overrides[key]:role[key]]));
 }
 function permissionForRequest(route, method, data={}) {
-  if(route==="/api/members"&&method==="GET") return ["members_view","training_view","statistics_view"];
-  if(route==="/api/eligible"&&method==="GET") return "eligible_view";
+  if(route==="/api/members"&&method==="GET") return ["members_view","training_view","statistics_view","loi_manage"];
+  if(route==="/api/eligible"&&method==="GET") return ["eligible_view","promotion_access"];
   if(route==="/api/inactive"&&method==="GET") return "inactive_view";
   if(route==="/api/members-log"&&method==="GET") return "logs_view";
   if(["/api/promotions","/api/training-log","/api/exam-log","/api/termination-log"].includes(route)&&method==="GET") return "logs_view";
   if(route==="/api/training-hours") return method==="GET"?"training_hours_view":"training_hours_manage";
+  if(route==="/api/loi") return method==="GET"?["training_view","loi_manage"]:"loi_manage";
   if(route==="/api/instructors"&&method==="GET") return "training_view";
   if(route==="/api/statistics"&&method==="GET") return "statistics_view";
   if(route==="/api/sync-status"&&method==="GET") return "sync_view";
@@ -709,7 +710,7 @@ export async function handleD1(context) {
     if(route==="/api/members-log/clear" && method==="POST") {
       await requireAdmin(db,token);
       const kind=String(data.log_type||"").trim().toLowerCase();
-      const allowed=["promotion","callsign","termination","training","training_time","exam","note","activity","instructor"];
+      const allowed=["promotion","callsign","termination","training","training_time","loi","exam","note","activity","instructor"];
       if(!allowed.includes(kind)) throw new Error("Choose a valid log category.");
       if(kind==="training_time") await db.prepare("DELETE FROM training_hours_log").run();
       else await db.prepare("DELETE FROM operational_logs WHERE kind=?").bind(kind).run();
@@ -718,7 +719,7 @@ export async function handleD1(context) {
     const directLogKind={"/api/promotions":"promotion","/api/training-log":"training","/api/exam-log":"exam","/api/termination-log":"termination"}[route];
     if((route==="/api/members-log"||directLogKind) && method==="GET") {
       const kind=directLogKind||String(url.searchParams.get("log_type")||"promotion").toLowerCase();
-      const allowed=["promotion","callsign","termination","training","training_time","exam","note","activity","instructor"];
+      const allowed=["promotion","callsign","termination","training","training_time","loi","exam","note","activity","instructor"];
       if(!allowed.includes(kind)) throw Object.assign(new Error("Invalid log type: "+kind),{status:400});
       if(kind==="termination") await requireAdmin(db,token);
       if(kind==="training_time") {
@@ -728,6 +729,7 @@ export async function handleD1(context) {
       const rows=await db.prepare("SELECT id,kind,log_date,callsign,member_name,action,details,changed_by,old_rank,new_rank,old_callsign,new_callsign FROM operational_logs WHERE kind=? ORDER BY id DESC LIMIT 200").bind(kind).all();
       return json((rows.results||[]).map(row=>({ ...row,
         ...(kind==="training"?{training_name:row.details}:{}),
+        ...(kind==="loi"?(()=>{let details={};try{details=JSON.parse(row.details||"{}")}catch{}return {loi_type:details.loi_type||"",test_percent:details.test_percent??""}})():{}),
         ...(kind==="exam"?{exam_name:row.details}:{}),
         ...(kind==="note"?{note:row.details}:{}),
         ...(kind==="instructor"?{instructor_type:row.details}:{}),
@@ -740,6 +742,32 @@ export async function handleD1(context) {
       await requireAdmin(db,token);
       await db.prepare("DELETE FROM account_audit").run();
       return json({ok:true});
+    }
+    if(route==="/api/loi" && (method==="GET"||method==="POST")) {
+      const {proxyToAppsScript}=await import("../[[path]].js");
+      if(method==="GET") {
+        const sheetResponse=await proxyToAppsScript(context,"/internal/loi",url,"",{});
+        if(!sheetResponse.ok) return sheetResponse;
+        return sheetResponse;
+      }
+      const action=String(data.action||"").toLowerCase(), type=String(data.type||"").toUpperCase();
+      if(!["add","passed","failed"].includes(action)||!["HERT","FORT"].includes(type)) throw new Error("Choose a valid LOI action and type.");
+      const callsign=String(data.callsign||"").trim().toUpperCase();
+      const member=await db.prepare("SELECT callsign,name FROM members WHERE upper(callsign)=upper(?)").bind(callsign).first();
+      if(!member) throw new Error("Choose a current roster member.");
+      const percent=type==="FORT"?Number(data.test_percent):null;
+      if(action==="add"&&type==="FORT"&&(!Number.isFinite(percent)||percent<0||percent>100)) throw new Error("FORT LOI % on test must be a number from 0 to 100.");
+      const sheetResponse=await proxyToAppsScript(context,"/internal/loi",url,"",{...data,type,action,name:member.name,callsign:member.callsign,test_percent:percent});
+      const saved=await sheetResponse.json().catch(()=>({}));
+      if(!sheetResponse.ok) throw Object.assign(new Error(saved.detail||"Could not update the LOI Sheet."),{status:sheetResponse.status});
+      const eventAction=action==="add"?"Added":action==="passed"?"Passed":"Failed";
+      const testPercent=type==="FORT"?Number(saved.test_percent??percent):null;
+      const logDate=new Date().toISOString(), details=JSON.stringify({loi_type:type,test_percent:testPercent});
+      await db.prepare("INSERT INTO operational_logs(kind,log_date,callsign,member_name,action,details,changed_by) VALUES('loi',?,?,?,?,?,?)")
+        .bind(logDate,member.callsign,member.name,eventAction,details,String(user.name||"")).run();
+      const assertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
+      context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,assertion,{kind:"loi",log_date:logDate,callsign:member.callsign,member_name:member.name,action:eventAction,details,changed_by:String(user.name||"")});if(!mirror.ok)console.error("LOI log Sheet mirror failed:",await mirror.text())}catch(error){console.error("LOI log Sheet mirror failed:",error)}})());
+      return json({ok:true,changed:true,...saved,action:eventAction});
     }
     if(route==="/api/training-hours" && method==="GET") {
       const result=await db.prepare("SELECT id,source_row,callsign,name,training_date AS date,time FROM training_hours ORDER BY lower(name),callsign,training_date,id").all();

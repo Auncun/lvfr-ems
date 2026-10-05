@@ -55,11 +55,19 @@ function doPost(e) {
       if (record.kind === 'account_audit') {
         recordAccountAudit_(String(record.account_id || ''), String(record.name || ''), String(record.callsign || ''), String(record.action || ''), String(record.actor_name || ''));
       } else {
-        const allowedKinds = ['promotion', 'callsign', 'termination', 'training', 'training_time', 'exam', 'note', 'activity', 'instructor', 'date'];
+        const allowedKinds = ['promotion', 'callsign', 'termination', 'training', 'training_time', 'loi', 'exam', 'note', 'activity', 'instructor', 'date'];
         if (!allowedKinds.includes(String(record.kind || ''))) throw new Error('Unsupported log mirror kind.');
         appendAppLog_(record);
       }
       return output_({ ok: true, data: { ok: true } });
+    }
+    if (route === '/internal/loi') {
+      const expected = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
+      if (!expected || !input.workerSecret || !constantTimeEquals_(String(input.workerSecret), expected)) throw new Error('LOI authentication failed.');
+      const result = String(input.method || 'GET').toUpperCase() === 'GET'
+        ? listLoiSheet_()
+        : mutateLoiSheet_(input.data || {});
+      return output_({ ok: true, data: result });
     }
     if (route === '/internal/training-hours/mirror' && String(input.method || '') === 'POST') {
       const expected = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
@@ -1431,7 +1439,7 @@ function memberLogs_(kind) {
 
 function invalidateMemberLogsCache_() {
   CacheService.getScriptCache().removeAll([
-    'member-logs:v1:promotion', 'member-logs:v1:callsign', 'member-logs:v1:training', 'member-logs:v1:training_time',
+    'member-logs:v1:promotion', 'member-logs:v1:callsign', 'member-logs:v1:training', 'member-logs:v1:training_time', 'member-logs:v1:loi',
     'member-logs:v1:exam', 'member-logs:v1:note', 'member-logs:v1:activity',
     'member-logs:v1:instructor', 'member-logs:v1:termination'
   ]);
@@ -1445,11 +1453,15 @@ function readMemberLogs_(kind) {
   const lastRow = sheet.getLastRow();
   const rowCount = Math.min(Math.max(0, lastRow - 1), 2000);
   const rows = rowCount ? sheet.getRange(lastRow - rowCount + 1, 1, rowCount, APP_LOG_HEADERS.length).getDisplayValues() : [];
-  const aliases = { promotion: ['promotion'], callsign: ['callsign'], training: ['training'], training_time: ['training_time'], exam: ['exam'], note: ['note'], activity: ['activity'], instructor: ['instructor'], termination: ['termination'] };
+  const aliases = { promotion: ['promotion'], callsign: ['callsign'], training: ['training'], training_time: ['training_time'], loi: ['loi'], exam: ['exam'], note: ['note'], activity: ['activity'], instructor: ['instructor'], termination: ['termination'] };
   const allowed = aliases[kind] || [];
   const current = rows.filter(row => allowed.includes(String(row[1]).toLowerCase())).map(row => {
     const record = Object.fromEntries(APP_LOG_HEADERS.map((key, index) => [key, row[index]]));
     if (kind === 'training') record.training_name = record.details;
+    if (kind === 'loi') {
+      try { const details = JSON.parse(record.details || '{}'); record.loi_type = details.loi_type || ''; record.test_percent = details.test_percent == null ? '' : details.test_percent; }
+      catch (ignored) { record.loi_type = ''; record.test_percent = ''; }
+    }
     if (kind === 'training_time') {
       record.training_name = 'Training Hours';
       try {
@@ -1724,6 +1736,75 @@ function trainingHoursSheet_() {
   const sheet = spreadsheet.getSheetByName('Sheet1') || spreadsheet.getSheetByName('Training Hours') || spreadsheet.getSheetByName('Sheet2');
   if (!sheet) throw new Error('Training Hours data sheet (Sheet1) was not found in the roster spreadsheet.');
   return sheet;
+}
+
+const LOI_SHEET_CONFIG = Object.freeze({
+  HERT: { sheet: 'HERT Certified', startRow: 72, nameColumn: 2, percentColumn: 0 },
+  FORT: { sheet: 'FIREFIGHTER CERT', startRow: 28, nameColumn: 1, percentColumn: 5 }
+});
+
+function loiSheetConfig_(type) {
+  const config = LOI_SHEET_CONFIG[String(type || '').trim().toUpperCase()];
+  if (!config) throw new Error('Choose HERT LOI or FORT LOI.');
+  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
+  const sheet = spreadsheet.getSheetByName(config.sheet);
+  if (!sheet) throw new Error(config.sheet + ' sheet was not found.');
+  return { ...config, sheet };
+}
+
+function listLoiSheet_() {
+  const result = { hert: [], fort: [] };
+  ['HERT', 'FORT'].forEach(type => {
+    const config = loiSheetConfig_(type), count = Math.max(0, config.sheet.getMaxRows() - config.startRow + 1);
+    if (!count) return;
+    const names = config.sheet.getRange(config.startRow, config.nameColumn, count, 1).getDisplayValues();
+    const percents = config.percentColumn ? config.sheet.getRange(config.startRow, config.percentColumn, count, 1).getDisplayValues() : [];
+    names.forEach((row, index) => {
+      const name = String(row[0] || '').trim();
+      if (!name) return;
+      result[type.toLowerCase()].push({ type, name, row: config.startRow + index, test_percent: config.percentColumn ? String(percents[index][0] || '').trim() : '' });
+    });
+  });
+  return result;
+}
+
+function mutateLoiSheet_(data) {
+  return withScriptLock_(() => {
+    const type = String(data.type || '').trim().toUpperCase();
+    const config = loiSheetConfig_(type), action = String(data.action || '').trim().toLowerCase();
+    const name = String(data.name || '').trim().replace(/\s+/g, ' ');
+    if (!name || name.length > 120) throw new Error('Choose a valid roster member.');
+    const count = Math.max(0, config.sheet.getMaxRows() - config.startRow + 1);
+    const names = count ? config.sheet.getRange(config.startRow, config.nameColumn, count, 1).getDisplayValues() : [];
+    if (action === 'add') {
+      if (names.some(row => sheetNameKey_(row[0]) === sheetNameKey_(name))) throw new Error(name + ' is already on the ' + type + ' LOI list.');
+      let offset = names.findIndex(row => !String(row[0] || '').trim());
+      if (offset < 0) {
+        config.sheet.insertRowsAfter(config.sheet.getMaxRows(), 1);
+        offset = config.sheet.getMaxRows() - config.startRow;
+      }
+      const row = config.startRow + offset;
+      if (type === 'FORT') {
+        const rawPercent = String(data.test_percent == null ? '' : data.test_percent).trim();
+        const percent = rawPercent === '' ? NaN : Number(rawPercent);
+        if (!Number.isFinite(percent) || percent < 0 || percent > 100) throw new Error('FORT LOI % on test must be a number from 0 to 100.');
+        config.sheet.getRange(row, config.percentColumn).setValue(percent);
+      }
+      config.sheet.getRange(row, config.nameColumn).setValue(name);
+      SpreadsheetApp.flush();
+      return { ok: true, changed: true, type, name, row, test_percent: type === 'FORT' ? Number(data.test_percent) : '' };
+    }
+    if (!['passed', 'failed'].includes(action)) throw new Error('Choose Add, Passed, or Failed.');
+    const row = Number(data.row) || 0;
+    if (row < config.startRow || row > config.sheet.getMaxRows() || sheetNameKey_(config.sheet.getRange(row, config.nameColumn).getDisplayValue()) !== sheetNameKey_(name)) {
+      throw new Error('This ' + type + ' LOI entry has changed. Refresh the list and try again.');
+    }
+    const percent = config.percentColumn ? String(config.sheet.getRange(row, config.percentColumn).getDisplayValue() || '').trim() : '';
+    config.sheet.getRange(row, config.nameColumn).clearContent();
+    if (config.percentColumn) config.sheet.getRange(row, config.percentColumn).clearContent();
+    SpreadsheetApp.flush();
+    return { ok: true, changed: true, type, name, row, test_percent: percent };
+  });
 }
 
 // D1 is the write authority; this endpoint mirrors committed values to the
