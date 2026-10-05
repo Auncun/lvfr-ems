@@ -48,6 +48,29 @@ Callsign slots. An unchanged snapshot is skipped by the Apps Script fingerprint.
 Direct Google Sheets edits use the installed edit and format triggers to update
 D1; the site displays that D1 data on manual page refresh.
 
+## LOI lists and history
+
+LOI entries and LOI history are served from D1. Website changes commit to D1,
+then Apps Script mirrors them to `HERT Certified`, `FIREFIGHTER CERT`, and the
+`PWA Activity Log` in the background. Direct edits to the LOI sections of those
+Sheets sync back to D1 through the installed roster triggers. The LOI screen
+loads when opened and after a change; it does not poll Apps Script or reload the
+list every few seconds. LOI history reads from `operational_logs` in D1.
+
+To enable this flow:
+
+1. Apply `0013_loi_d1.sql` to the `LVFR_DB` database.
+2. Deploy the updated Worker and Apps Script code so `/internal/loi/import`,
+   Sheet mirroring, and Sheet edit triggers are active.
+3. In the Apps Script editor, run `migrateLoiToD1` once to copy the existing
+   HERT and FORT LOI lists into D1. Run `installRosterD1SyncTriggers` if the
+   existing roster edit/change triggers are not installed; the installer
+   updates them to sync manual LOI Sheet edits too.
+4. If historical LOI log rows have not already been imported, run
+   `migrateLogsAndNotificationsToD1` once. It imports the existing
+   `PWA Activity Log` records using stable source keys, so repeating it does
+   not duplicate those rows.
+
 ## Troubleshooting HTTP 405 from the edit trigger
 
 The edit trigger posts to `/internal/members/sync`. If Apps Script reports an

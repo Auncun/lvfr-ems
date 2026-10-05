@@ -1209,23 +1209,19 @@ document.querySelectorAll("[data-loi-type]").forEach(button => button.addEventLi
 let loiLists = { hert: [], fort: [] };
 let loiLoadPromise = null;
 let loiSignature = "";
-let loiLastLoadAt = 0;
 let loiSaves = 0;
-// silent=true is the background poll: it never shows "Loading…", keeps the list
-// that is already on screen if a refresh fails, and re-renders only when the
-// Sheet contents actually changed.
+// silent=true refreshes the D1-backed list without clearing the current view.
 async function loadLoiLists(silent = false) {
     if (loiLoadPromise) return loiLoadPromise;
     if (silent && loiSaves > 0) return;
     loiLoadPromise = (async () => {
         const tables = [$("#hertLoiTable"), $("#fortLoiTable")];
         const hasData = Boolean(loiSignature);
-        if (!silent || !hasData) tables.forEach(table => { if (table) table.innerHTML = '<div class="empty">Loading LOI lists…</div>'; });
+        if (!hasData) tables.forEach(table => { if (table) table.innerHTML = '<div class="empty">Loading LOI lists…</div>'; });
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 20000);
         try {
             const result = await api("/api/loi", { signal: controller.signal });
-            loiLastLoadAt = Date.now();
             if (silent && loiSaves > 0) return;
             const next = { hert: Array.isArray(result.hert) ? result.hert : [], fort: Array.isArray(result.fort) ? result.fort : [] };
             const signature = JSON.stringify(next);
@@ -1234,7 +1230,6 @@ async function loadLoiLists(silent = false) {
             loiLists = next;
             renderLoiLists();
         } catch (error) {
-            loiLastLoadAt = Date.now();
             if (silent && hasData) return;
             const message = error.name === "AbortError" ? "Loading LOI lists timed out. Retry in a moment." : `Could not load LOI lists: ${error.message}`;
             tables.forEach(table => { if (table) table.innerHTML = `<div class="empty">${esc(message)}</div>`; });
@@ -1291,13 +1286,13 @@ document.addEventListener("click", async event => {
     if (result) {
         payload.row = Number(button.dataset.loiRow);
         payload.test_percent = button.dataset.loiPercent;
-        if (!window.confirm(`Mark ${payload.name}'s ${type} LOI as ${action}? This removes the entry from the Sheet.`)) return;
+        if (!window.confirm(`Mark ${payload.name}'s ${type} LOI as ${action}? This removes the entry from D1 and syncs the Sheet.`)) return;
     }
     button.disabled = true;
     const key = type.toLowerCase();
     const before = loiLists[key].slice();
     loiSaves++;
-    // Show the change immediately; the Sheet and D1 are updated in the background.
+    // Show the D1 change immediately; the Sheet mirror runs in the background.
     if (result) {
         loiLists[key] = loiLists[key].filter(item => !(Number(item.row) === payload.row && item.name === payload.name));
         renderLoiLists();
@@ -5364,9 +5359,8 @@ function refreshVisibleRosterView() {
     else if (activeTab === "trainingDirectory") {
         if ($('[data-training-view="HOURS"]')?.classList.contains("active")) { if (currentUserHasPermission("training_hours_view")) void loadTrainingHours(true); }
         else if ($('[data-training-view="LOI"]')?.classList.contains("active")) {
-            // The LOI lists are read from the Sheet through Apps Script (slow), so poll
-            // them every 20 s instead of every 3 s.
-            if ((currentUserHasPermission("training_view") || currentUserHasPermission("loi_manage")) && Date.now() - loiLastLoadAt > 20000) void loadLoiLists(true);
+            // LOI refreshes when its tab opens or after a mutation. Sheet edits
+            // flow back to D1 through Apps Script triggers; there is no poll.
         }
         else if (currentUserHasPermission("training_view")) void loadMembers(true, true);
     }

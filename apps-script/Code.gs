@@ -1209,6 +1209,9 @@ function syncRosterToD1OnEdit_(event) {
       syncTrainingHoursSheetToD1_();
       return;
     }
+    if (event.source.getId() === rosterId && isLoiSheetEdit_(name, event.range)) {
+      syncLoiSheetToD1_();
+    }
     const allowed = event.source.getId() === rosterId
       ? [LVFR.rosterTab, 'HERT Certified', 'FIREFIGHTER CERT'].includes(name)
       : event.source.getId() === privateId && name === 'Do not Promote';
@@ -1231,6 +1234,13 @@ function syncRosterToD1OnChange_(event) {
   try {
     const changeType = String(event.changeType || '').toUpperCase();
     console.log('Roster D1 trigger started: onChange; changeType=' + changeType + '; spreadsheet=' + event.source.getId());
+    if (['REMOVE_ROW', 'INSERT_ROW'].includes(changeType)) {
+      if (event.source.getId() === requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')) {
+        syncTrainingHoursSheetToD1_();
+        syncLoiSheetToD1_();
+      }
+      return;
+    }
     if (changeType !== 'FORMAT') {
       console.log('Roster D1 trigger skipped: onChange changeType is not FORMAT.');
       return;
@@ -1821,8 +1831,12 @@ function mutateLoiSheet_(data) {
       return { ok: true, changed: true, type, name, row, test_percent: type === 'FORT' ? Number(data.test_percent) : '' };
     }
     if (!['passed', 'failed'].includes(action)) throw new Error('Choose Add, Passed, or Failed.');
-    const row = Number(data.row) || 0;
+    let row = Number(data.source_row) || 0;
     if (row < config.startRow || row > config.sheet.getMaxRows() || sheetNameKey_(config.sheet.getRange(row, config.nameColumn).getDisplayValue()) !== sheetNameKey_(name)) {
+      row = names.findIndex(values => sheetNameKey_(values[0]) === sheetNameKey_(name));
+      row = row < 0 ? 0 : config.startRow + row;
+    }
+    if (!row) {
       throw new Error('This ' + type + ' LOI entry has changed. Refresh the list and try again.');
     }
     const percent = config.percentColumn ? String(config.sheet.getRange(row, config.percentColumn).getDisplayValue() || '').trim() : '';
@@ -1831,6 +1845,54 @@ function mutateLoiSheet_(data) {
     SpreadsheetApp.flush();
     return { ok: true, changed: true, type, name, row, test_percent: percent };
   });
+}
+
+function isLoiSheetEdit_(sheetName, range) {
+  const firstRow = range.getRow(), lastRow = firstRow + range.getNumRows() - 1;
+  const firstColumn = range.getColumn(), lastColumn = firstColumn + range.getNumColumns() - 1;
+  if (sheetName === 'HERT Certified') return lastRow >= LOI_SHEET_CONFIG.HERT.startRow && firstColumn <= LOI_SHEET_CONFIG.HERT.nameColumn && lastColumn >= LOI_SHEET_CONFIG.HERT.nameColumn;
+  if (sheetName === 'FIREFIGHTER CERT') return lastRow >= LOI_SHEET_CONFIG.FORT.startRow && (
+    (firstColumn <= LOI_SHEET_CONFIG.FORT.nameColumn && lastColumn >= LOI_SHEET_CONFIG.FORT.nameColumn) ||
+    (firstColumn <= LOI_SHEET_CONFIG.FORT.percentColumn && lastColumn >= LOI_SHEET_CONFIG.FORT.percentColumn)
+  );
+  return false;
+}
+
+// Sheet edits flow to D1; the website reads LOI from D1 and mirrors its own
+// mutations back through /internal/loi.
+function syncLoiSheetToD1_() {
+  const workerUrl = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_SYNC_URL') || '').trim().replace(/\/$/, '');
+  const workerSecret = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
+  if (!workerUrl || !workerSecret) throw new Error('Configure LVFR_D1_SYNC_URL and LVFR_D1_WORKER_SECRET in Script Properties.');
+  const roster = rosterSheet_(), rosterCount = Math.max(0, roster.getLastRow() - 1), callsignByName = new Map();
+  if (rosterCount) roster.getRange(2, 2, rosterCount, 2).getDisplayValues().forEach(values => {
+    const callsign = String(values[0] || '').trim().toUpperCase(), name = sheetNameKey_(values[1]);
+    if (!name || !/^[A-Z]+-\d+$/.test(callsign) || LVFR.ignoredCallsigns.has(callsign)) return;
+    callsignByName.set(name, callsignByName.has(name) ? '' : callsign);
+  });
+  const loi = listLoiSheet_(), records = [];
+  ['hert', 'fort'].forEach(key => (loi[key] || []).forEach(item => records.push({
+    type: item.type, name: item.name, callsign: callsignByName.get(sheetNameKey_(item.name)) || '',
+    test_percent: item.test_percent, source_row: item.row
+  })));
+  const response = UrlFetchApp.fetch(workerUrl + '/internal/loi/import', {
+    method: 'post', contentType: 'application/json', headers: { 'X-LVFR-Worker-Secret': workerSecret },
+    payload: JSON.stringify({ records, reconcile: true }), muteHttpExceptions: true
+  });
+  let result = null;
+  try { result = JSON.parse(response.getContentText()); } catch (ignored) {}
+  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300 || !result || result.ok !== true) {
+    throw new Error('LOI Sheet-to-D1 sync failed: HTTP ' + response.getResponseCode() + ' ' + response.getContentText());
+  }
+  console.log('LOI Sheet-to-D1 sync: ' + JSON.stringify(result));
+  return result;
+}
+
+// Run once from the Apps Script editor to seed the current Sheet LOI lists in D1.
+// Kept in Code.gs so the function is available even when migration helper files
+// have not been added to the Apps Script project.
+function migrateLoiToD1() {
+  return withScriptLock_(() => syncLoiSheetToD1_(), 30000);
 }
 
 // D1 is the write authority; this endpoint mirrors committed values to the

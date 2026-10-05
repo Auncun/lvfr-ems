@@ -114,19 +114,6 @@ async function gasCall(env, route, method, data = {}, token = "", params = {}) {
   if (!payload.ok) throw new Error(payload.error || "Apps Script request failed.");
   return payload.data;
 }
-const LOI_EXPECTED_GAS_VERSION = "2026-10-05-loi-1";
-async function explainLoiBridgeFailure(env, message) {
-  if(!/internal LOI handler|sign in with your name and password|session expired/i.test(String(message||""))) return message;
-  let version="unavailable", hasHandler="unknown";
-  try {
-    const health=await gasCall(env,"/api/health","GET");
-    version=String(health?.version||"unknown");
-    hasHandler=health?.internal_loi===true?"yes":"no";
-  } catch {}
-  const deployment=(String(env.GAS_WEB_APP_URL||"").match(/\/macros\/s\/([^/]+)\//)||[])[1]||"";
-  const tail=deployment?`…${deployment.slice(-8)}`:"(GAS_WEB_APP_URL not set)";
-  return `The Apps Script deployment that Cloudflare calls (${tail}) does not contain the LOI code. It reports version "${version}" (internal_loi: ${hasHandler}); the current Code.gs reports "${LOI_EXPECTED_GAS_VERSION}" with internal_loi: true. In Apps Script open Deploy > Manage deployments > pencil (Edit) > Version: New version > Deploy, and confirm Cloudflare's GAS_WEB_APP_URL is that same deployment's /exec URL.`;
-}
 async function rosterIdentity(env, name) {
   const member = await gasCall(env, "/auth/roster-lookup", "POST", { name });
   if (!member || !member.name || !member.callsign) throw new Error("Name was not found on the LVFR roster.");
@@ -591,6 +578,53 @@ export async function handleD1(context) {
       for(let index=0;index<statements.length;index+=50) await db.batch(statements.slice(index,index+50));
       return json({ok:true,imported,skipped,unchanged,written:statements.length});
     }
+    if(route==="/internal/loi/import" && method==="POST") {
+      const expected=String(env.LVFR_D1_WORKER_SECRET||"");
+      if(!expected || request.headers.get("X-LVFR-Worker-Secret")!==expected) return json({detail:"Worker authentication failed."},403);
+      if(!Array.isArray(data.records)) return json({detail:"LOI payload is invalid."},400);
+      const members=(await db.prepare("SELECT callsign,name FROM members").all()).results||[];
+      const byCallsign=new Map(members.map(row=>[String(row.callsign||"").trim().toUpperCase(),row]));
+      const byName=new Map();
+      for(const member of members) {
+        const key=nameKey(member.name);
+        if(byName.has(key)) byName.set(key,null); else byName.set(key,member);
+      }
+      const timestamp=new Date().toISOString(), seenSourceRows=new Set(), recordsByKey=new Map(), recordsBySourceRow=new Map();
+      let skipped=0;
+      for(const raw of data.records) {
+        const type=String(raw?.type||"").trim().toUpperCase();
+        const name=String(raw?.name||"").trim().replace(/\s+/g," ");
+        const callsign=String(raw?.callsign||"").trim().toUpperCase();
+        const member=(callsign&&byCallsign.get(callsign))||byName.get(nameKey(name));
+        const sourceRow=Number(raw?.source_row)||null;
+        if(sourceRow) seenSourceRows.add(`${type}:${sourceRow}`);
+        if(!["HERT","FORT"].includes(type)||!name||!member) { skipped++; continue; }
+        const rawPercent=raw?.test_percent;
+        const percent=rawPercent==null||String(rawPercent).trim()===""?null:Number(rawPercent);
+        if(type==="FORT"&&percent!==null&&(!Number.isFinite(percent)||percent<0||percent>100)) { skipped++; continue; }
+        const record={type,callsign:member.callsign,name:member.name,test_percent:type==="FORT"?percent:null,source_row:sourceRow};
+        recordsByKey.set(`${type}:${member.callsign}`,record);
+        if(sourceRow) recordsBySourceRow.set(`${type}:${sourceRow}`,record);
+      }
+      const existing=(await db.prepare("SELECT id,type,callsign,source_row FROM loi_entries").all()).results||[];
+      const statements=[];
+      for(const row of existing) {
+        if(row.source_row===null||row.source_row===undefined) continue;
+        const incoming=recordsBySourceRow.get(`${row.type}:${Number(row.source_row)}`);
+        if(incoming&&incoming.callsign!==row.callsign) statements.push(db.prepare("DELETE FROM loi_entries WHERE id=?").bind(row.id));
+      }
+      for(const record of recordsByKey.values()) statements.push(db.prepare(`INSERT INTO loi_entries(type,callsign,name,test_percent,source_row,updated_at,updated_by)
+        VALUES(?,?,?,?,?,?,?) ON CONFLICT(type,callsign) DO UPDATE SET name=excluded.name,test_percent=excluded.test_percent,source_row=excluded.source_row,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
+        .bind(record.type,record.callsign,record.name,record.test_percent,record.source_row,timestamp,"Sheet sync"));
+      if(data.reconcile===true&&skipped===0) {
+        for(const row of existing) if(row.source_row!==null&&row.source_row!==undefined&&
+          !seenSourceRows.has(`${row.type}:${Number(row.source_row)}`)&&!recordsByKey.has(`${row.type}:${row.callsign}`)) {
+          statements.push(db.prepare("DELETE FROM loi_entries WHERE id=?").bind(row.id));
+        }
+      }
+      for(let i=0;i<statements.length;i+=50) await db.batch(statements.slice(i,i+50));
+      return json({ok:true,imported:recordsByKey.size,skipped,written:statements.length});
+    }
     if(route==="/internal/logs/import" && method==="POST") {
       const expected=String(env.LVFR_D1_WORKER_SECRET||"");
       if(!expected || request.headers.get("X-LVFR-Worker-Secret")!==expected) return json({detail:"Worker authentication failed."},403);
@@ -771,35 +805,56 @@ export async function handleD1(context) {
       return json({ok:true});
     }
     if(route==="/api/loi" && (method==="GET"||method==="POST")) {
-      const {proxyToAppsScript}=await import("../[[path]].js");
       if(method==="GET") {
-        const sheetResponse=await proxyToAppsScript(context,"/internal/loi",url,"",{});
-        if(!sheetResponse.ok) {
-          const failure=await sheetResponse.clone().json().catch(()=>({}));
-          if(/internal LOI handler|sign in with your name and password|session expired/i.test(String(failure.detail||"")))
-            return json({detail:await explainLoiBridgeFailure(env,failure.detail)},502);
-          return sheetResponse;
-        }
-        return sheetResponse;
+        const rows=(await db.prepare("SELECT id,type,callsign,name,test_percent,source_row FROM loi_entries ORDER BY name COLLATE NOCASE,id").all()).results||[];
+        return json({hert:rows.filter(row=>row.type==="HERT").map(row=>({...row,row:row.id})),fort:rows.filter(row=>row.type==="FORT").map(row=>({...row,row:row.id}))});
       }
       const action=String(data.action||"").toLowerCase(), type=String(data.type||"").toUpperCase();
       if(!["add","passed","failed"].includes(action)||!["HERT","FORT"].includes(type)) throw new Error("Choose a valid LOI action and type.");
       const callsign=String(data.callsign||"").trim().toUpperCase();
       const member=await db.prepare("SELECT callsign,name FROM members WHERE upper(callsign)=upper(?)").bind(callsign).first();
       if(!member) throw new Error("Choose a current roster member.");
-      const percent=type==="FORT"?Number(data.test_percent):null;
+      const rawPercent=data.test_percent;
+      const percent=rawPercent==null||String(rawPercent).trim()===""?null:Number(rawPercent);
       if(action==="add"&&type==="FORT"&&(!Number.isFinite(percent)||percent<0||percent>100)) throw new Error("FORT LOI % on test must be a number from 0 to 100.");
-      const sheetResponse=await proxyToAppsScript(context,"/internal/loi",url,"",{...data,type,action,name:member.name,callsign:member.callsign,test_percent:percent});
-      const saved=await sheetResponse.json().catch(()=>({}));
-      if(!sheetResponse.ok) throw Object.assign(new Error(await explainLoiBridgeFailure(env,saved.detail||"Could not update the LOI Sheet.")),{status:/internal LOI handler|sign in with your name and password|session expired/i.test(String(saved.detail||""))?502:sheetResponse.status});
+      let entryId=Number(data.row)||0, previous=null;
+      if(action==="add") {
+        const saved=await db.prepare("INSERT INTO loi_entries(type,callsign,name,test_percent,source_row,updated_at,updated_by) VALUES(?,?,?,?,NULL,?,?) ON CONFLICT(type,callsign) DO NOTHING RETURNING id")
+          .bind(type,member.callsign,member.name,type==="FORT"?percent:null,new Date().toISOString(),String(user.name||"")).first();
+        if(!saved) throw new Error(member.name+" is already on the "+type+" LOI list.");
+        entryId=Number(saved.id);
+      } else {
+        previous=entryId
+          ? await db.prepare("SELECT id,type,callsign,name,test_percent,source_row FROM loi_entries WHERE id=?").bind(entryId).first()
+          : await db.prepare("SELECT id,type,callsign,name,test_percent,source_row FROM loi_entries WHERE type=? AND upper(callsign)=upper(?)").bind(type,member.callsign).first();
+        if(!previous||previous.type!==type||previous.callsign!==member.callsign) throw new Error("This "+type+" LOI entry has changed. Refresh the list and try again.");
+        await db.prepare("DELETE FROM loi_entries WHERE id=?").bind(previous.id).run();
+        entryId=Number(previous.id);
+      }
       const eventAction=action==="add"?"Added":action==="passed"?"Passed":"Failed";
-      const testPercent=type==="FORT"?Number(saved.test_percent??percent):null;
+      const testPercent=type==="FORT"?(action==="add"?percent:(previous.test_percent==null?"":Number(previous.test_percent))):null;
       const logDate=new Date().toISOString(), details=JSON.stringify({loi_type:type,test_percent:testPercent});
       await db.prepare("INSERT INTO operational_logs(kind,log_date,callsign,member_name,action,details,changed_by) VALUES('loi',?,?,?,?,?,?)")
         .bind(logDate,member.callsign,member.name,eventAction,details,String(user.name||"")).run();
-      const assertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
-      context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,assertion,{kind:"loi",log_date:logDate,callsign:member.callsign,member_name:member.name,action:eventAction,details,changed_by:String(user.name||"")});if(!mirror.ok)console.error("LOI log Sheet mirror failed:",await mirror.text())}catch(error){console.error("LOI log Sheet mirror failed:",error)}})());
-      return json({ok:true,changed:true,...saved,action:eventAction});
+      const {proxyToAppsScript}=await import("../[[path]].js");
+      const mirrorData={type,action,name:member.name,callsign:member.callsign,test_percent:testPercent,source_row:previous?.source_row||null};
+      const sheetAssertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
+      const logAssertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
+      context.waitUntil((async()=>{
+        try {
+          const mirror=await proxyToAppsScript(context,"/internal/loi",url,sheetAssertion,mirrorData);
+          if(!mirror.ok) console.error("LOI Sheet mirror failed:",await mirror.text());
+          else if(action==="add") {
+            const synced=await mirror.json().catch(()=>({}));
+            if(Number(synced.row)>0) await db.prepare("UPDATE loi_entries SET source_row=? WHERE id=?").bind(Number(synced.row),entryId).run();
+          }
+        } catch(error) { console.error("LOI Sheet mirror failed:",error); }
+        try {
+          const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,logAssertion,{kind:"loi",log_date:logDate,callsign:member.callsign,member_name:member.name,action:eventAction,details,changed_by:String(user.name||"")});
+          if(!mirror.ok) console.error("LOI log Sheet mirror failed:",await mirror.text());
+        } catch(error) { console.error("LOI log Sheet mirror failed:",error); }
+      })());
+      return json({ok:true,changed:true,id:entryId,row:entryId,type,name:member.name,callsign:member.callsign,test_percent:testPercent,action:eventAction});
     }
     if(route==="/api/training-hours" && method==="GET") {
       const result=await db.prepare("SELECT id,source_row,callsign,name,training_date AS date,time FROM training_hours ORDER BY lower(name),callsign,training_date,id").all();
