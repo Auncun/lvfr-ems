@@ -45,25 +45,16 @@ export async function proxyToAppsScript(context, route, incoming, sessionToken, 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ route, method: request.method, params, sessionToken, data,
       workerSecret: env.LVFR_D1_WORKER_SECRET || "" }),
-    redirect: "manual",
+    // Apps Script ContentService returns its body from a one-time
+    // script.googleusercontent.com URL. Let Fetch follow the redirect as part
+    // of the original request lifecycle; manually replaying it as a GET can
+    // lose redirect semantics or produce a stale /macros/echo response.
+    redirect: "follow",
   });
 
   let upstream;
   try {
     upstream = await fetch(upstreamRequest);
-    // Apps Script ContentService sends the completed response through a
-    // googleusercontent.com redirect. Follow that response URL explicitly so
-    // the request body is never replayed and the generated query is retained.
-    if ([301, 302, 303, 307, 308].includes(upstream.status)) {
-      const location = upstream.headers.get("location");
-      if (!location) throw new Error(`Apps Script redirect ${upstream.status} had no Location header.`);
-      const redirectedUrl = new URL(location, target);
-      upstream = await fetch(new Request(redirectedUrl.toString(), {
-        method: "GET",
-        headers: { "Accept": "application/json" },
-        redirect: "follow",
-      }));
-    }
   } catch (error) {
     console.error('Apps Script request failed before receiving a response:', error);
     return Response.json({
@@ -90,9 +81,11 @@ export async function proxyToAppsScript(context, route, incoming, sessionToken, 
       finalUrl,
       error,
     });
-    return Response.json({
-      detail: `Apps Script returned a non-JSON response (HTTP ${upstream.status}, ${contentType}) from ${finalUrl}. Check the Cloudflare GAS_WEB_APP_URL override and confirm the Apps Script /exec deployment is active, executes as you, and allows access to users.`
-    }, { status: 502 });
+    const isGoogleusercontentEcho = finalUrl.startsWith('https://script.googleusercontent.com/macros/echo');
+    const detail = isGoogleusercontentEcho
+      ? `Apps Script redirected /exec to its ContentService response URL, but that URL returned HTTP ${upstream.status} (${contentType}). Check that GAS_WEB_APP_URL is the current /exec URL and that the web app is deployed to execute as you and allow access to users. If the URL is correct, redeploy the web app and retry; do not use the googleusercontent URL as GAS_WEB_APP_URL.`
+      : `Apps Script returned a non-JSON response (HTTP ${upstream.status}, ${contentType}) from ${finalUrl}. Check that GAS_WEB_APP_URL points to the active Apps Script /exec deployment, executes as you, and allows access to users.`;
+    return Response.json({ detail }, { status: 502 });
   }
 
   if (!payload || typeof payload !== 'object' || typeof payload.ok !== 'boolean') {
