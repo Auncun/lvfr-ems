@@ -5,7 +5,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Operation Command | LVFR EMS</title>
-  <link rel="stylesheet" href="/static/style.css?v=command-permissions-20261004-1">
+  <link rel="stylesheet" href="/static/style.css?v=custom-role-profiles-20261005-1">
   <style>
     body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:72px 24px 24px}
     .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -61,7 +61,7 @@
     <section id="commandPermissionsSection" class="admin-card permissions-card command-section" aria-labelledby="permissionsHeading" hidden>
       <div class="admin-header permissions-heading"><div><h2 id="permissionsHeading">Access Permissions</h2><p class="muted">Commanders can edit Member and Leader profiles, but can only enable permissions they already have. Operation also manages the Commander profile and individual accounts.</p></div></div>
       <label class="permission-search"><span>Find a permission</span><input id="permissionSearch" type="search" placeholder="Search pages and actions"></label>
-      <div id="rolePermissionsPanel" class="role-permissions-panel"><div class="empty">Loading role permissions...</div></div>
+      <div class="role-editor-layout"><nav id="permissionRoleNav" class="permission-role-nav" aria-label="Permission profiles"></nav><div class="role-editor-main"><div id="rolePermissionsPanel" class="role-permissions-panel"><div class="empty">Loading role permissions...</div></div><div class="custom-role-tools"><label>New role <input id="newPermissionRole" maxlength="32" placeholder="e.g. training_lead"></label><button type="button" id="createPermissionRole">Create role</button><label>Find a member <input id="permissionMemberSearch" type="search" placeholder="Search name or callsign"></label><div id="permissionMemberResults" class="permission-member-results" hidden></div></div></div></div>
       <p id="permissionStatus" class="permission-status" role="status" aria-live="polite"></p>
     </section>
     <section id="individualPermissionsDialog" class="admin-card individual-permissions-dialog" role="dialog" aria-modal="true" aria-labelledby="individualPermissionsTitle" hidden>
@@ -78,7 +78,7 @@
   <script src="/static/session-auth.js?v=shared-session-7"></script>
   <script src="/static/header-controls.js?v=header-controls-1"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
-  <script src="/static/administration.js?v=role-permission-persistence-20261005-1"></script>
+  <script src="/static/administration.js?v=custom-role-profiles-20261005-1"></script>
   <script src="/static/sidebar.js?v=command-permissions-20261004-1"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 </body>

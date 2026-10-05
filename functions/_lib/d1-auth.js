@@ -10,7 +10,6 @@ const DEFAULT_ROLE_PERMISSIONS = {
 async function rolePermissions(db, role) {
   const normalized=String(role||"").toLowerCase();
   const base=DEFAULT_ROLE_PERMISSIONS[normalized]||{};
-  if(!Object.keys(base).length) return Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,true]));
   const row=await db.prepare("SELECT permissions_json FROM role_permissions WHERE role=?").bind(normalized).first();
   let saved={}; try { saved=JSON.parse(row?.permissions_json||"{}"); } catch {}
   return Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,typeof saved[key]==="boolean"?saved[key]:Boolean(base[key])]));
@@ -638,14 +637,16 @@ export async function handleD1(context) {
     }
     if(route==="/api/role-permissions"&&method==="GET") {
       const actor=await requireAdmin(db,token);
-      const profiles={member:await rolePermissions(db,"member"),leader:await rolePermissions(db,"leader")};
-      if(actor.role==="admin") profiles.commander=await rolePermissions(db,"commander");
+      const rows=(await db.prepare("SELECT role FROM role_permissions ORDER BY role").all()).results||[];
+      const roles=new Set(["member","leader","commander",...rows.map(row=>String(row.role||"").toLowerCase())]);
+      const profiles={};
+      for(const role of roles) if(role!=="admin") profiles[role]=await rolePermissions(db,role);
       return json({profiles,keys:ROLE_PERMISSION_KEYS,actor_permissions:await accountPermissions(db,actor)});
     }
     if(route==="/api/role-permissions"&&method==="POST") {
       const actor=await requireAdmin(db,token), role=String(data.role||"").toLowerCase();
-      const allowedRoles=actor.role==="admin"?["member","leader","commander"]:["member","leader"];
-      if(!allowedRoles.includes(role)) throw Object.assign(new Error("Commanders can edit only Member and Leader permissions."),{status:403});
+      if(!/^[a-z][a-z0-9_-]{1,31}$/.test(role)||role==="admin") throw Object.assign(new Error("Choose a valid role name."),{status:400});
+      if(actor.role!=="admin"&&["commander","member","leader"].includes(role)&&role==="commander") throw Object.assign(new Error("Only Operation can edit the Commander profile."),{status:403});
       const incoming=data.permissions&&typeof data.permissions==="object"?data.permissions:{};
       const permissions=Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,Boolean(incoming[key])]));
       if(actor.role==="commander") {
@@ -657,6 +658,16 @@ export async function handleD1(context) {
       await db.prepare(`INSERT INTO role_permissions(role,permissions_json,updated_at,updated_by) VALUES(?,?,?,?)
         ON CONFLICT(role) DO UPDATE SET permissions_json=excluded.permissions_json,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
         .bind(role,JSON.stringify(permissions),now,actor.name).run();
+      // A role-level revocation must also remove conflicting personal grants;
+      // otherwise account overrides would keep the revoked capability active.
+      const affected=(await db.prepare("SELECT account_id,permissions_override_json FROM accounts WHERE role=? AND permissions_override_json!='{}'").bind(role).all()).results||[];
+      const revocations=affected.map(account=>{
+        const overrides=parsePermissionOverrides(account.permissions_override_json);
+        let changed=false;
+        for(const key of ROLE_PERMISSION_KEYS) if(permissions[key]===false&&Object.hasOwn(overrides,key)) { delete overrides[key]; changed=true; }
+        return changed?db.prepare("UPDATE accounts SET permissions_override_json=?,updated_at=? WHERE account_id=?").bind(JSON.stringify(overrides),now,account.account_id):null;
+      }).filter(Boolean);
+      if(revocations.length) await db.batch(revocations);
       await appendAudit(db,{account_id:"role:"+role,name:role,callsign:""},"Updated role permissions",actor.name);
       return json({ok:true,role,permissions,updated_at:now,updated_by:actor.name});
     }

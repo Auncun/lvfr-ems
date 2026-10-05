@@ -73,6 +73,16 @@ body {
 .training-hours-time-edit { display:flex; align-items:center; gap:6px; min-width:190px; }
 .training-hours-time-edit input { min-width:80px; width:100%; }
 .role-permissions-panel { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; align-items:start; }
+.role-editor-layout { display:grid; grid-template-columns:180px minmax(0,1fr); gap:18px; align-items:start; }
+.permission-role-nav { display:grid; gap:7px; position:sticky; top:90px; }
+.permission-role-nav button { text-align:left; }
+.permission-role-nav button[aria-current="true"] { background:#173e37; color:#fff; }
+.role-editor-main { min-width:0; }
+.custom-role-tools { display:flex; flex-wrap:wrap; align-items:end; gap:10px; margin-top:18px; }
+.custom-role-tools label { display:grid; gap:5px; color:var(--muted,#667085); font-size:.85rem; }
+.permission-member-results { display:grid; flex-basis:100%; gap:5px; }
+.permission-member-results button { text-align:left; }
+@media(max-width:760px) { .role-editor-layout { grid-template-columns:1fr; } .permission-role-nav { display:flex; overflow-x:auto; position:static; } .permission-role-nav button { flex:0 0 auto; } }
 .role-permission-card { min-width:0; overflow:hidden; border:1px solid #303d4b; border-radius:16px; padding:18px; background:linear-gradient(155deg,#151e29,#0d1219 70%); box-shadow:0 14px 34px #0003; }
 .role-permission-card > header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:-18px -18px 16px; padding:17px 18px; border-bottom:1px solid #303945; background:#111a25; }
 .role-permission-card h3 { margin:3px 0 0; font-size:20px; }

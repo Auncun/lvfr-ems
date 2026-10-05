@@ -270,13 +270,18 @@ const permissionGroups = [
 ];
 let rolePermissionProfiles = {};
 let permissionEditorCapabilities = {};
+let selectedPermissionRole = 'member';
+function roleTitle(role) { return ({member:'Member',leader:'Leader',commander:'Commander'})[role] || role.replace(/[_-]+/g,' ').replace(/\b\w/g, ch => ch.toUpperCase()); }
 function renderRolePermissions() {
   const panel = document.querySelector('#rolePermissionsPanel');
   if (!panel) return;
   const query = document.querySelector('#permissionSearch').value.trim().toLocaleLowerCase();
-  const roles = currentUser?.role === 'admin' ? ['member', 'leader', 'commander'] : ['member', 'leader'];
-  panel.innerHTML = roles.map(role => {
-    const roleLabel = role === 'member' ? 'Member' : role === 'leader' ? 'Leader' : 'Commander';
+  const roleOrder = {member:0,leader:1,commander:2};
+  const roles = Object.keys(rolePermissionProfiles).filter(role => role !== 'admin').sort((a,b) => (roleOrder[a] ?? 3) - (roleOrder[b] ?? 3) || a.localeCompare(b));
+  if (!roles.includes(selectedPermissionRole)) selectedPermissionRole = roles[0] || '';
+  document.querySelector('#permissionRoleNav').innerHTML = roles.map(role => `<button type="button" data-select-permission-role="${esc(role)}" aria-current="${role===selectedPermissionRole}">${esc(roleTitle(role))}</button>`).join('');
+  panel.innerHTML = roles.filter(role => role === selectedPermissionRole).map(role => {
+    const roleLabel = roleTitle(role);
     const groups = permissionGroups.map(group => {
       const items = group.items.filter(([, label, description]) => !query || `${label} ${description} ${group.name}`.toLocaleLowerCase().includes(query));
       if (!items.length) return '';
@@ -303,6 +308,12 @@ async function loadRolePermissions() {
   }
 }
 document.querySelector('#permissionSearch').addEventListener('input', renderRolePermissions);
+document.querySelector('#permissionRoleNav')?.addEventListener('click', event => {
+  const button = event.target.closest('[data-select-permission-role]');
+  if (!button) return;
+  selectedPermissionRole = button.dataset.selectPermissionRole;
+  renderRolePermissions();
+});
 document.querySelector('#rolePermissionsPanel').addEventListener('change', event => {
   const input = event.target.closest('[data-permission-key]');
   if (!input) return;
@@ -336,6 +347,34 @@ document.querySelector('#rolePermissionsPanel').addEventListener('click', async 
   } catch (error) {
     status.textContent = `Save failed: ${error.message}`; status.className = 'permission-status error';
   } finally { button.disabled = false; }
+});
+document.querySelector('#createPermissionRole')?.addEventListener('click', async () => {
+  const input = document.querySelector('#newPermissionRole'), role = input.value.trim().toLowerCase().replace(/\s+/g,'_');
+  if (!/^[a-z][a-z0-9_-]{1,31}$/.test(role)) return setMessage('Use 2–32 letters, numbers, underscores, or hyphens for the role name.', 'error');
+  if (rolePermissionProfiles[role]) return setMessage('That role already exists.', 'error');
+  const empty = Object.fromEntries(permissionGroups.flatMap(group => group.items.map(([key]) => [key,false])));
+  try {
+    await api('/api/role-permissions', {method:'POST',body:JSON.stringify({role,permissions:empty})});
+    rolePermissionProfiles[role] = empty;
+    selectedPermissionRole = role;
+    input.value = '';
+    renderRolePermissions();
+    document.querySelector('#permissionStatus').textContent = `${roleTitle(role)} created. Set its permissions and save.`;
+    document.querySelector('#permissionStatus').className = 'permission-status success';
+  } catch (error) { setMessage(`Could not create role: ${error.message}`, 'error'); }
+});
+document.querySelector('#permissionMemberSearch')?.addEventListener('input', event => {
+  const results = document.querySelector('#permissionMemberResults'), query = event.target.value.trim().toLowerCase();
+  if (!query) { results.hidden = true; results.replaceChildren(); return; }
+  const matches = allAccounts().filter(account => `${account.display_name||account.name} ${account.callsign}`.toLowerCase().includes(query)).slice(0,8);
+  results.innerHTML = matches.map(account => `<button type="button" data-permission-member="${esc(account.account_id)}">${esc(account.display_name||account.name)} · ${esc(account.callsign||'')}</button>`).join('') || '<span class="muted">No members found.</span>';
+  results.hidden = false;
+});
+document.querySelector('#permissionMemberResults')?.addEventListener('click', event => {
+  const button = event.target.closest('[data-permission-member]');
+  if (!button) return;
+  const account = allAccounts().find(item => item.account_id === button.dataset.permissionMember);
+  if (account) openIndividualPermissions(account);
 });
 
 let individualPermissionTarget = null;
