@@ -9,9 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  // This API version label is intentionally distinct from the older
-  // 2026-10-04-training-hours-d1-4 deployment, which does not include LOI.
-  apiVersion: '2026-10-05-training-hours-loi-d1-4',
+  apiVersion: '2026-10-04-training-hours-d1-4',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -25,7 +23,9 @@ const LVFR = Object.freeze({
 });
 
 function doGet(e) {
-  return output_({ ok: true, service: 'LVFR EMS Apps Script API', version: LVFR.apiVersion, postOnly: true });
+  // Make the deployed release easy to verify by opening its /exec URL.
+  // This flag is informational; /internal/loi still requires the worker secret.
+  return output_({ ok: true, service: 'LVFR EMS Apps Script API', version: LVFR.apiVersion, internal_loi: true, postOnly: true });
 }
 
 function doPost(e) {
