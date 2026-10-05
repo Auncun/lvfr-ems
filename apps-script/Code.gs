@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-05-loi-1',
+  apiVersion: '2026-10-05-loi-2',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -856,7 +856,7 @@ function instructorTypes_(user) {
 
 function instructorDirectory_(spreadsheet) {
   const cache = CacheService.getScriptCache();
-  const cacheKey = 'instructor-directory:v1';
+  const cacheKey = 'instructor-directory:v2';
   const cached = cache.get(cacheKey);
   if (cached) {
     try { return JSON.parse(cached); } catch (ignored) {}
@@ -866,7 +866,8 @@ function instructorDirectory_(spreadsheet) {
   const addSheet = (title, nameColumn, statusColumn, dateColumn, type) => {
     const sheet = spreadsheet.getSheetByName(title);
     if (!sheet || sheet.getLastRow() < 2) return;
-    const last = Math.min(sheet.getLastRow(), 1000);
+    const last = Math.min(sheet.getLastRow(), certZoneLastRow_(sheet), 1000);
+    if (last < 2) return;
     const start = Math.min(nameColumn, dateColumn || nameColumn);
     const end = Math.max(nameColumn, statusColumn, dateColumn || nameColumn);
     const values = sheet.getRange(2, start, last - 1, end - start + 1).getDisplayValues();
@@ -1080,7 +1081,7 @@ function clearHertNameIfUnqualified_(sheet, memberName) {
   SpreadsheetApp.flush();
   const name = normalizeMemberName_(memberName);
   if (!name) return;
-  const count = Math.max(0, sheet.getMaxRows() - 1);
+  const count = Math.max(0, Math.min(sheet.getMaxRows(), certZoneLastRow_(sheet)) - 1);
   if (!count) return;
   const names = sheet.getRange(2, 2, count, 1).getDisplayValues();
   const rows = [];
@@ -1101,7 +1102,8 @@ function hertDirectory_(spreadsheet) {
   spreadsheet = spreadsheet || SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
   const sheet = spreadsheet.getSheetByName('HERT Certified');
   if (!sheet || sheet.getLastRow() < 2) return map;
-  const count = sheet.getLastRow() - 1;
+  const count = Math.min(sheet.getLastRow(), certZoneLastRow_(sheet)) - 1;
+  if (count < 1) return map;
   const rows = sheet.getRange(2, 2, count, 3).getDisplayValues();
   const colors = sheet.getRange(2, 2, count, 3).getBackgrounds();
   rows.forEach((row, index) => {
@@ -1276,7 +1278,7 @@ function syncRosterSnapshotToD1_(source, forceFull) {
     lockAcquired = true;
     console.log('Roster D1 sync acquired ScriptLock; source=' + source + '.');
     invalidateRosterCache_();
-    CacheService.getScriptCache().removeAll(['instructor-directory:v1', 'members:do-not-promote:v1', 'members:do-not-promote:list:v1']);
+    CacheService.getScriptCache().removeAll(['instructor-directory:v2', 'members:do-not-promote:v1', 'members:do-not-promote:list:v1']);
     console.log('Roster D1 sync reading current Google Sheet snapshot; readOnly=' + forceFull + '.');
     const members = forceFull ? readRosterMembers_(true) : readRosterMembers_();
     const callsign_slots = availableCallsignInventory_();
@@ -1742,27 +1744,43 @@ function terminateMember_(data, user) {
   return { ok: true };
 }
 
+// FIREFIGHTER CERT and HERT Certified hold two different lists in the same tab:
+// the certification / instructor rows at the top and the LOI candidates below
+// them (FORT LOI from row 28, HERT LOI from row 72). Every certification and
+// instructor lookup is limited to the top block so a name that is on the LOI list
+// is never mistaken for an instructor row (and never cleared by an instructor change).
+function certZoneLastRow_(sheet) {
+  const title = sheet.getName();
+  if (title === LOI_SHEET_CONFIG.HERT.sheet) return LOI_SHEET_CONFIG.HERT.startRow - 1;
+  if (title === LOI_SHEET_CONFIG.FORT.sheet) return LOI_SHEET_CONFIG.FORT.startRow - 1;
+  return sheet.getMaxRows();
+}
+
 function findOrCreateNamedSheetRow_(sheet, nameColumn, name, create, ignoredRows) {
   ignoredRows = ignoredRows || [];
   const maxRows = sheet.getMaxRows();
-  const names = sheet.getRange(2, nameColumn, Math.max(0, maxRows - 1), 1).getDisplayValues();
-  const normalizedName = String(name || '').trim().toLowerCase();
-  const existingIndex = names.findIndex((row, index) => !ignoredRows.includes(index + 2) && String(row[0] || '').trim().toLowerCase() === normalizedName);
+  const zoneLast = Math.min(maxRows, certZoneLastRow_(sheet));
+  const names = sheet.getRange(2, nameColumn, Math.max(0, zoneLast - 1), 1).getDisplayValues();
+  const normalizedName = sheetNameKey_(name);
+  const existingIndex = names.findIndex((row, index) => !ignoredRows.includes(index + 2) && sheetNameKey_(row[0]) === normalizedName);
   if (existingIndex >= 0) return existingIndex + 2;
   if (!create) return 0;
-  const emptyIndex = names.findIndex((row, index) => !ignoredRows.includes(index + 2) && !String(row[0] || '').trim());
+  const emptyIndex = names.findIndex((row, index) => !ignoredRows.includes(index + 2) && !sheetNameKey_(row[0]));
   if (emptyIndex >= 0) return emptyIndex + 2;
+  // The LOI list starts right below this block, so a row cannot be appended here
+  // without shifting it. Ask for space instead of writing into the LOI rows.
+  if (zoneLast < maxRows) throw new Error(sheet.getName() + ' has no empty row left in rows 2-' + zoneLast + ' above the LOI list. Clear a row there or insert one and move the LOI list start row in Code.gs.');
   sheet.insertRowAfter(maxRows);
   return maxRows + 1;
 }
 
 function findNamedSheetRows_(sheet, nameColumn, name, ignoredRows) {
   ignoredRows = ignoredRows || [];
-  const count = Math.max(0, sheet.getMaxRows() - 1);
+  const count = Math.max(0, Math.min(sheet.getMaxRows(), certZoneLastRow_(sheet)) - 1);
   if (!count) return [];
-  const normalizedName = normalizeMemberName_(name);
+  const normalizedName = sheetNameKey_(name);
   return sheet.getRange(2, nameColumn, count, 1).getDisplayValues()
-    .map((row, index) => !ignoredRows.includes(index + 2) && normalizeMemberName_(row[0]) === normalizedName ? index + 2 : 0)
+    .map((row, index) => !ignoredRows.includes(index + 2) && sheetNameKey_(row[0]) === normalizedName ? index + 2 : 0)
     .filter(Boolean);
 }
 
@@ -1788,17 +1806,38 @@ function loiSheetConfig_(type) {
   return { ...config, sheet };
 }
 
+// "% on test" can be stored as a number (85), a percent-formatted number (0.85 shown
+// as 85%) or text ("85%"). Always return the percentage as a plain number string.
+function loiPercentFromCell_(value, display, format) {
+  if (typeof value === 'number') {
+    if (!isFinite(value)) return '';
+    const percent = /%/.test(String(format || '')) ? value * 100 : value;
+    return String(Math.round(percent * 100) / 100);
+  }
+  const text = String(display == null || display === '' ? value : display).replace(/[%\s]/g, '').replace(',', '.');
+  if (!text) return '';
+  const number = Number(text);
+  return isFinite(number) ? String(Math.round(number * 100) / 100) : '';
+}
+
 function listLoiSheet_() {
   const result = { hert: [], fort: [] };
   ['HERT', 'FORT'].forEach(type => {
     const config = loiSheetConfig_(type), count = Math.max(0, config.sheet.getLastRow() - config.startRow + 1);
     if (!count) return;
     const names = config.sheet.getRange(config.startRow, config.nameColumn, count, 1).getDisplayValues();
-    const percents = config.percentColumn ? config.sheet.getRange(config.startRow, config.percentColumn, count, 1).getDisplayValues() : [];
+    let values = [], displays = [], formats = [];
+    if (config.percentColumn) {
+      const range = config.sheet.getRange(config.startRow, config.percentColumn, count, 1);
+      values = range.getValues(); displays = range.getDisplayValues(); formats = range.getNumberFormats();
+    }
     names.forEach((row, index) => {
-      const name = String(row[0] || '').trim();
+      const name = String(row[0] || '').trim().replace(/\s+/g, ' ');
       if (!name) return;
-      result[type.toLowerCase()].push({ type, name, row: config.startRow + index, test_percent: config.percentColumn ? String(percents[index][0] || '').trim() : '' });
+      result[type.toLowerCase()].push({
+        type, name, row: config.startRow + index,
+        test_percent: config.percentColumn ? loiPercentFromCell_(values[index][0], displays[index][0], formats[index][0]) : ''
+      });
     });
   });
   return result;
@@ -1812,39 +1851,89 @@ function mutateLoiSheet_(data) {
     if (!name || name.length > 120) throw new Error('Choose a valid roster member.');
     const count = Math.max(0, config.sheet.getMaxRows() - config.startRow + 1);
     const names = count ? config.sheet.getRange(config.startRow, config.nameColumn, count, 1).getDisplayValues() : [];
+    const writePercent = (row, percent) => {
+      const cell = config.sheet.getRange(row, config.percentColumn);
+      // A percent-formatted cell stores 85% as 0.85; writing 85 there would show 8500%.
+      cell.setValue(/%/.test(String(cell.getNumberFormat() || '')) ? Math.round(percent * 100) / 10000 : percent);
+    };
     if (action === 'add') {
-      if (names.some(row => sheetNameKey_(row[0]) === sheetNameKey_(name))) throw new Error(name + ' is already on the ' + type + ' LOI list.');
-      let offset = names.findIndex(row => !String(row[0] || '').trim());
+      let percent = NaN;
+      if (type === 'FORT') {
+        const rawPercent = String(data.test_percent == null ? '' : data.test_percent).trim().replace('%', '');
+        percent = rawPercent === '' ? NaN : Number(rawPercent);
+        if (!Number.isFinite(percent) || percent < 0 || percent > 100) throw new Error('FORT LOI % on test must be a number from 0 to 100.');
+      }
+      // Already on the Sheet list (for example typed there by hand): the website is the
+      // authority, so refresh the percentage and report success instead of failing.
+      const existing = names.findIndex(row => sheetNameKey_(row[0]) === sheetNameKey_(name));
+      if (existing >= 0) {
+        const existingRow = config.startRow + existing;
+        if (type === 'FORT') writePercent(existingRow, percent);
+        SpreadsheetApp.flush();
+        return { ok: true, changed: false, type, name, row: existingRow, test_percent: type === 'FORT' ? percent : '' };
+      }
+      let offset = names.findIndex(row => !sheetNameKey_(row[0]));
       if (offset < 0) {
         config.sheet.insertRowsAfter(config.sheet.getMaxRows(), 1);
         offset = config.sheet.getMaxRows() - config.startRow;
       }
       const row = config.startRow + offset;
-      if (type === 'FORT') {
-        const rawPercent = String(data.test_percent == null ? '' : data.test_percent).trim();
-        const percent = rawPercent === '' ? NaN : Number(rawPercent);
-        if (!Number.isFinite(percent) || percent < 0 || percent > 100) throw new Error('FORT LOI % on test must be a number from 0 to 100.');
-        config.sheet.getRange(row, config.percentColumn).setValue(percent);
-      }
+      if (type === 'FORT') writePercent(row, percent);
       config.sheet.getRange(row, config.nameColumn).setValue(name);
       SpreadsheetApp.flush();
-      return { ok: true, changed: true, type, name, row, test_percent: type === 'FORT' ? Number(data.test_percent) : '' };
+      const written = String(config.sheet.getRange(row, config.nameColumn).getDisplayValue() || '').trim();
+      if (sheetNameKey_(written) !== sheetNameKey_(name)) throw new Error(config.sheet.getName() + ' row ' + row + ' did not keep the name. Check protection, data validation or formulas on that cell.');
+      return { ok: true, changed: true, type, name, row, test_percent: type === 'FORT' ? percent : '' };
     }
     if (!['passed', 'failed'].includes(action)) throw new Error('Choose Add, Passed, or Failed.');
-    let row = Number(data.source_row) || 0;
+    let row = Number(data.source_row) || Number(data.row) || 0;
     if (row < config.startRow || row > config.sheet.getMaxRows() || sheetNameKey_(config.sheet.getRange(row, config.nameColumn).getDisplayValue()) !== sheetNameKey_(name)) {
       row = names.findIndex(values => sheetNameKey_(values[0]) === sheetNameKey_(name));
       row = row < 0 ? 0 : config.startRow + row;
     }
-    if (!row) {
-      throw new Error('This ' + type + ' LOI entry has changed. Refresh the list and try again.');
+    // Already gone from the Sheet: nothing to clear, and the result is still recorded.
+    if (!row) return { ok: true, changed: false, type, name, row: 0, test_percent: '' };
+    let percent = '';
+    if (config.percentColumn) {
+      const cell = config.sheet.getRange(row, config.percentColumn);
+      percent = loiPercentFromCell_(cell.getValue(), cell.getDisplayValue(), cell.getNumberFormat());
     }
-    const percent = config.percentColumn ? String(config.sheet.getRange(row, config.percentColumn).getDisplayValue() || '').trim() : '';
     config.sheet.getRange(row, config.nameColumn).clearContent();
     if (config.percentColumn) config.sheet.getRange(row, config.percentColumn).clearContent();
     SpreadsheetApp.flush();
     return { ok: true, changed: true, type, name, row, test_percent: percent };
   });
+}
+
+// Run from the Apps Script editor: logs what the LOI lists look like in the Sheet,
+// which names the website would import, and any LOI row that still carries
+// instructor/certification markings left behind by the old overlap bug.
+function reviewLoiSheets() {
+  const out = [], roster = rosterSheet_(), known = new Set();
+  const rosterCount = Math.max(0, roster.getLastRow() - 1);
+  if (rosterCount) roster.getRange(2, 2, rosterCount, 2).getDisplayValues().forEach(values => {
+    if (String(values[1] || '').trim()) known.add(sheetNameKey_(values[1]));
+  });
+  ['HERT', 'FORT'].forEach(type => {
+    const config = loiSheetConfig_(type), count = Math.max(0, config.sheet.getLastRow() - config.startRow + 1);
+    out.push('== ' + type + ' LOI: sheet "' + config.sheet.getName() + '", from row ' + config.startRow + ', name column ' + config.nameColumn + (config.percentColumn ? ', % column ' + config.percentColumn : '') + ', rows to scan ' + count);
+    if (!count) return;
+    const names = config.sheet.getRange(config.startRow, config.nameColumn, count, 1).getDisplayValues();
+    const pct = config.percentColumn ? config.sheet.getRange(config.startRow, config.percentColumn, count, 1) : null;
+    const pctValues = pct ? pct.getValues() : [], pctDisplay = pct ? pct.getDisplayValues() : [], pctFormats = pct ? pct.getNumberFormats() : [];
+    const statusColumn = type === 'HERT' ? 6 : 2, statusColors = config.sheet.getRange(config.startRow, statusColumn, count, 1).getBackgrounds();
+    names.forEach((row, index) => {
+      const name = String(row[0] || '').trim();
+      if (!name) return;
+      const notes = [];
+      if (!known.has(sheetNameKey_(name))) notes.push('NOT on the roster (will not import)');
+      if (pct) notes.push('% raw=' + JSON.stringify(pctValues[index][0]) + ' shown="' + pctDisplay[index][0] + '" format="' + pctFormats[index][0] + '" -> ' + (loiPercentFromCell_(pctValues[index][0], pctDisplay[index][0], pctFormats[index][0]) || 'blank'));
+      if (isGreen_(statusColors[index][0])) notes.push('green instructor marking on this LOI row (leftover, clear it by hand)');
+      out.push('  row ' + (config.startRow + index) + ': ' + name + (notes.length ? '  | ' + notes.join(' | ') : ''));
+    });
+  });
+  console.log(out.join('\n'));
+  return out;
 }
 
 function isLoiSheetEdit_(sheetName, range) {
@@ -2082,7 +2171,7 @@ function changeInstructor_(callsign, data, user) {
       });
       SpreadsheetApp.flush();
     }
-    CacheService.getScriptCache().remove('instructor-directory:v1');
+    CacheService.getScriptCache().remove('instructor-directory:v2');
     if (!matchingRows.length) return { ok: true, changed: false, assigned: false, instructor_type: type, status: 'unchanged' };
     appendAppLog_({ kind: 'instructor', callsign: member.callsign, member_name: member.name, action: type + ' Instructor Removed', details: type, changed_by: actorName_(user) });
     return { ok: true, changed: true, assigned: false, instructor_type: type, status: 'removed' };
@@ -2093,7 +2182,7 @@ function changeInstructor_(callsign, data, user) {
   const current = isGreen_(cell.getBackground());
   if (!current) {
     cell.setBackground('#00ff00');
-    CacheService.getScriptCache().remove('instructor-directory:v1');
+    CacheService.getScriptCache().remove('instructor-directory:v2');
     if (type === 'FORT') sheet.getRange(row, 4).setValue(new Date());
     appendAppLog_({ kind: 'instructor', callsign: member.callsign, member_name: member.name, action: type + ' Instructor Assigned', details: type, changed_by: actorName_(user) });
   }

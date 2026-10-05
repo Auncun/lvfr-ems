@@ -1302,8 +1302,9 @@ document.addEventListener("click", async event => {
         renderLoiLists();
     }
     try {
-        await api("/api/loi", { method: "POST", body: JSON.stringify(payload) });
-        toast(add ? `${type} LOI added.` : `${type} LOI marked ${action}.`);
+        const saved = await api("/api/loi", { method: "POST", body: JSON.stringify(payload) });
+        if (saved && saved.sheet_synced === false) toast(`${type} LOI saved on the website, but the Sheet was NOT updated: ${saved.sheet_sync_error || "unknown Apps Script error"}`);
+        else toast(add ? `${type} LOI added.` : `${type} LOI marked ${action}.`);
     } catch (error) {
         loiLists[key] = before;
         renderLoiLists();

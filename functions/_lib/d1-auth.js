@@ -590,7 +590,7 @@ export async function handleD1(context) {
         if(byName.has(key)) byName.set(key,null); else byName.set(key,member);
       }
       const timestamp=new Date().toISOString(), seenSourceRows=new Set(), recordsByKey=new Map(), recordsBySourceRow=new Map();
-      let skipped=0;
+      let skipped=0; const unmatched=[];
       for(const raw of data.records) {
         const type=String(raw?.type||"").trim().toUpperCase();
         const name=String(raw?.name||"").trim().replace(/\s+/g," ");
@@ -598,10 +598,13 @@ export async function handleD1(context) {
         const member=(callsign&&byCallsign.get(callsign))||byName.get(nameKey(name));
         const sourceRow=Number(raw?.source_row)||null;
         if(sourceRow) seenSourceRows.add(`${type}:${sourceRow}`);
-        if(!["HERT","FORT"].includes(type)||!name||!member) { skipped++; continue; }
+        if(!["HERT","FORT"].includes(type)||!name||!member) { skipped++; if(name) unmatched.push(`${type} row ${sourceRow||"?"}: ${name}`); continue; }
+        // The Sheet may show the percentage as "85", "85%" or "85.0". An unreadable value
+        // keeps the person on the list with a blank percentage instead of dropping them.
         const rawPercent=raw?.test_percent;
-        const percent=rawPercent==null||String(rawPercent).trim()===""?null:Number(rawPercent);
-        if(type==="FORT"&&percent!==null&&(!Number.isFinite(percent)||percent<0||percent>100)) { skipped++; continue; }
+        const cleaned=rawPercent==null?"":String(rawPercent).replace(/[%\s]/g,"").replace(",",".");
+        let percent=cleaned===""?null:Number(cleaned);
+        if(percent!==null&&(!Number.isFinite(percent)||percent<0||percent>100)) percent=null;
         const record={type,callsign:member.callsign,name:member.name,test_percent:type==="FORT"?percent:null,source_row:sourceRow};
         recordsByKey.set(`${type}:${member.callsign}`,record);
         if(sourceRow) recordsBySourceRow.set(`${type}:${sourceRow}`,record);
@@ -623,7 +626,7 @@ export async function handleD1(context) {
         }
       }
       for(let i=0;i<statements.length;i+=50) await db.batch(statements.slice(i,i+50));
-      return json({ok:true,imported:recordsByKey.size,skipped,written:statements.length});
+      return json({ok:true,imported:recordsByKey.size,skipped,written:statements.length,unmatched});
     }
     if(route==="/internal/logs/import" && method==="POST") {
       const expected=String(env.LVFR_D1_WORKER_SECRET||"");
@@ -840,21 +843,25 @@ export async function handleD1(context) {
       const mirrorData={type,action,name:member.name,callsign:member.callsign,test_percent:testPercent,source_row:previous?.source_row||null};
       const sheetAssertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
       const logAssertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
+      let sheetSynced=true, sheetSyncError="";
+      try {
+        const mirror=await proxyToAppsScript(context,"/internal/loi",url,sheetAssertion,mirrorData);
+        if(!mirror.ok) {
+          const failure=await mirror.json().catch(()=>({}));
+          sheetSynced=false; sheetSyncError=String(failure.detail||"Apps Script rejected the LOI update.");
+          console.error("LOI Sheet mirror failed:",sheetSyncError);
+        } else if(action==="add") {
+          const synced=await mirror.json().catch(()=>({}));
+          if(Number(synced.row)>0) await db.prepare("UPDATE loi_entries SET source_row=? WHERE id=?").bind(Number(synced.row),entryId).run();
+        }
+      } catch(error) { sheetSynced=false; sheetSyncError=String(error?.message||error); console.error("LOI Sheet mirror failed:",error); }
       context.waitUntil((async()=>{
-        try {
-          const mirror=await proxyToAppsScript(context,"/internal/loi",url,sheetAssertion,mirrorData);
-          if(!mirror.ok) console.error("LOI Sheet mirror failed:",await mirror.text());
-          else if(action==="add") {
-            const synced=await mirror.json().catch(()=>({}));
-            if(Number(synced.row)>0) await db.prepare("UPDATE loi_entries SET source_row=? WHERE id=?").bind(Number(synced.row),entryId).run();
-          }
-        } catch(error) { console.error("LOI Sheet mirror failed:",error); }
         try {
           const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,logAssertion,{kind:"loi",log_date:logDate,callsign:member.callsign,member_name:member.name,action:eventAction,details,changed_by:String(user.name||"")});
           if(!mirror.ok) console.error("LOI log Sheet mirror failed:",await mirror.text());
         } catch(error) { console.error("LOI log Sheet mirror failed:",error); }
       })());
-      return json({ok:true,changed:true,id:entryId,row:entryId,type,name:member.name,callsign:member.callsign,test_percent:testPercent,action:eventAction});
+      return json({ok:true,changed:true,id:entryId,row:entryId,type,name:member.name,callsign:member.callsign,test_percent:testPercent,action:eventAction,sheet_synced:sheetSynced,sheet_sync_error:sheetSyncError});
     }
     if(route==="/api/training-hours" && method==="GET") {
       const result=await db.prepare("SELECT id,source_row,callsign,name,training_date AS date,time FROM training_hours ORDER BY lower(name),callsign,training_date,id").all();
