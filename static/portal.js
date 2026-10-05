@@ -3,7 +3,7 @@ function showAvailableApps(user) {
   const isCommander = Boolean(user.is_admin) || ['admin', 'commander'].includes(String(user.role || '').toLowerCase());
   if (isCommander) document.querySelector('#administrationCard')?.removeAttribute('hidden');
   const role = String(user.role || '').trim().toLowerCase();
-  if (String(user.status || '').toLowerCase() === 'approved' && ['leader', 'supervisor', 'command', 'commander', 'admin'].includes(role)) document.querySelector('#emsCard')?.removeAttribute('hidden');
+  if (String(user.status || '').toLowerCase() === 'approved' && (role === 'admin' || user.permissions?.portal_access === true)) document.querySelector('#emsCard')?.removeAttribute('hidden');
   const canSync = Boolean(user.is_command || isCommander);
   document.querySelector('#portalSyncButton')?.toggleAttribute('hidden', !canSync);
   document.querySelector('#portalSyncStatus')?.toggleAttribute('hidden', !canSync);

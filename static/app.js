@@ -5022,7 +5022,7 @@ function applyAccountUser(user) {
     if (membersLogDelete) membersLogDelete.hidden = !currentUserIsAdmin;
     currentUserPermissions = user.permissions || {};
     currentUserPermissionOverrides = user.permission_overrides || {};
-    if (user.role === "member" && !currentUserHasPermission("portal_access")) {
+    if (!currentUserHasPermission("portal_access")) {
         location.replace("/watch-command");
         return;
     }
@@ -5031,7 +5031,7 @@ function applyAccountUser(user) {
     currentUserCallsign = String(user.callsign || "").trim().toUpperCase();
     currentUserIsCommand = Boolean(user.is_command);
     const commandSyncPanel = $("#commandSyncPanel");
-    if (commandSyncPanel) commandSyncPanel.hidden = user.role === "member" && !currentUserHasPermission("portal_access");
+    if (commandSyncPanel) commandSyncPanel.hidden = !currentUserHasPermission("portal_access");
     const fullSyncButton = $("#fullSyncBtn");
     if (fullSyncButton) fullSyncButton.hidden = !currentUserCanFullSync;
     currentInstructorTypes = String(user.instructor_type || "")
@@ -5182,7 +5182,7 @@ async function loadAccount() {
     try {
         const user = await api("/auth/me");
         applyAccountUser(user);
-        return user.role !== "member" || user.permissions?.portal_access === true || user.is_admin;
+        return user.role === "admin" || user.permissions?.portal_access === true;
     } catch {
         location.assign("/login");
         return false;

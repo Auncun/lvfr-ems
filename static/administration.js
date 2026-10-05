@@ -7,6 +7,8 @@ let selectedStatus = 'all';
 let currentUser = null;
 let notificationItems = [];
 let notificationLoadPromise = null;
+let rolePermissionsLoaded = false;
+let rolePermissionsLoadPromise = null;
 const cachedNotificationUser = window.lvfrCachedUser?.();
 const notificationCacheKey = `lvfr.portal.notifications.v1:${cachedNotificationUser?.account_id || cachedNotificationUser?.id || 'current'}`;
 
@@ -42,8 +44,10 @@ function allAccounts() {
 function configureOperationAccess() {
   const allowed = ['admin', 'commander'].includes(currentUser?.role);
   document.querySelector('[data-command-section="permissions"]')?.toggleAttribute('hidden', !allowed);
-  if (allowed) void loadRolePermissions();
-  else if (commandSections.permissions?.hidden === false) showCommandSection('accounts');
+  if (allowed && !rolePermissionsLoaded && !rolePermissionsLoadPromise) {
+    rolePermissionsLoadPromise = loadRolePermissions().finally(() => { rolePermissionsLoadPromise = null; });
+  }
+  if (!allowed && commandSections.permissions?.hidden === false) showCommandSection('accounts');
 }
 function accountActions(account) {
   const id = esc(account.account_id);
@@ -290,6 +294,7 @@ async function loadRolePermissions() {
     rolePermissionProfiles = result.profiles || {};
     permissionEditorCapabilities = result.actor_permissions || {};
     renderRolePermissions();
+    rolePermissionsLoaded = true;
     status.textContent = 'Role settings loaded. Changes apply to every account with that role.';
     status.className = 'permission-status';
   } catch (error) {
@@ -318,7 +323,13 @@ document.querySelector('#rolePermissionsPanel').addEventListener('click', async 
   button.disabled = true; status.textContent = 'Saving permissions...'; status.className = 'permission-status';
   try {
     const result = await api('/api/role-permissions', { method: 'POST', body: JSON.stringify({ role, permissions: rolePermissionProfiles[role] }) });
-    rolePermissionProfiles[role] = result.permissions || rolePermissionProfiles[role];
+    const persisted = await api('/api/role-permissions');
+    const savedProfile = persisted.profiles?.[role];
+    if (!savedProfile || Object.keys(rolePermissionProfiles[role]).some(key => Boolean(savedProfile[key]) !== Boolean(result.permissions?.[key]))) {
+      throw new Error('The saved permissions could not be verified. Reload and try again.');
+    }
+    rolePermissionProfiles = persisted.profiles || rolePermissionProfiles;
+    permissionEditorCapabilities = persisted.actor_permissions || permissionEditorCapabilities;
     renderRolePermissions();
     status.textContent = `${role === 'member' ? 'Member' : role === 'leader' ? 'Leader' : 'Commander'} permissions saved.`;
     status.className = 'permission-status success';
