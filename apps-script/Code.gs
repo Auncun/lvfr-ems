@@ -66,6 +66,11 @@ function doPost(e) {
       if (!expected || !input.workerSecret || !constantTimeEquals_(String(input.workerSecret), expected)) throw new Error('Training Hours mirror authentication failed.');
       return output_({ ok: true, data: mirrorTrainingHoursFromD1_(input.data || {}) });
     }
+    if (route === '/internal/notifications/clear' && String(input.method || '') === 'POST') {
+      const expected = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
+      if (!expected || !input.workerSecret || !constantTimeEquals_(String(input.workerSecret), expected)) throw new Error('Notification clear authentication failed.');
+      return output_({ ok: true, data: clearNotificationSheets_() });
+    }
     if (route === '/auth/login' && String(input.method || 'GET') === 'POST') return output_({ ok: true, data: loginWithPassword_(input.data || {}) });
     if (route === '/auth/logout' && String(input.method || 'GET') === 'POST') { logoutSession_(input.sessionToken); return output_({ ok: true, data: { ok: true } }); }
     const method = String(input.method || 'GET');
@@ -127,7 +132,8 @@ function dispatch_(route, method, params, data, user) {
     return Object.assign({}, result, { message: result.skipped ? 'Roster already synchronized' : 'Roster synchronized' });
   }
   if (route === '/api/full-sync' && method === 'POST') {
-    requireAdmin_(user);
+    if (user._d1Bridge) requireRolePermission_(user, 'full_sync_manage');
+    else requireAdmin_(user);
     const result = syncRosterSnapshotToD1_('full-manual', true);
     return Object.assign({}, result, { message: 'Full roster sync completed' });
   }
@@ -248,6 +254,7 @@ function requireD1BridgeUser_(bridgeToken, workerSecret) {
     status: status,
     role: role,
     permissions: claims.permissions && typeof claims.permissions === 'object' ? claims.permissions : {},
+    permission_overrides: claims.permission_overrides && typeof claims.permission_overrides === 'object' ? claims.permission_overrides : {},
     _d1Bridge: true,
     bridge_expires_at: expiresAt
   };
@@ -612,7 +619,7 @@ function syncNotifications_(user, sheets) {
       // Also backfill currently eligible members whose state was silently
       // seeded before notifications were enabled. Existing alerts prevent
       // repeats when the same member remains eligible across polling.
-      if (!notifiedEligibility.has(notificationKey)) {
+      if (state.get('eligible:' + callsign) !== member.rank && !notifiedEligibility.has(notificationKey)) {
         appendNotification_(sheets.notifications, 'eligible', 'New eligible promotion',
           member.name + ' (' + callsign + ') is eligible for ' + member.rank + '.', callsign, member.rank, now);
         notifiedEligibility.add(notificationKey);
@@ -684,9 +691,10 @@ function listNotifications_(user) {
 }
 
 function notificationResponseCacheKey_(accountId) {
+  const generation = CacheService.getScriptCache().get('notifications:version:v1') || '1';
   return 'notifications:response:v1:' + Utilities.base64EncodeWebSafe(
     Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(accountId || ''))
-  ).replace(/=+$/, '');
+  ).replace(/=+$/, '') + ':' + generation;
 }
 
 function markNotificationsRead_(data, user) {
@@ -706,6 +714,22 @@ function markNotificationsRead_(data, user) {
   if (additions.length) sheets.reads.getRange(sheets.reads.getLastRow() + 1, 1, additions.length, 3).setValues(additions);
   CacheService.getScriptCache().remove(notificationResponseCacheKey_(user.accountId));
   return { ok: true };
+}
+
+function clearNotificationSheets_() {
+  return withScriptLock_(() => {
+    const sheets = notificationSheets_();
+    [sheets.notifications, sheets.reads].forEach(sheet => {
+      const lastRow = sheet.getLastRow();
+      if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).clearContent();
+    });
+    const cache = CacheService.getScriptCache();
+    cache.put('notifications:version:v1', String(Date.now()), 21600);
+    ['notifications:sync:v1:command:admin', 'notifications:sync:v1:command:nonadmin',
+      'notifications:sync:v1:standard:admin', 'notifications:sync:v1:standard:nonadmin']
+      .forEach(key => cache.remove(key));
+    return { ok: true, cleared: true };
+  });
 }
 
 function presenceKey_(accountId) { return 'presence:' + String(accountId || ''); }
@@ -757,11 +781,12 @@ function requireAdmin_(user) {
 
 function requireRolePermission_(user, permission) {
   requireApproved_(user);
-  if (isAdmin_(user)) return;
   if (user._d1Bridge) {
+    if (String(user.role || '').toLowerCase() === 'admin') return;
     if (user.permissions && user.permissions[permission] === true) return;
     throw new Error('Your role does not have permission for this action.');
   }
+  if (isAdmin_(user)) return;
   if (String(user.role || '').toLowerCase() === 'leader' && ['members_view','eligible_view','profile_view','logs_view','training_view','training_fort_manage','training_hert_manage','training_hours_view','training_hours_manage','notes_manage','promotion_manage','callsign_manage','sync_view','sync_manage'].includes(permission)) return;
   throw new Error('This LVFR account is not authorized for this action.');
 }
@@ -777,8 +802,12 @@ function requireTrainingPermission_(training, user) {
   requireApproved_(user);
   const required = String(training || '').toLowerCase() === 'hert' ? 'HERT' : 'FORT';
   const capability = required === 'HERT' ? 'training_hert_manage' : 'training_fort_manage';
+  if (user._d1Bridge) {
+    if (String(user.role || '').toLowerCase() === 'admin') return;
+    if (!user.permissions || user.permissions[capability] !== true) throw new Error('Your role does not have permission for this action.');
+    if (String(user.role || '').toLowerCase() === 'commander' || user.permission_overrides && user.permission_overrides[capability] === true) return;
+  }
   if (isAdmin_(user)) return;
-  if (user._d1Bridge && (!user.permissions || user.permissions[capability] !== true)) throw new Error('Your role does not have permission for this action.');
   if (instructorTypes_(user).includes(required)) return;
   throw new Error(required + ' Instructor status is required for this training.');
 }

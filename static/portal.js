@@ -16,6 +16,9 @@ showAvailableApps(cachedPortalUser);
 const notificationList = document.querySelector('#portalNotificationList');
 const notificationsButton = document.querySelector('#portalNotificationsButton');
 const notificationPanel = document.querySelector('#portalNotificationPanel');
+const clearNotificationsButton = document.querySelector('#portalClearNotifications');
+const canClearNotifications = user => ['leader', 'admin', 'commander'].includes(String(user?.role || '').toLowerCase());
+clearNotificationsButton?.toggleAttribute('hidden', !canClearNotifications(cachedPortalUser));
 const notificationStorageKey = `lvfr.portal.notifications.v1:${cachedPortalUser?.account_id || cachedPortalUser?.id || 'user'}`;
 function renderPortalNotifications(items = []) {
   if (!notificationList) return;
@@ -75,6 +78,22 @@ notificationsButton?.addEventListener('click', () => {
     void markPortalNotificationsRead();
   }
 });
+clearNotificationsButton?.addEventListener('click', async () => {
+  if (!window.confirm('Clear all notifications for everyone?')) return;
+  clearNotificationsButton.disabled = true;
+  try {
+    const response = await fetch('/api/notifications/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.detail || result.error || 'Could not clear notifications.');
+    cachedNotifications = [];
+    try { localStorage.setItem(notificationStorageKey, '[]'); } catch {}
+    renderPortalNotifications([]);
+  } catch (error) {
+    window.alert(error.message);
+  } finally {
+    clearNotificationsButton.disabled = false;
+  }
+});
 document.addEventListener('click', event => {
   if (event.target.closest('.notification-control')) return;
   if (notificationPanel) notificationPanel.hidden = true;
@@ -128,6 +147,7 @@ if (!cachedPortalUser) fetch('/auth/me')
     const role = String(user?.role || '').trim().toLowerCase();
     document.querySelector('#emsCard')?.toggleAttribute('hidden', !user || String(user.status || '').toLowerCase() !== 'approved' || !['leader', 'supervisor', 'command', 'commander', 'admin'].includes(role));
     showAvailableApps(user);
+    clearNotificationsButton?.toggleAttribute('hidden', !canClearNotifications(user));
     void loadPortalSyncStatus();
   })
   .catch(() => {});

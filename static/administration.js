@@ -39,28 +39,43 @@ function allAccounts() {
     ...(overview.deactivated || []).map(account => ({ ...account, status: 'deactivated' })),
   ];
 }
+function configureOperationAccess() {
+  const allowed = ['admin', 'commander'].includes(currentUser?.role);
+  document.querySelector('[data-command-section="permissions"]')?.toggleAttribute('hidden', !allowed);
+  if (allowed) void loadRolePermissions();
+  else if (commandSections.permissions?.hidden === false) showCommandSection('accounts');
+}
 function accountActions(account) {
   const id = esc(account.account_id);
+  const operation = currentUser?.role === 'admin';
   if (account.account_id === currentUser?.account_id) return '';
   if (account.status === 'pending') return `
     <button type="button" data-action="allow" data-id="${id}">Approve</button>
     <button type="button" class="danger" data-action="deny" data-id="${id}">Deny</button>`;
   if (account.status === 'deactivated') return `
-    <button type="button" data-action="reactivate" data-id="${id}">Reactivate</button>
-    ${account.is_admin ? `<button type="button" data-action="demote" data-id="${id}">Remove Commander</button>` : ''}`;
-  const adminButton = account.is_admin
-    ? `<button type="button" data-action="demote" data-id="${id}">Remove Commander</button>`
-    : `<button type="button" data-action="promote" data-id="${id}">Make Commander</button>`;
+    ${(!account.is_elevated || operation) ? `<button type="button" data-action="reactivate" data-id="${id}">Reactivate</button>` : ''}
+    ${operation && account.is_elevated ? `<button type="button" data-action="demote" data-id="${id}">${account.role === 'admin' ? 'Make Commander' : 'Demote to Leader'}</button>` : ''}
+    ${operation && account.role !== 'admin' ? `<button type="button" data-action="permissions" data-id="${id}">Permissions</button>` : ''}`;
+  if (account.is_elevated && !operation) return '';
   const memberButton = account.role === 'member'
-    ? `<button type="button" data-action="leader" data-id="${id}">Make Supervisor</button>`
-    : `<button type="button" data-action="member" data-id="${id}">Make Member</button>`;
-  const deactivateButton = account.is_admin
-    ? '<button type="button" disabled title="Remove Commander access first">Deactivate</button>'
+    ? `<button type="button" data-action="leader" data-id="${id}">Make Leader</button>`
+    : account.role === 'leader' ? `<button type="button" data-action="member" data-id="${id}">Make Member</button>` : '';
+  const roleButton = operation
+    ? account.role === 'admin'
+      ? `<button type="button" data-action="demote" data-id="${id}">Make Commander</button>`
+      : account.role === 'commander'
+      ? `<button type="button" data-action="promote" data-id="${id}">Make Operation</button><button type="button" data-action="demote" data-id="${id}">Demote to Leader</button>`
+      : `<button type="button" data-action="commander" data-id="${id}">Make Commander</button><button type="button" data-action="promote" data-id="${id}">Make Operation</button>`
+    : '';
+  const permissionButton = operation ? `<button type="button" data-action="permissions" data-id="${id}">Permissions</button>` : '';
+  const elevated = account.is_elevated;
+  const deactivateButton = elevated
+    ? '<button type="button" disabled title="Remove elevated role first">Deactivate</button>'
     : `<button type="button" class="danger" data-action="deactivate" data-id="${id}">Deactivate</button>`;
-  const deleteButton = account.is_admin
-    ? '<button type="button" disabled title="Remove Commander access first">Delete</button>'
+  const deleteButton = elevated
+    ? '<button type="button" disabled title="Remove elevated role first">Delete</button>'
     : `<button type="button" class="danger" data-action="delete" data-id="${id}">Delete</button>`;
-  return `${account.is_admin ? '' : memberButton}${adminButton}${deactivateButton}${deleteButton}`;
+  return `${memberButton}${roleButton}${permissionButton}${deactivateButton}${deleteButton}`;
 }
 function renderAccounts() {
   const query = document.querySelector('#accountSearch').value.trim().toLowerCase();
@@ -77,7 +92,7 @@ function renderAccounts() {
   accountRows.innerHTML = rows.map(account => `
     <tr><td data-label="Account"><strong>${esc(account.display_name || account.name)}</strong>${account.approved_by ? `<br><small class="muted">Approved by ${esc(account.approved_by)}</small>` : ''}</td>
       <td data-label="Callsign">${esc(account.callsign || '—')}</td><td data-label="Status">${esc(account.status)}</td>
-      <td data-label="Role">${account.is_admin ? 'Commander' : account.role === 'member' ? 'Member' : account.status === 'pending' ? '—' : 'Supervisor'}</td>
+      <td data-label="Role">${account.status === 'pending' ? '—' : account.role === 'admin' ? 'Operation' : account.role === 'commander' ? 'Commander' : account.role === 'leader' ? 'Leader' : 'Member'}</td>
       <td data-label="Presence"><span class="presence-badge ${account.online ? 'online' : 'offline'}">${account.online ? 'Online' : 'Offline'}</span></td>
       <td data-label="Created">${esc(account.requested_at || '—')}</td><td data-label="Actions"><div class="admin-actions">${accountActions(account)}</div></td></tr>`).join('');
 }
@@ -85,7 +100,7 @@ function renderAudit() {
   const rows = overview.audit || [];
   auditRows.innerHTML = rows.length ? rows.map(entry => `
     <tr><td data-label="Date">${esc(entry.created_at || '—')}</td><td data-label="Account">${esc(entry.name || 'N/A')}${entry.callsign ? ` (${esc(entry.callsign)})` : ''}</td>
-      <td data-label="Action">${esc(String(entry.action || '—').replace(/\bAdmin\b/g, 'Commander'))}</td><td data-label="By">${esc(String(entry.actor_name || '—').replace(/\bWeb Admin\b/g, 'Web Commander'))}</td></tr>`).join('')
+      <td data-label="Action">${esc(String(entry.action || '—').replace(/\bAdmin\b/g, 'Operation'))}</td><td data-label="By">${esc(String(entry.actor_name || '—').replace(/\bWeb Admin\b/g, 'Web Operation'))}</td></tr>`).join('')
     : '<tr><td colspan="4">No account history yet.</td></tr>';
 }
 document.querySelector('#clearAccountAuditBtn')?.addEventListener('click', async event => {
@@ -112,6 +127,7 @@ async function loadAccounts(silent = false) {
     if (cached?.overview) {
       overview = cached.overview;
       currentUser = cached.user || cachedUser;
+      configureOperationAccess();
       renderAccounts();
       renderAudit();
       hadCached = true;
@@ -122,6 +138,7 @@ async function loadAccounts(silent = false) {
     const [data, user] = await Promise.all([api('/api/leaders'), Promise.resolve(cachedUser || null)]);
     overview = data;
     currentUser = user;
+    configureOperationAccess();
     try { sessionStorage.setItem(cacheKey, JSON.stringify({ overview, user, savedAt: Date.now() })); } catch {}
     renderAccounts();
     renderAudit();
@@ -170,12 +187,13 @@ async function performAction(button) {
   const { action, id } = button.dataset;
   const account = allAccounts().find(row => row.account_id === id);
   if (!account) return;
+  if (action === 'permissions') return openIndividualPermissions(account);
   const accountLabel = account.display_name || account.name;
   const confirmations = {
     deny: `Deny the account request for ${accountLabel}?`,
     deactivate: `Deactivate ${accountLabel}'s account?`,
     delete: `Permanently delete ${accountLabel}'s account? This cannot be undone.`,
-    demote: `Remove Commander access from ${accountLabel}?`,
+    demote: account.role === 'admin' ? `Change ${accountLabel} from Operation to Commander?` : `Change ${accountLabel} from Commander to Leader?`,
     member: `Limit ${accountLabel} to Watch Command access?`,
   };
   if (confirmations[action] && !window.confirm(confirmations[action])) return;
@@ -183,6 +201,7 @@ async function performAction(button) {
     allow: `/api/leaders/${encodeURIComponent(id)}/allow`,
     deny: `/api/leaders/${encodeURIComponent(id)}/deny`,
     promote: `/api/leaders/${encodeURIComponent(id)}/admin`,
+    commander: `/api/leaders/${encodeURIComponent(id)}/commander`,
     demote: `/api/leaders/${encodeURIComponent(id)}/demote`,
     member: `/api/leaders/${encodeURIComponent(id)}/member`,
     leader: `/api/leaders/${encodeURIComponent(id)}/leader`,
@@ -192,7 +211,7 @@ async function performAction(button) {
   };
   const method = action === 'delete' ? 'DELETE' : 'POST';
   applyOptimisticAccountAction(account, action);
-  const success = { allow: 'Account approved.', deny: 'Account request denied.', promote: 'Commander access granted.', demote: 'Commander access removed.', member: 'Account set to Member.', leader: 'Account set to Supervisor.', deactivate: 'Account deactivated.', reactivate: 'Account reactivated.', delete: 'Account deleted.' };
+  const success = { allow: 'Account approved.', deny: 'Account request denied.', promote: 'Operation access granted.', commander: 'Commander role granted.', demote: account.role === 'admin' ? 'Account changed to Commander.' : 'Account changed to Leader.', member: 'Account set to Member.', leader: 'Account set to Leader.', deactivate: 'Account deactivated.', reactivate: 'Account reactivated.', delete: 'Account deleted.' };
   setMessage(success[action] || 'Account updated.', 'success');
   button.disabled = true;
   void api(paths[action], { method }).catch(error => {
@@ -207,8 +226,9 @@ function applyOptimisticAccountAction(source, action) {
   }
   if (action === 'allow') { account.status = 'approved'; account.role = 'member'; account.is_admin = false; }
   else if (action === 'deny' || action === 'delete') return renderAccounts();
-  else if (action === 'promote') { account.role = 'admin'; account.is_admin = true; }
-  else if (action === 'demote') { account.role = 'leader'; account.is_admin = false; }
+  else if (action === 'promote') { account.role = 'admin'; account.is_admin = true; account.is_elevated = true; }
+  else if (action === 'commander') { account.role = 'commander'; account.is_admin = false; account.is_commander = true; account.is_elevated = true; }
+  else if (action === 'demote') { account.role = account.role === 'admin' ? 'commander' : 'leader'; account.is_admin = false; account.is_commander = account.role === 'commander'; account.is_elevated = account.role === 'commander'; }
   else if (action === 'member') account.role = 'member';
   else if (action === 'leader') account.role = 'leader';
   else if (action === 'deactivate') account.status = 'deactivated';
@@ -241,20 +261,23 @@ const permissionGroups = [
     ['promotion_manage', 'Promotion', 'Promote members using available rules.'], ['rank_manage', 'Rank tools', 'Force promote, demote, or change rank.'],
     ['callsign_manage', 'Callsign changes', 'Change a member callsign.'], ['termination_manage', 'Termination', 'Remove a member from the roster.'],
     ['do_not_promote_manage', 'Do not Promote: edit', 'Add or remove members from that list.'], ['sync_manage', 'Sync now', 'Synchronize with the source sheet.'],
+    ['full_sync_manage', 'Full roster sync', 'Run a full roster synchronization from the source sheet.'],
   ] },
 ];
 let rolePermissionProfiles = {};
+let permissionEditorCapabilities = {};
 function renderRolePermissions() {
   const panel = document.querySelector('#rolePermissionsPanel');
   if (!panel) return;
   const query = document.querySelector('#permissionSearch').value.trim().toLocaleLowerCase();
-  panel.innerHTML = ['member', 'leader'].map(role => {
-    const roleLabel = role === 'member' ? 'Member' : 'Leader';
+  const roles = currentUser?.role === 'admin' ? ['member', 'leader', 'commander'] : ['member', 'leader'];
+  panel.innerHTML = roles.map(role => {
+    const roleLabel = role === 'member' ? 'Member' : role === 'leader' ? 'Leader' : 'Commander';
     const groups = permissionGroups.map(group => {
       const items = group.items.filter(([, label, description]) => !query || `${label} ${description} ${group.name}`.toLocaleLowerCase().includes(query));
       if (!items.length) return '';
       return `<section class="permission-group"><h4>${esc(group.name)}</h4>${items.map(([key, label, description]) => `
-        <label class="permission-item"><input type="checkbox" data-permission-key="${key}" ${rolePermissionProfiles[role]?.[key] ? 'checked' : ''}><span><strong>${esc(label)}</strong><small>${esc(description)}</small></span></label>`).join('')}</section>`;
+        <label class="permission-item"><input type="checkbox" data-permission-key="${key}" ${rolePermissionProfiles[role]?.[key] ? 'checked' : ''} ${currentUser?.role !== 'admin' && permissionEditorCapabilities[key] !== true && !rolePermissionProfiles[role]?.[key] ? 'disabled' : ''}><span><strong>${esc(label)}</strong><small>${esc(description)}</small></span></label>`).join('')}</section>`;
     }).join('');
     const enabled = Object.values(rolePermissionProfiles[role] || {}).filter(Boolean).length;
     return `<article class="role-permission-card" data-permission-role="${role}"><header><div><span class="role-kicker">ROLE PROFILE</span><h3>${roleLabel}</h3></div><span class="permission-count">${enabled} enabled</span></header><div class="role-permission-groups">${groups || '<p class="muted">No permissions match your search.</p>'}</div><button type="button" class="primary" data-save-permissions="${role}">Save ${roleLabel} permissions</button></article>`;
@@ -265,6 +288,7 @@ async function loadRolePermissions() {
   try {
     const result = await api('/api/role-permissions');
     rolePermissionProfiles = result.profiles || {};
+    permissionEditorCapabilities = result.actor_permissions || {};
     renderRolePermissions();
     status.textContent = 'Role settings loaded. Changes apply to every account with that role.';
     status.className = 'permission-status';
@@ -278,7 +302,12 @@ document.querySelector('#rolePermissionsPanel').addEventListener('change', event
   const input = event.target.closest('[data-permission-key]');
   if (!input) return;
   const role = input.closest('[data-permission-role]').dataset.permissionRole;
+  if (input.checked && currentUser?.role !== 'admin' && permissionEditorCapabilities[input.dataset.permissionKey] !== true && !rolePermissionProfiles[role]?.[input.dataset.permissionKey]) {
+    input.checked = false;
+    return;
+  }
   rolePermissionProfiles[role][input.dataset.permissionKey] = input.checked;
+  if (currentUser?.role !== 'admin' && permissionEditorCapabilities[input.dataset.permissionKey] !== true && !input.checked) input.disabled = true;
   const count = input.closest('[data-permission-role]').querySelector('.permission-count');
   count.textContent = `${Object.values(rolePermissionProfiles[role]).filter(Boolean).length} enabled`;
 });
@@ -291,11 +320,72 @@ document.querySelector('#rolePermissionsPanel').addEventListener('click', async 
     const result = await api('/api/role-permissions', { method: 'POST', body: JSON.stringify({ role, permissions: rolePermissionProfiles[role] }) });
     rolePermissionProfiles[role] = result.permissions || rolePermissionProfiles[role];
     renderRolePermissions();
-    status.textContent = `${role === 'member' ? 'Member' : 'Leader'} permissions saved.`;
+    status.textContent = `${role === 'member' ? 'Member' : role === 'leader' ? 'Leader' : 'Commander'} permissions saved.`;
     status.className = 'permission-status success';
   } catch (error) {
     status.textContent = `Save failed: ${error.message}`; status.className = 'permission-status error';
   } finally { button.disabled = false; }
+});
+
+let individualPermissionTarget = null;
+let individualPermissionState = null;
+function renderIndividualPermissions() {
+  const panel = document.querySelector('#individualPermissionsList');
+  if (!panel || !individualPermissionState) return;
+  const { defaults, overrides } = individualPermissionState;
+  panel.innerHTML = permissionGroups.map(group => `<section class="permission-group"><h4>${esc(group.name)}</h4>${group.items.map(([key,label,description]) => {
+    const checked = Object.hasOwn(overrides,key) ? overrides[key] : defaults[key];
+    return `<label class="permission-item"><input type="checkbox" data-individual-permission="${key}" ${checked?'checked':''}><span><strong>${esc(label)}</strong><small>${esc(description)}</small></span></label>`;
+  }).join('')}</section>`).join('');
+}
+async function openIndividualPermissions(account) {
+  if (currentUser?.role !== 'admin') return;
+  individualPermissionTarget = account;
+  const dialog = document.querySelector('#individualPermissionsDialog');
+  document.querySelector('#individualPermissionsTitle').textContent = `Permissions: ${account.display_name || account.name}`;
+  document.querySelector('#individualPermissionsStatus').textContent = 'Loading permissions...';
+  dialog.hidden = false;
+  dialog.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  try {
+    individualPermissionState = await api(`/api/leaders/${encodeURIComponent(account.account_id)}/permissions`);
+    renderIndividualPermissions();
+    document.querySelector('#individualPermissionsStatus').textContent = `Default permissions come from ${individualPermissionState.role === 'leader' ? 'Leader' : individualPermissionState.role === 'commander' ? 'Commander' : 'Member'}. Save only the individual changes you want.`;
+  } catch (error) {
+    document.querySelector('#individualPermissionsStatus').textContent = `Could not load permissions: ${error.message}`;
+  }
+}
+document.querySelector('#individualPermissionsList')?.addEventListener('change', event => {
+  const input = event.target.closest('[data-individual-permission]');
+  if (!input || !individualPermissionState) return;
+  const key = input.dataset.individualPermission;
+  if (input.checked === Boolean(individualPermissionState.defaults[key])) delete individualPermissionState.overrides[key];
+  else individualPermissionState.overrides[key] = input.checked;
+});
+document.querySelector('#individualPermissionsClose')?.addEventListener('click', () => { document.querySelector('#individualPermissionsDialog').hidden = true; });
+document.querySelector('#individualPermissionsReset')?.addEventListener('click', async event => {
+  if (!individualPermissionTarget || !window.confirm('Reset this account to its current role defaults?')) return;
+  const button = event.currentTarget; button.disabled = true;
+  try {
+    individualPermissionState = await api(`/api/leaders/${encodeURIComponent(individualPermissionTarget.account_id)}/permissions`, {method:'POST',body:JSON.stringify({reset:true})});
+    renderIndividualPermissions();
+    document.querySelector('#individualPermissionsStatus').textContent = 'Permissions reset to role defaults.';
+  } catch(error) { document.querySelector('#individualPermissionsStatus').textContent = `Reset failed: ${error.message}`; }
+  finally { button.disabled = false; }
+});
+document.querySelector('#individualPermissionsSave')?.addEventListener('click', async event => {
+  if (!individualPermissionTarget || !individualPermissionState) return;
+  const overrides = {};
+  document.querySelectorAll('[data-individual-permission]').forEach(input => {
+    const key=input.dataset.individualPermission;
+    if(input.checked!==Boolean(individualPermissionState.defaults[key])) overrides[key]=input.checked;
+  });
+  const button=event.currentTarget; button.disabled=true;
+  try {
+    individualPermissionState=await api(`/api/leaders/${encodeURIComponent(individualPermissionTarget.account_id)}/permissions`,{method:'POST',body:JSON.stringify({overrides})});
+    renderIndividualPermissions();
+    document.querySelector('#individualPermissionsStatus').textContent='Individual permissions saved.';
+  } catch(error) { document.querySelector('#individualPermissionsStatus').textContent=`Save failed: ${error.message}`; }
+  finally { button.disabled=false; }
 });
 
 document.querySelector('#accountRows').addEventListener('click', event => {
@@ -348,6 +438,7 @@ const commandSections = {
   history: document.querySelector('#commandHistorySection'),
 };
 function showCommandSection(name, updateHash = false) {
+  if (name === 'permissions' && currentUser?.role !== 'admin') name = 'accounts';
   if (!commandSections[name]) return;
   Object.entries(commandSections).forEach(([key, section]) => { section.hidden = key !== name; });
   document.querySelectorAll('[data-command-section]').forEach(button => {
@@ -370,7 +461,6 @@ function selectCommandSectionFromHash() {
 window.addEventListener('hashchange', selectCommandSectionFromHash);
 selectCommandSectionFromHash();
 loadAccounts();
-void loadRolePermissions();
 try {
   const cached = JSON.parse(localStorage.getItem(notificationCacheKey) || 'null');
   if (Array.isArray(cached)) { notificationItems = cached; renderNotifications(); }

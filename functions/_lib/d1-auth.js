@@ -1,10 +1,11 @@
 const enc = new TextEncoder();
 const json = (body, status = 200, headers = {}) => Response.json(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
 const nowSeconds = () => Math.floor(Date.now() / 1000);
-const ROLE_PERMISSION_KEYS = ["portal_access","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","profile_view","inactive_view","logs_view","training_view","training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage"];
+const ROLE_PERMISSION_KEYS = ["portal_access","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","profile_view","inactive_view","logs_view","training_view","training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
 const DEFAULT_ROLE_PERMISSIONS = {
   member: { portal_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:false,eligible_view:false,profile_view:false,inactive_view:false,logs_view:false,training_view:false,training_fort_manage:false,training_hert_manage:false,training_hours_view:false,training_hours_manage:false,statistics_view:false,notes_manage:false,promotion_manage:false,callsign_manage:false,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:false,sync_manage:false },
-  leader: { portal_access:true,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true }
+  leader: { portal_access:true,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true },
+  commander: Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,true]))
 };
 async function rolePermissions(db, role) {
   const normalized=String(role||"").toLowerCase();
@@ -13,6 +14,16 @@ async function rolePermissions(db, role) {
   const row=await db.prepare("SELECT permissions_json FROM role_permissions WHERE role=?").bind(normalized).first();
   let saved={}; try { saved=JSON.parse(row?.permissions_json||"{}"); } catch {}
   return Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,typeof saved[key]==="boolean"?saved[key]:Boolean(base[key])]));
+}
+function parsePermissionOverrides(value) {
+  try {
+    const parsed=JSON.parse(String(value||"{}"));
+    return Object.fromEntries(ROLE_PERMISSION_KEYS.filter(key=>typeof parsed[key]==="boolean").map(key=>[key,parsed[key]]));
+  } catch { return {}; }
+}
+async function accountPermissions(db, account) {
+  const role=await rolePermissions(db,account.role), overrides=parsePermissionOverrides(account.permissions_override_json);
+  return Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,Object.hasOwn(overrides,key)?overrides[key]:role[key]]));
 }
 function permissionForRequest(route, method, data={}) {
   if(route==="/api/members"&&method==="GET") return ["members_view","training_view","statistics_view"];
@@ -25,6 +36,8 @@ function permissionForRequest(route, method, data={}) {
   if(route==="/api/statistics"&&method==="GET") return "statistics_view";
   if(route==="/api/sync-status"&&method==="GET") return "sync_view";
   if(route==="/api/sync"&&method==="POST") return "sync_manage";
+  if(route==="/api/full-sync"&&method==="POST") return "full_sync_manage";
+  if(route==="/api/notifications/clear"&&method==="POST") return "sync_manage";
   if(route==="/api/do-not-promote"&&method==="GET") return "do_not_promote_view";
   if(route==="/api/do-not-promote"&&method==="POST") return "do_not_promote_manage";
   if(route==="/api/member/instructor"||/^\/api\/member\/[^/]+\/instructor$/.test(route)) return "instructor_manage";
@@ -39,7 +52,7 @@ function permissionForRequest(route, method, data={}) {
   return method==="POST"?writes[route]||null:null;
 }
 function requireRolePermission(user, permissions, key) {
-  if(!key || ["admin","commander"].includes(user.role)) return;
+  if(!key || user.role === "admin") return;
   if(Array.isArray(key)?key.some(item=>permissions[item]):permissions[key]) return;
   throw Object.assign(new Error("Your role does not have permission for this action."),{status:403});
 }
@@ -57,7 +70,7 @@ async function passwordHash(password, salt) {
   return b64url(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: unb64url(salt), iterations: 100000 }, material, 256));
 }
 async function signedClaims(account, secret) {
-  const claims = { sub: account.account_id, name: account.name, callsign: account.callsign, status: account.status, role: account.role, permissions: account.permissions || {}, exp: nowSeconds() + 90 };
+  const claims = { sub: account.account_id, name: account.name, callsign: account.callsign, status: account.status, role: account.role, permissions: account.permissions || {}, permission_overrides: parsePermissionOverrides(account.permissions_override_json), exp: nowSeconds() + 90 };
   const body = b64url(enc.encode(JSON.stringify(claims)));
   return `d1v1.${body}.${await hmac(secret, `d1v1.${body}`)}`;
 }
@@ -78,7 +91,7 @@ function sessionTokens(request) {
 }
 async function accountForToken(db, token) {
   if (!token) return null;
-  return db.prepare(`SELECT a.account_id, a.name, a.callsign, a.status, a.role
+  return db.prepare(`SELECT a.account_id, a.name, a.callsign, a.status, a.role, a.permissions_override_json
     FROM auth_sessions s JOIN accounts a ON a.account_id=s.account_id
     WHERE s.token_hash=? AND s.expires_at>?`).bind(await sha256(token), nowSeconds()).first();
 }
@@ -318,11 +331,11 @@ async function publicUser(db, account) {
   const member = account.callsign
     ? await db.prepare("SELECT instructor_type FROM members WHERE upper(callsign)=upper(?)").bind(account.callsign).first()
     : null;
-  const permissions=await rolePermissions(db,account.role);
+  const permissions=await accountPermissions(db,account);
   return { account_id: account.account_id, id: account.account_id, name: account.name, callsign: account.callsign,
-    role: account.role, status: account.status, is_admin: ["admin", "commander"].includes(account.role),
+    role: account.role, status: account.status, is_admin: ["admin","commander"].includes(account.role), is_operation: account.role === "admin", is_commander: account.role === "commander",
     is_command: ["admin", "commander"].includes(account.role) || /^(E|C|DIV|B|CHIEF|COM)-/.test(account.callsign),
-    instructor_type: String(member?.instructor_type || ""), permissions };
+    instructor_type: String(member?.instructor_type || ""), permissions, permission_overrides: parsePermissionOverrides(account.permissions_override_json) };
 }
 async function login(db, data) {
   const name = nameKey(data.username || data.name), password = String(data.password || "");
@@ -346,7 +359,7 @@ async function login(db, data) {
 }
 async function signup(db, env, data) {
   const setup = await db.prepare("SELECT value FROM account_migration_state WHERE migration_key='initial_commander_created'").first();
-  if (!setup) throw Object.assign(new Error("New registration is temporarily closed until the first Commander account is set up."), { status: 503 });
+  if (!setup) throw Object.assign(new Error("New registration is temporarily closed until the first Operation account is set up."), { status: 503 });
   const identity = await rosterIdentity(env, data.name);
   const password = String(data.password || "");
   if (!/^[A-Za-z0-9]{4,20}$/.test(password)) throw new Error("Password must be 4–20 letters or numbers.");
@@ -371,7 +384,7 @@ async function bootstrapCommander(db, env, request, data) {
   if (!/^[A-Za-z0-9]{4,20}$/.test(String(data.password || ""))) throw new Error("Password must be 4–20 letters or numbers.");
   const state = await db.prepare("SELECT value FROM account_migration_state WHERE migration_key='initial_commander_created'").first();
   const count = await db.prepare("SELECT COUNT(*) AS n FROM accounts").first();
-  if (state || Number(count.n) !== 0) throw Object.assign(new Error("Commander bootstrap is closed because account setup has already started."), { status: 409 });
+  if (state || Number(count.n) !== 0) throw Object.assign(new Error("Operation bootstrap is closed because account setup has already started."), { status: 409 });
   const identity = await rosterIdentity(env, data.name);
   const id = crypto.randomUUID(), now = new Date().toISOString(), salt = b64url(crypto.getRandomValues(new Uint8Array(16)));
   const hash = await passwordHash(data.password, salt);
@@ -380,13 +393,13 @@ async function bootstrapCommander(db, env, request, data) {
       db.prepare("INSERT INTO account_migration_state(migration_key,value,updated_at) VALUES('initial_commander_created',?,?)").bind(id, now),
       db.prepare(`INSERT INTO accounts(account_id,name,name_key,callsign,password_salt,password_hash,password_hash_version,status,role,created_at,activated_at,approved_by,updated_at)
         VALUES(?,?,?,?,?,?,'pbkdf2-sha256-100000','approved','admin',?,?,?,?)`).bind(id, identity.name, nameKey(identity.name), identity.callsign, salt, hash, now, now, "Initial D1 setup", now),
-      db.prepare("INSERT INTO account_audit(created_at,account_id,name,callsign,action,actor_name) VALUES(?,?,?,?,?,?)").bind(now,id,identity.name,identity.callsign,"Initial Commander Created",identity.name)
+      db.prepare("INSERT INTO account_audit(created_at,account_id,name,callsign,action,actor_name) VALUES(?,?,?,?,?,?)").bind(now,id,identity.name,identity.callsign,"Initial Operation Created",identity.name)
     ]);
   } catch (error) {
     if (/unique|constraint/i.test(String(error))) throw Object.assign(new Error("Bootstrap already completed or account name is already in use."), { status: 409 });
     throw error;
   }
-  return { ok:true, status:"approved", callsign:identity.callsign, message:"Initial Commander account created. Remove LVFR_D1_BOOTSTRAP_SECRET now." };
+  return { ok:true, status:"approved", callsign:identity.callsign, message:"Initial Operation account created. Remove LVFR_D1_BOOTSTRAP_SECRET now." };
 }
 async function requireAdmin(db, token) {
   const account = await accountForToken(db, token);
@@ -394,12 +407,18 @@ async function requireAdmin(db, token) {
   if (!["admin", "commander"].includes(account.role)) throw Object.assign(new Error("Only Commanders can perform this action."), { status: 403 });
   return account;
 }
+async function requireOperation(db, token) {
+  const account = await accountForToken(db, token);
+  if (!account || account.status !== "approved") throw Object.assign(new Error("Sign in again."), { status: 401 });
+  if (account.role !== "admin") throw Object.assign(new Error("Only Operation can manage access permissions and elevated roles."), { status: 403 });
+  return account;
+}
 async function leaders(db, actor) {
-  const rows = await db.prepare("SELECT account_id,name,callsign,status,role,created_at,activated_at,approved_by,admin_changed_at,admin_changed_by FROM accounts WHERE status NOT IN ('removed','denied') ORDER BY created_at DESC").all();
+  const rows = await db.prepare("SELECT account_id,name,callsign,status,role,permissions_override_json,created_at,activated_at,approved_by,admin_changed_at,admin_changed_by FROM accounts WHERE status NOT IN ('removed','denied') ORDER BY created_at DESC").all();
   const audit = await db.prepare("SELECT id,created_at,account_id,name,callsign,action,actor_name,actor_name AS by FROM account_audit ORDER BY id DESC LIMIT 200").all();
   const online = await db.prepare("SELECT account_id,last_seen FROM account_presence WHERE last_seen>?").bind(nowSeconds() - 90).all();
   const on = new Set((online.results || []).map(x => x.account_id));
-  const accounts = (rows.results || []).map(row => ({ ...row, id: row.account_id, display_name: row.name, requested_at: row.created_at, linked_at: row.created_at, approved_at: row.activated_at, is_admin: ["admin", "commander"].includes(row.role), online: row.status === "approved" && on.has(row.account_id) }));
+  const accounts = (rows.results || []).map(({ permissions_override_json, ...row }) => ({ ...row, permission_overrides: actor.role === "admin" ? parsePermissionOverrides(permissions_override_json) : undefined, id: row.account_id, display_name: row.name, requested_at: row.created_at, linked_at: row.created_at, approved_at: row.activated_at, is_admin: row.role === "admin", is_commander: row.role === "commander", is_elevated: ["admin","commander"].includes(row.role), online: row.status === "approved" && on.has(row.account_id) }));
   return { approved: accounts.filter(x => x.status === "approved"), pending: accounts.filter(x => x.status === "pending"), deactivated: accounts.filter(x => x.status === "deactivated"), audit: audit.results || [], online_count: accounts.filter(x => x.online).length };
 }
 async function accountAction(db, id, action, actor) {
@@ -412,7 +431,8 @@ async function accountAction(db, id, action, actor) {
     case "allow": if (status !== "pending") throw new Error("Account is not pending."); status="approved"; role="member"; activated=now; approvedBy=actor.name; break;
     case "deny": if (status !== "pending") throw new Error("Account is not pending."); status="denied"; break;
     case "admin": if (status !== "approved") throw new Error("Activate the account first."); role="admin"; changedAt=now; changedBy=actor.name; break;
-    case "demote": if (!["admin","commander"].includes(role)) throw new Error("Account is not a Commander."); role="leader"; changedAt=now; changedBy=actor.name; break;
+    case "commander": if (status !== "approved") throw new Error("Activate the account first."); role="commander"; changedAt=now; changedBy=actor.name; break;
+    case "demote": if (role === "admin") role="commander"; else if (role === "commander") role="leader"; else throw new Error("Account is not Operation or Commander."); changedAt=now; changedBy=actor.name; break;
     case "member": if(status!=="approved" || ["admin","commander"].includes(role)) throw new Error("Remove Commander access first."); role="member"; changedAt=now; changedBy=actor.name; break;
     case "leader": if(status!=="approved" || role!=="member") throw new Error("Only an approved Member can become a Supervisor."); role="leader"; changedAt=now; changedBy=actor.name; break;
     case "deactivate": if(status!=="approved" || ["admin","commander"].includes(role)) throw new Error("Remove Commander access first."); status="deactivated"; changedAt=now; changedBy=actor.name; break;
@@ -455,7 +475,9 @@ async function refreshD1Notifications(db,user) {
   for(const item of additions) {
     const seeded=state.has(item.stateKey);
     const isEligible=item.kind==="eligible";
-    const shouldNotify=isEligible || item.kind==="request" || (item.kind==="inactive" && state.has("inactive_seeded"));
+    const shouldNotify=isEligible ? state.get(item.stateKey)!==item.stateValue
+      : item.kind==="request" ? !state.has(item.stateKey)
+      : item.kind==="inactive" && state.has("inactive_seeded") && !state.has(item.stateKey);
     if(shouldNotify) {
       statements.push(db.prepare("INSERT OR IGNORE INTO notifications(kind,event_key,title,message,callsign,target_rank,created_at) VALUES(?,?,?,?,?,?,?)")
         .bind(item.kind,item.eventKey,item.title,item.message,item.callsign,item.targetRank,item.createdAt||now));
@@ -600,17 +622,37 @@ export async function handleD1(context) {
     if(!token) return json({detail:"No session token or login cookie reached the API."},401);
     if(!user) return json({detail:"Session token was not found or has expired in D1."},401);
     if(user.status!=="approved") return json({detail:"This D1 account is not approved."},401);
-    user.permissions=await rolePermissions(db,user.role);
+    user.permissions=await accountPermissions(db,user);
+    const individualPermissionRoute=route.match(/^\/api\/leaders\/([^/]+)\/permissions$/);
+    if(individualPermissionRoute&&(method==="GET"||method==="POST")) {
+      const actor=await requireOperation(db,token), id=decodeURIComponent(individualPermissionRoute[1]);
+      const target=await db.prepare("SELECT account_id,name,role,permissions_override_json FROM accounts WHERE account_id=?").bind(id).first();
+      if(!target||target.role==="admin") throw Object.assign(new Error("That account's permissions cannot be changed."),{status:404});
+      const defaults=await rolePermissions(db,target.role);
+      if(method==="GET") return json({account_id:id,role:target.role,defaults,overrides:parsePermissionOverrides(target.permissions_override_json)});
+      const overrides=data.reset===true?{}:parsePermissionOverrides(JSON.stringify(data.overrides||{}));
+      const now=new Date().toISOString();
+      await db.prepare("UPDATE accounts SET permissions_override_json=?,updated_at=? WHERE account_id=?").bind(JSON.stringify(overrides),now,id).run();
+      await appendAudit(db,{account_id:id,name:target.name,callsign:target.callsign||""},data.reset===true?"Reset individual permissions":"Updated individual permissions",actor.name);
+      return json({ok:true,account_id:id,role:target.role,defaults,overrides,permissions:Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,Object.hasOwn(overrides,key)?overrides[key]:defaults[key]]))});
+    }
     if(route==="/api/role-permissions"&&method==="GET") {
-      await requireAdmin(db,token);
+      const actor=await requireAdmin(db,token);
       const profiles={member:await rolePermissions(db,"member"),leader:await rolePermissions(db,"leader")};
-      return json({profiles,keys:ROLE_PERMISSION_KEYS});
+      if(actor.role==="admin") profiles.commander=await rolePermissions(db,"commander");
+      return json({profiles,keys:ROLE_PERMISSION_KEYS,actor_permissions:await accountPermissions(db,actor)});
     }
     if(route==="/api/role-permissions"&&method==="POST") {
       const actor=await requireAdmin(db,token), role=String(data.role||"").toLowerCase();
-      if(!["member","leader"].includes(role)) throw new Error("Choose Member or Leader permissions.");
+      const allowedRoles=actor.role==="admin"?["member","leader","commander"]:["member","leader"];
+      if(!allowedRoles.includes(role)) throw Object.assign(new Error("Commanders can edit only Member and Leader permissions."),{status:403});
       const incoming=data.permissions&&typeof data.permissions==="object"?data.permissions:{};
       const permissions=Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,Boolean(incoming[key])]));
+      if(actor.role==="commander") {
+        const [current, personal]=await Promise.all([rolePermissions(db,role),accountPermissions(db,actor)]);
+        const attemptedGrant=ROLE_PERMISSION_KEYS.find(key=>permissions[key]&&!current[key]&&!personal[key]);
+        if(attemptedGrant) throw Object.assign(new Error("You cannot grant a permission that you do not have."),{status:403});
+      }
       const now=new Date().toISOString();
       await db.prepare(`INSERT INTO role_permissions(role,permissions_json,updated_at,updated_by) VALUES(?,?,?,?)
         ON CONFLICT(role) DO UPDATE SET permissions_json=excluded.permissions_json,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
@@ -642,6 +684,15 @@ export async function handleD1(context) {
         context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,route,url,assertion,data);if(!mirror.ok)console.error("Notification read Sheet mirror failed:",await mirror.text());}catch(error){console.error("Notification read Sheet mirror failed:",error);}})());
       }
       return json({ok:true});
+    }
+    if(route==="/api/notifications/clear" && method==="POST") {
+      const assertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
+      const {proxyToAppsScript}=await import("../[[path]].js");
+      const sheetMirror=await proxyToAppsScript(context,"/internal/notifications/clear",url,assertion,{});
+      const mirrorResult=await sheetMirror.json().catch(()=>({}));
+      if(!sheetMirror.ok||mirrorResult.ok!==true) throw Object.assign(new Error("Could not clear notifications from the Google Sheet: "+String(mirrorResult.detail||mirrorResult.error||"mirror failed")),{status:502});
+      await db.batch([db.prepare("DELETE FROM notification_reads"),db.prepare("DELETE FROM notifications")]);
+      return json({ok:true,cleared:true});
     }
     if(route==="/api/members-log/clear" && method==="POST") {
       await requireAdmin(db,token);
@@ -826,7 +877,6 @@ export async function handleD1(context) {
       return json({...result,message:result.skipped?"Roster snapshot unchanged; sync skipped":"Roster synchronized from Google Sheets"});
     }
     if(route==="/api/full-sync" && method==="POST") {
-      if(!["admin","commander"].includes(user.role)) throw Object.assign(new Error("Only Commanders can run a Full Sync."),{status:403});
       const result=await syncMembersFromAppsScript(env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET),true);
       return json({...result,message:"Full roster sync completed from Google Sheets"});
     }
@@ -874,9 +924,10 @@ export async function handleD1(context) {
     if (route==="/api/presence/summary" && method==="GET") { const r=await db.prepare("SELECT a.name,a.callsign FROM account_presence p JOIN accounts a ON a.account_id=p.account_id WHERE a.status='approved' AND p.last_seen>? ORDER BY lower(a.name)").bind(nowSeconds()-90).all(); const online=(r.results||[]).map(x=>({name:x.name,callsign:x.callsign})); return json({online_count:online.length,online}); }
     if (route==="/api/leaders" && method==="GET") { const admin=await requireAdmin(db,token); return json(await leaders(db,admin)); }
     if (route==="/api/leaders/audit" && method==="GET") { await requireAdmin(db,token); const r=await db.prepare("SELECT id,created_at,account_id,name,callsign,action,actor_name,actor_name AS by FROM account_audit ORDER BY id DESC LIMIT 200").all(); return json(r.results||[]); }
-    const action=route.match(/^\/api\/leaders\/([^/]+)\/(allow|deny|admin|demote|member|leader|deactivate|reactivate)$/);
+    const action=route.match(/^\/api\/leaders\/([^/]+)\/(allow|deny|admin|commander|demote|member|leader|deactivate|reactivate)$/);
     if(action && method==="POST") {
-      const admin=await requireAdmin(db,token), target=await db.prepare("SELECT account_id,name,callsign FROM accounts WHERE account_id=?").bind(decodeURIComponent(action[1])).first();
+      const admin=action[2]==="admin"||action[2]==="commander"?await requireOperation(db,token):await requireAdmin(db,token), target=await db.prepare("SELECT account_id,name,callsign,role FROM accounts WHERE account_id=?").bind(decodeURIComponent(action[1])).first();
+      if(admin.role==="commander"&&target&&["admin","commander"].includes(target.role)) throw Object.assign(new Error("Only Operation can manage Operation or Commander accounts."),{status:403});
       const result=await accountAction(db,decodeURIComponent(action[1]),action[2],admin);
       if(target&&env.LVFR_D1_AUTH_BRIDGE_SECRET) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET), {proxyToAppsScript}=await import("../[[path]].js");

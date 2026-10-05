@@ -509,6 +509,7 @@ document.addEventListener("click", event => {
         case "change-rank": changeRank(callsign); break;
         case "leader-menu": toggleLeaderActions(event, control.parentElement); break;
         case "set-admin": setLeaderAdmin(accountId, control.dataset.enabled === "true"); break;
+        case "set-commander": setLeaderCommander(accountId); break;
         case "set-member-role": setMemberRole(accountId, control.dataset.role); break;
         case "account-status": setAccountStatus(accountId, control.dataset.status); break;
         case "remove-leader": removeLeader(accountId); break;
@@ -1159,7 +1160,7 @@ function renderTrainingDirectory(members = allMembersCache || []) {
     const fortFilter = $("#fortTrainingFilter")?.value || "all";
     const headerActions = (group, field, skill = "") => {
         const capability = group === "HERT" ? "training_hert_manage" : "training_fort_manage";
-        const allowed = field === "instructor" ? currentUserIsAdmin : currentUserIsAdmin || (currentUserPermissions[capability] === true && currentInstructorTypes.includes(group));
+        const allowed = field === "instructor" ? currentUserHasPermission("instructor_manage") : canManageTraining(group);
         return allowed ? `<div class="training-header-actions"><button type="button" class="primary" data-training-open data-group="${group}" data-field="${field}" data-skill="${skill}" data-remove="false">Add</button><button type="button" class="danger" data-training-open data-group="${group}" data-field="${field}" data-skill="${skill}" data-remove="true">Remove</button></div>` : "";
     };
     const render = (query, type) => {
@@ -1394,7 +1395,7 @@ function calculateEligibleFromCache(members) {
     };
     return members.flatMap(member => {
         if (member.do_not_promote) return [];
-        if (!currentUserIsAdmin && member.rank !== "EMT") return [];
+        if (!currentUserHasPermission("rank_manage") && member.rank !== "EMT") return [];
         const rule = rules[member.rank];
         if (!rule || Number(member.days_in_rank || 0) < rule[1]) return [];
         if (rule[2] && !member.has_basic_firefighting) return [];
@@ -1751,10 +1752,11 @@ function renderLeaders() {
     const accountActions = row => {
         if (currentUserAccountId && String(row.account_id) === currentUserAccountId) return "";
         let actions;
-        if (row.is_admin) actions = `
-            <button type="button" class="danger" data-action="set-admin" data-account-id="${esc(row.account_id)}" data-enabled="false">Remove Commander</button>
-            <button type="button" class="danger" disabled title="Remove Commander access first">Deactivate</button>
-            <button type="button" class="danger" disabled title="Remove Commander access first">Delete account</button>`;
+        if (row.is_admin || row.is_commander) actions = currentUserIsOperation ? (row.is_admin ? `
+            <button type="button" class="primary" data-action="set-admin" data-account-id="${esc(row.account_id)}" data-enabled="false">Make Commander</button>` : `
+            <button type="button" class="primary" data-action="set-admin" data-account-id="${esc(row.account_id)}" data-enabled="true">Make Operation</button>
+            <button type="button" class="danger" data-action="set-admin" data-account-id="${esc(row.account_id)}" data-enabled="false">Demote to Leader</button>`)
+            : `<span class="muted">Only Operation can manage this role.</span>`;
         else {
         const memberRoleAction = row.status === "approved"
             ? row.role === "member"
@@ -1764,8 +1766,8 @@ function renderLeaders() {
         const stateAction = row.status === "deactivated"
             ? `<button type="button" class="primary" data-action="account-status" data-account-id="${esc(row.account_id)}" data-status="reactivate">Activate</button>`
             : `<button type="button" class="danger" data-action="account-status" data-account-id="${esc(row.account_id)}" data-status="deactivate">Deactivate</button>`;
-        const adminAction = row.status === "approved"
-            ? `<button type="button" class="primary" data-action="set-admin" data-account-id="${esc(row.account_id)}" data-enabled="true">Make Commander</button>` : "";
+        const adminAction = row.status === "approved" && currentUserIsOperation
+            ? `<button type="button" class="primary" data-action="set-commander" data-account-id="${esc(row.account_id)}">Make Commander</button><button type="button" class="primary" data-action="set-admin" data-account-id="${esc(row.account_id)}" data-enabled="true">Make Operation</button>` : "";
             actions = `${memberRoleAction}${adminAction}${stateAction}<button type="button" class="danger" data-action="remove-leader" data-account-id="${esc(row.account_id)}">Delete account</button>`;
         }
         return `<details class="leader-actions-menu">
@@ -1803,8 +1805,9 @@ function renderLeaders() {
         const roleFilter = $("#leaderRoleFilter")?.value || "all";
         const filteredRows = accountRows.filter(row =>
             roleFilter === "all" ||
-            (roleFilter === "admin" && Boolean(row.is_admin)) ||
-            (roleFilter === "leader" && !row.is_admin && row.role !== "member") ||
+            (roleFilter === "admin" && row.role === "admin") ||
+            (roleFilter === "commander" && row.role === "commander") ||
+            (roleFilter === "leader" && row.role === "leader") ||
             (roleFilter === "member" && row.role === "member")
         );
         all.innerHTML = filteredRows.length ? `
@@ -1817,7 +1820,7 @@ function renderLeaders() {
                         <td data-label="Account" class="leader-account-cell"><strong>${esc(row.name || row.display_name)}</strong><small>${row.callsign ? `Callsign ${esc(row.callsign)}` : "No Callsign linked"}</small></td>
                         <td data-label="Linked">${esc(row.linked_at || "—")}</td>
                         <td data-label="Approved" class="leader-detail-cell"><span>${esc(row.approved_at || "—")}</span><small>By ${esc(row.approved_by || "—")}</small></td>
-                        <td data-label="Role">${row.is_admin ? "Commander" : row.role === "member" ? "Member" : "Supervisor"}</td>
+                        <td data-label="Role">${row.role === "admin" ? "Operation" : row.role === "commander" ? "Commander" : row.role === "member" ? "Member" : "Leader"}</td>
                         <td data-label="Presence"><span class="presence-badge ${row.online ? "online" : "offline"}">${row.online ? "Online" : "Offline"}</span></td>
                         <td data-label="Role changed" class="leader-detail-cell">${row.admin_changed_at ? `<span>${esc(row.admin_changed_at)}</span><small>By ${esc(row.admin_changed_by || "—")}</small>` : "—"}</td>
                         <td data-label="Actions" class="leader-request-actions">${accountActions(row)}</td></tr>
@@ -2015,10 +2018,21 @@ async function setAccountStatus(discordId, action) {
 
 
 async function setLeaderAdmin(discordId, makeAdmin) {
-        if (!makeAdmin && !confirm("Remove Commander access for this account?")) return;
+        if (!makeAdmin && !confirm("Change this account to the next lower role?")) return;
     try {
         await api(`/api/leaders/${encodeURIComponent(discordId)}/${makeAdmin ? "admin" : "demote"}`, { method: "POST" });
-        toast(makeAdmin ? "Commander promotion queued; saving in background." : "Commander access removal queued; saving in background.");
+        toast(makeAdmin ? "Operation role queued; saving in background." : "Role change queued; saving in background.");
+        await loadLeaders();
+    } catch (e) {
+        if (isBackgroundPending(e)) return;
+        toast(e.message);
+    }
+}
+
+async function setLeaderCommander(accountId) {
+    try {
+        await api(`/api/leaders/${encodeURIComponent(accountId)}/commander`, { method: "POST" });
+        toast("Commander role queued; saving in background.");
         await loadLeaders();
     } catch (e) {
         if (isBackgroundPending(e)) return;
@@ -2859,9 +2873,16 @@ let profileLoading = false;
 let activeProfileMember = null;
 let profileRenderToken = 0;
 let currentUserIsAdmin = false;
+let currentUserIsOperation = String(window.lvfrCachedUser?.()?.role || "").toLowerCase() === "admin";
 let currentUserCanFullSync = false;
 let currentUserPermissions = {};
-function currentUserHasPermission(key) { return currentUserIsAdmin || currentUserPermissions?.[key] === true; }
+let currentUserPermissionOverrides = {};
+function hasIndividualPermission(key) { return currentUserPermissionOverrides?.[key] === true; }
+function currentUserHasPermission(key) { return currentUserIsOperation || currentUserPermissions?.[key] === true; }
+function canManageTraining(type) {
+    const capability = type === "HERT" ? "training_hert_manage" : "training_fort_manage";
+    return currentUserIsOperation || currentUserPermissions?.[capability] === true && (currentUserIsAdmin || currentInstructorTypes.includes(type) || hasIndividualPermission(capability));
+}
 let currentUserAccountId = String(window.lvfrCachedUser?.()?.account_id || window.lvfrCachedUser?.()?.id || "");
 let currentInstructorTypes = [];
 let currentUserCallsign = String(window.lvfrCachedUser?.()?.callsign || "").trim().toUpperCase();
@@ -3132,7 +3153,7 @@ async function profile(
                     </button>
                     ` : ""}
 
-                    ${currentUserIsAdmin ? `<button type="button" class="${m.do_not_promote ? "danger" : ""}"
+                    ${currentUserHasPermission("do_not_promote_manage") ? `<button type="button" class="${m.do_not_promote ? "danger" : ""}"
                         data-action="do-not-promote" data-blocked="${m.do_not_promote ? "false" : "true"}"
                         data-callsign="${esc(m.callsign)}">
                         ${m.do_not_promote ? "Remove from Do not Promote" : "Add to Do not Promote"}
@@ -3394,7 +3415,7 @@ function openManage(cs) {
             ` : ""}
 
 
-            ${currentUserIsAdmin ? `
+            ${currentUserHasPermission("instructor_manage") ? `
                 <hr>
                 <div class="instructor-admin-controls">
                     <label>
@@ -3528,7 +3549,7 @@ async function setInstructor(cs, assigned) {
 function updateTrainingPermission() {
     const selected = String($("#training")?.value || "").trim().toLowerCase() === "hert" ? "HERT" : "FORT";
     const capability = selected === "HERT" ? "training_hert_manage" : "training_fort_manage";
-    const allowed = currentUserIsAdmin || (currentUserPermissions[capability] === true && currentInstructorTypes.includes(selected));
+    const allowed = canManageTraining(selected);
     const trainingField = $("#trainingField");
     if (trainingField) trainingField.style.display = "";
     ["#addTrainingButton", "#deleteTrainingButton"].forEach(selector => {
@@ -3553,7 +3574,7 @@ async function training(
     const trainingName = String($("#training")?.value || "").trim();
     const requiredType = trainingName.toLowerCase() === "hert" ? "HERT" : "FORT";
     const capability = requiredType === "HERT" ? "training_hert_manage" : "training_fort_manage";
-    if (!currentUserIsAdmin && (!currentUserHasPermission(capability) || !currentInstructorTypes.includes(requiredType))) {
+    if (!canManageTraining(requiredType)) {
         toast(`Your account does not have ${requiredType} Instructor access.`);
         return;
     }
@@ -4136,7 +4157,7 @@ async function terminate(cs) {
 
 function openRankTools(cs) {
 
-    if (!currentUserIsAdmin) {
+    if (!currentUserHasPermission("rank_manage")) {
         $("#modalContent").innerHTML = `
             <h2>Change callsign for ${esc(cs)}</h2>
             <label>
@@ -4985,20 +5006,22 @@ if (modal) {
 
 function canViewStatistics(user) {
     if (!user) return false;
-    if (user.is_admin) return true;
+    if (user.role === "admin") return true;
     if (user.permissions) return user.permissions.statistics_view === true;
     return Boolean(user.is_command || ["leader", "supervisor", "command", "commander"].includes(String(user.role || "").toLowerCase()));
 }
 
 function canRunFullSync(user) {
-    return ["admin", "commander"].includes(String(user?.role || "").trim().toLowerCase());
+    return String(user?.role || "").trim().toLowerCase() === "admin" || user?.permissions?.full_sync_manage === true;
 }
 
 function applyAccountUser(user) {
     window.lvfrCacheUser?.(user);
     currentUserIsAdmin = Boolean(user.is_admin);
+    currentUserIsOperation = String(user.role || "").toLowerCase() === "admin";
     if (membersLogDelete) membersLogDelete.hidden = !currentUserIsAdmin;
     currentUserPermissions = user.permissions || {};
+    currentUserPermissionOverrides = user.permission_overrides || {};
     if (user.role === "member" && !currentUserHasPermission("portal_access")) {
         location.replace("/watch-command");
         return;

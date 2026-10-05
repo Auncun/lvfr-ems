@@ -59,10 +59,15 @@
       <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Account</th><th>Callsign</th><th>Status</th><th>Role</th><th>Presence</th><th>Created</th><th>Actions</th></tr></thead><tbody id="accountRows"><tr><td colspan="7">Loading accounts…</td></tr></tbody></table></div>
     </section>
     <section id="commandPermissionsSection" class="admin-card permissions-card command-section" aria-labelledby="permissionsHeading" hidden>
-      <div class="admin-header permissions-heading"><div><h2 id="permissionsHeading">Access Permissions</h2><p class="muted">Set what every Member and Leader can access or change. Commanders keep full access.</p></div></div>
+      <div class="admin-header permissions-heading"><div><h2 id="permissionsHeading">Access Permissions</h2><p class="muted">Commanders can edit Member and Leader profiles, but can only enable permissions they already have. Operation also manages the Commander profile and individual accounts.</p></div></div>
       <label class="permission-search"><span>Find a permission</span><input id="permissionSearch" type="search" placeholder="Search pages and actions"></label>
       <div id="rolePermissionsPanel" class="role-permissions-panel"><div class="empty">Loading role permissions...</div></div>
       <p id="permissionStatus" class="permission-status" role="status" aria-live="polite"></p>
+    </section>
+    <section id="individualPermissionsDialog" class="admin-card individual-permissions-dialog" role="dialog" aria-modal="true" aria-labelledby="individualPermissionsTitle" hidden>
+      <div class="admin-header"><div><h2 id="individualPermissionsTitle">Individual permissions</h2><p id="individualPermissionsStatus" class="muted" aria-live="polite"></p></div><button type="button" id="individualPermissionsClose">Close</button></div>
+      <div id="individualPermissionsList" class="role-permission-groups"></div>
+      <div class="admin-actions"><button type="button" id="individualPermissionsReset">Reset to role default</button><button type="button" class="primary" id="individualPermissionsSave">Save individual permissions</button></div>
     </section>
     <section id="commandHistorySection" class="admin-card command-section" aria-labelledby="auditHeading" hidden>
       <div class="admin-header"><h2 id="auditHeading">Recent account activity</h2><button type="button" id="clearAccountAuditBtn" class="danger">Clear D1 audit</button></div>
@@ -72,7 +77,7 @@
   <script src="/static/session-auth.js?v=shared-session-7"></script>
   <script src="/static/header-controls.js?v=header-controls-1"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
-  <script src="/static/administration.js?v=command-permissions-20261004-3"></script>
+  <script src="/static/administration.js?v=operation-role-permissions-20261005-2"></script>
   <script src="/static/sidebar.js?v=command-permissions-20261004-1"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 </body>

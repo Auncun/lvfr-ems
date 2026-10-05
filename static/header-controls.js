@@ -80,9 +80,18 @@
 
   const notificationButton = document.querySelector('#watchNotificationButton');
   const notificationPanel = document.querySelector('#watchNotificationPanel');
+  const clearNotificationsButton = document.querySelector('#watchClearNotifications');
   const notificationList = document.querySelector('#watchNotificationList');
   const notificationBadge = document.querySelector('#watchNotificationBadge');
   let notifications = [];
+  const setCanClearNotifications = user => clearNotificationsButton?.toggleAttribute('hidden',
+    !['leader', 'admin', 'commander'].includes(String(user?.role || '').toLowerCase()));
+  setCanClearNotifications(window.lvfrCachedUser?.());
+  if (clearNotificationsButton && clearNotificationsButton.hidden) {
+    fetch('/auth/me').then(response => response.ok ? response.json() : null).then(user => {
+      if (user) { window.lvfrCacheUser?.(user); setCanClearNotifications(user); }
+    }).catch(() => {});
+  }
   function renderNotifications() {
     if (!notificationList) return;
     const unread = notifications.filter(item => !Number(item.is_read)).length;
@@ -131,6 +140,21 @@
     notificationPanel.hidden = !notificationPanel.hidden;
     notificationButton.setAttribute('aria-expanded', String(!notificationPanel.hidden));
     if (!notificationPanel.hidden) await loadNotifications();
+  });
+  clearNotificationsButton?.addEventListener('click', async () => {
+    if (!window.confirm('Clear all notifications for everyone?')) return;
+    clearNotificationsButton.disabled = true;
+    try {
+      const response = await fetch('/api/notifications/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || result.error || 'Could not clear notifications.');
+      notifications = [];
+      renderNotifications();
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      clearNotificationsButton.disabled = false;
+    }
   });
   if (notificationButton) {
     void loadNotifications();
