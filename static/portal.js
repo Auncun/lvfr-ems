@@ -1,9 +1,11 @@
 function showAvailableApps(user) {
   if (!user) return;
   const isCommander = Boolean(user.is_admin) || ['admin', 'commander'].includes(String(user.role || '').toLowerCase());
-  if (isCommander) document.querySelector('#administrationCard')?.removeAttribute('hidden');
+  document.querySelector('#administrationCard')?.toggleAttribute('hidden', !isCommander);
   const role = String(user.role || '').trim().toLowerCase();
-  if (String(user.status || '').toLowerCase() === 'approved' && (role === 'admin' || user.permissions?.portal_access === true)) document.querySelector('#emsCard')?.removeAttribute('hidden');
+  const approved = String(user.status || '').toLowerCase() === 'approved';
+  document.querySelector('#emsCard')?.toggleAttribute('hidden', !approved || !(role === 'admin' || user.permissions?.portal_access === true));
+  document.querySelector('#watchCommandCard')?.toggleAttribute('hidden', !approved || !(role === 'admin' || user.permissions?.watch_command_view === true));
   const canSync = Boolean(user.is_command || isCommander);
   document.querySelector('#portalSyncButton')?.toggleAttribute('hidden', !canSync);
   document.querySelector('#portalSyncStatus')?.toggleAttribute('hidden', !canSync);
@@ -11,7 +13,6 @@ function showAvailableApps(user) {
 
 document.querySelector('[data-action="logout"]')?.addEventListener('click', () => window.lvfrLogout?.());
 const cachedPortalUser = window.lvfrCachedUser?.();
-showAvailableApps(cachedPortalUser);
 
 const notificationList = document.querySelector('#portalNotificationList');
 const notificationsButton = document.querySelector('#portalNotificationsButton');
@@ -139,13 +140,11 @@ setInterval(() => {
   if (!document.hidden) void loadPortalNotifications();
 }, 15000);
 
-if (!cachedPortalUser) fetch('/auth/me')
+fetch('/auth/me')
   .then(response => response.ok ? response.json() : null)
   .then(user => {
+    if (!user) return;
     window.lvfrCacheUser?.(user);
-    document.querySelector('#administrationCard')?.toggleAttribute('hidden', !user || !(Boolean(user.is_admin) || ['admin', 'commander'].includes(String(user.role || '').toLowerCase())));
-    const role = String(user?.role || '').trim().toLowerCase();
-    document.querySelector('#emsCard')?.toggleAttribute('hidden', !user || String(user.status || '').toLowerCase() !== 'approved' || !['leader', 'supervisor', 'command', 'commander', 'admin'].includes(role));
     showAvailableApps(user);
     clearNotificationsButton?.toggleAttribute('hidden', !canClearNotifications(user));
     void loadPortalSyncStatus();

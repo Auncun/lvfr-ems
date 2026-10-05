@@ -21,6 +21,7 @@ function parsePermissionOverrides(value) {
   } catch { return {}; }
 }
 async function accountPermissions(db, account) {
+  if(String(account.role||"").toLowerCase()==="admin") return Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,true]));
   const role=await rolePermissions(db,account.role), overrides=parsePermissionOverrides(account.permissions_override_json);
   return Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,Object.hasOwn(overrides,key)?overrides[key]:role[key]]));
 }
