@@ -9,7 +9,9 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-05-training-hours-loi-d1-3',
+  // This API version label is intentionally distinct from the older
+  // 2026-10-04-training-hours-d1-4 deployment, which does not include LOI.
+  apiVersion: '2026-10-05-training-hours-loi-d1-4',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',

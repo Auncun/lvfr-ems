@@ -122,7 +122,7 @@ async function explainLoiBridgeFailure(env, message) {
     version=String(health?.version||"unknown");
     hasHandler=health?.internal_loi===true?"yes":"no";
   } catch {}
-  return `The Apps Script URL configured in Cloudflare reports version ${version} (internal_loi: ${hasHandler}), but its /internal/loi request fell through to login. Deploy the current apps-script/Code.gs (health must report internal_loi: true) to the exact /exec URL configured as GAS_WEB_APP_URL in Cloudflare.`;
+  return `Cloudflare's Apps Script deployment reports ${version} (internal_loi: ${hasHandler}), so /internal/loi is not available there. The current source version is 2026-10-05-training-hours-loi-d1-4; the suffix alone does not indicate which code is newer. Update the existing Apps Script web-app deployment from the current apps-script/Code.gs and confirm /api/health reports that version with internal_loi: true. Keep GAS_WEB_APP_URL pointed at that deployment's /exec URL.`;
 }
 async function rosterIdentity(env, name) {
   const member = await gasCall(env, "/auth/roster-lookup", "POST", { name });
