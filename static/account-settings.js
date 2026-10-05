@@ -52,6 +52,10 @@
   };
   const close = () => dialog.classList.add('hidden');
   openButton.addEventListener('click', async () => {
+    const accountMenu = document.querySelector('#accountMenu');
+    const accountMenuButton = document.querySelector('#accountMenuButton');
+    if (accountMenu) accountMenu.hidden = true;
+    accountMenuButton?.setAttribute('aria-expanded', 'false');
     dialog.classList.remove('hidden');
     const user = window.lvfrCachedUser?.();
     const accountId = user?.account_id || user?.id || '';

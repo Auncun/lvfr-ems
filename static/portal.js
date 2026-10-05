@@ -75,6 +75,11 @@ notificationsButton?.addEventListener('click', () => {
     void markPortalNotificationsRead();
   }
 });
+document.addEventListener('click', event => {
+  if (event.target.closest('.notification-control')) return;
+  if (notificationPanel) notificationPanel.hidden = true;
+  notificationsButton?.setAttribute('aria-expanded', 'false');
+});
 
 let cachedNotifications = null;
 try {
