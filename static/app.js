@@ -1208,18 +1208,34 @@ document.querySelectorAll("[data-loi-type]").forEach(button => button.addEventLi
 
 let loiLists = { hert: [], fort: [] };
 let loiLoadPromise = null;
-async function loadLoiLists() {
+let loiSignature = "";
+let loiLastLoadAt = 0;
+let loiSaves = 0;
+// silent=true is the background poll: it never shows "Loading…", keeps the list
+// that is already on screen if a refresh fails, and re-renders only when the
+// Sheet contents actually changed.
+async function loadLoiLists(silent = false) {
     if (loiLoadPromise) return loiLoadPromise;
+    if (silent && loiSaves > 0) return;
     loiLoadPromise = (async () => {
         const tables = [$("#hertLoiTable"), $("#fortLoiTable")];
-        tables.forEach(table => { if (table) table.innerHTML = '<div class="empty">Loading LOI lists…</div>'; });
+        const hasData = Boolean(loiSignature);
+        if (!silent || !hasData) tables.forEach(table => { if (table) table.innerHTML = '<div class="empty">Loading LOI lists…</div>'; });
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 20000);
         try {
             const result = await api("/api/loi", { signal: controller.signal });
-            loiLists = { hert: Array.isArray(result.hert) ? result.hert : [], fort: Array.isArray(result.fort) ? result.fort : [] };
+            loiLastLoadAt = Date.now();
+            if (silent && loiSaves > 0) return;
+            const next = { hert: Array.isArray(result.hert) ? result.hert : [], fort: Array.isArray(result.fort) ? result.fort : [] };
+            const signature = JSON.stringify(next);
+            if (signature === loiSignature && silent) return;
+            loiSignature = signature;
+            loiLists = next;
             renderLoiLists();
         } catch (error) {
+            loiLastLoadAt = Date.now();
+            if (silent && hasData) return;
             const message = error.name === "AbortError" ? "Loading LOI lists timed out. Retry in a moment." : `Could not load LOI lists: ${error.message}`;
             tables.forEach(table => { if (table) table.innerHTML = `<div class="empty">${esc(message)}</div>`; });
         } finally { window.clearTimeout(timeout); loiLoadPromise = null; }
@@ -1278,13 +1294,31 @@ document.addEventListener("click", async event => {
         if (!window.confirm(`Mark ${payload.name}'s ${type} LOI as ${action}? This removes the entry from the Sheet.`)) return;
     }
     button.disabled = true;
+    const key = type.toLowerCase();
+    const before = loiLists[key].slice();
+    loiSaves++;
+    // Show the change immediately; the Sheet and D1 are updated in the background.
+    if (result) {
+        loiLists[key] = loiLists[key].filter(item => !(Number(item.row) === payload.row && item.name === payload.name));
+        renderLoiLists();
+    } else {
+        loiLists[key] = [...loiLists[key], { type, name: payload.name, row: 0, test_percent: type === "FORT" ? String(payload.test_percent) : "" }];
+        $("#loiAddDialog")?.classList.add("hidden");
+        renderLoiLists();
+    }
     try {
         await api("/api/loi", { method: "POST", body: JSON.stringify(payload) });
-        $("#loiAddDialog")?.classList.add("hidden");
-        await loadLoiLists();
         toast(add ? `${type} LOI added.` : `${type} LOI marked ${action}.`);
-    } catch (error) { toast(`LOI update failed: ${error.message}`); }
-    finally { button.disabled = false; }
+    } catch (error) {
+        loiLists[key] = before;
+        renderLoiLists();
+        toast(`LOI update failed: ${error.message}`);
+    } finally {
+        loiSaves = Math.max(0, loiSaves - 1);
+        button.disabled = false;
+        loiSignature = "";
+        await loadLoiLists(true);
+    }
 });
 const trainingActionDialog = $("#trainingActionDialog"), trainingActionChoices = $("#trainingActionChoices"), trainingActionSearch = $("#trainingActionSearch");
 let activeTrainingAction = null;
@@ -5329,7 +5363,11 @@ function refreshVisibleRosterView() {
     else if (activeTab === "inactive" && currentUserHasPermission("inactive_view")) void loadInactive(true);
     else if (activeTab === "trainingDirectory") {
         if ($('[data-training-view="HOURS"]')?.classList.contains("active")) { if (currentUserHasPermission("training_hours_view")) void loadTrainingHours(true); }
-        else if ($('[data-training-view="LOI"]')?.classList.contains("active")) { if (currentUserHasPermission("training_view") || currentUserHasPermission("loi_manage")) void loadLoiLists(); }
+        else if ($('[data-training-view="LOI"]')?.classList.contains("active")) {
+            // The LOI lists are read from the Sheet through Apps Script (slow), so poll
+            // them every 20 s instead of every 3 s.
+            if ((currentUserHasPermission("training_view") || currentUserHasPermission("loi_manage")) && Date.now() - loiLastLoadAt > 20000) void loadLoiLists(true);
+        }
         else if (currentUserHasPermission("training_view")) void loadMembers(true, true);
     }
 }

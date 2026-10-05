@@ -114,6 +114,7 @@ async function gasCall(env, route, method, data = {}, token = "", params = {}) {
   if (!payload.ok) throw new Error(payload.error || "Apps Script request failed.");
   return payload.data;
 }
+const LOI_EXPECTED_GAS_VERSION = "2026-10-05-loi-1";
 async function explainLoiBridgeFailure(env, message) {
   if(!/internal LOI handler|sign in with your name and password|session expired/i.test(String(message||""))) return message;
   let version="unavailable", hasHandler="unknown";
@@ -122,7 +123,9 @@ async function explainLoiBridgeFailure(env, message) {
     version=String(health?.version||"unknown");
     hasHandler=health?.internal_loi===true?"yes":"no";
   } catch {}
-  return `The Apps Script deployment reports ${version} (internal_loi: ${hasHandler}), and /internal/loi is reaching the login fallback. The local d1-4 source contains the LOI handler and /api/health flag, so this response is not coming from that source as currently saved. Check that the d1-4 deployment's code includes the /internal/loi branch before requireUser_ and that Cloudflare GAS_WEB_APP_URL points to that deployment's /exec URL.`;
+  const deployment=(String(env.GAS_WEB_APP_URL||"").match(/\/macros\/s\/([^/]+)\//)||[])[1]||"";
+  const tail=deployment?`…${deployment.slice(-8)}`:"(GAS_WEB_APP_URL not set)";
+  return `The Apps Script deployment that Cloudflare calls (${tail}) does not contain the LOI code. It reports version "${version}" (internal_loi: ${hasHandler}); the current Code.gs reports "${LOI_EXPECTED_GAS_VERSION}" with internal_loi: true. In Apps Script open Deploy > Manage deployments > pencil (Edit) > Version: New version > Deploy, and confirm Cloudflare's GAS_WEB_APP_URL is that same deployment's /exec URL.`;
 }
 async function rosterIdentity(env, name) {
   const member = await gasCall(env, "/auth/roster-lookup", "POST", { name });

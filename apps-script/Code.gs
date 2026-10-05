@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-04-training-hours-d1-4',
+  apiVersion: '2026-10-05-loi-1',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -400,6 +400,30 @@ function signupWithPassword_(data) {
 }
 
 function normalizeMemberName_(value) { return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+
+// Sheet-name matching that also ignores zero-width/non-breaking characters that
+// sometimes sneak into pasted names and make an exact match silently fail.
+function sheetNameKey_(value) {
+  return String(value || '').normalize('NFKC').replace(/[\u200b-\u200d\u2060\ufeff]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+// Sheet-mutating routes run one at a time. Re-entrant: a call made while this
+// execution already holds the lock (for example listMembers_ inside a locked
+// write) runs directly instead of waiting on itself.
+let scriptLockDepth_ = 0;
+function withScriptLock_(fn, waitMs) {
+  if (scriptLockDepth_ > 0) return fn();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(waitMs || 25000);
+  scriptLockDepth_++;
+  try {
+    return fn();
+  } finally {
+    scriptLockDepth_--;
+    try { SpreadsheetApp.flush(); } catch (ignored) {}
+    lock.releaseLock();
+  }
+}
 function sessionCacheKey_(token) { return 'session:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token))).replace(/=+$/, ''); }
 function passwordHash_(password, salt) {
   // Hash byte arrays directly. The v2 implementation base64-encoded each
