@@ -329,12 +329,26 @@ document.querySelector('#rolePermissionsPanel').addEventListener('click', async 
 
 let individualPermissionTarget = null;
 let individualPermissionState = null;
+let individualPermissionMode = 'role';
+function individualRoleLabel(role) { return role === 'leader' ? 'Leader' : role === 'commander' ? 'Commander' : role === 'admin' ? 'Operation' : 'Member'; }
 function renderIndividualPermissions() {
   const panel = document.querySelector('#individualPermissionsList');
   if (!panel || !individualPermissionState) return;
   const { defaults, overrides } = individualPermissionState;
+  const mode = document.querySelector('#individualPermissionMode');
+  const customize = document.querySelector('#individualPermissionsCustomize');
+  const restore = document.querySelector('#individualPermissionsReset');
+  const save = document.querySelector('#individualPermissionsSave');
+  mode.querySelector('[value="role"]').textContent = `Role default (${individualRoleLabel(individualPermissionState.role)})`;
+  mode.value = individualPermissionMode;
+  const editing = individualPermissionMode === 'customize';
+  panel.hidden = !editing;
+  customize.hidden = editing;
+  restore.hidden = !editing;
+  save.hidden = !editing;
+  if (!editing) { panel.replaceChildren(); return; }
   panel.innerHTML = permissionGroups.map(group => `<section class="permission-group"><h4>${esc(group.name)}</h4>${group.items.map(([key,label,description]) => {
-    const checked = Object.hasOwn(overrides,key) ? overrides[key] : defaults[key];
+    const checked = Object.hasOwn(overrides,key) ? overrides[key] : Boolean(defaults[key]);
     return `<label class="permission-item"><input type="checkbox" data-individual-permission="${key}" ${checked?'checked':''}><span><strong>${esc(label)}</strong><small>${esc(description)}</small></span></label>`;
   }).join('')}</section>`).join('');
 }
@@ -348,8 +362,9 @@ async function openIndividualPermissions(account) {
   dialog.scrollIntoView({ behavior: 'smooth', block: 'start' });
   try {
     individualPermissionState = await api(`/api/leaders/${encodeURIComponent(account.account_id)}/permissions`);
+    individualPermissionMode = Object.keys(individualPermissionState.overrides || {}).length ? 'customize' : 'role';
     renderIndividualPermissions();
-    document.querySelector('#individualPermissionsStatus').textContent = `Default permissions come from ${individualPermissionState.role === 'leader' ? 'Leader' : individualPermissionState.role === 'commander' ? 'Commander' : 'Member'}. Save only the individual changes you want.`;
+    document.querySelector('#individualPermissionsStatus').textContent = `Role defaults: ${individualRoleLabel(individualPermissionState.role)}. Customize starts with these permissions; Restore to Role removes the personal changes without changing the account role.`;
   } catch (error) {
     document.querySelector('#individualPermissionsStatus').textContent = `Could not load permissions: ${error.message}`;
   }
@@ -361,14 +376,48 @@ document.querySelector('#individualPermissionsList')?.addEventListener('change',
   if (input.checked === Boolean(individualPermissionState.defaults[key])) delete individualPermissionState.overrides[key];
   else individualPermissionState.overrides[key] = input.checked;
 });
+document.querySelector('#individualPermissionMode')?.addEventListener('change', async event => {
+  if (!individualPermissionState) return;
+  if (event.currentTarget.value === 'customize') {
+    individualPermissionMode = 'customize';
+    renderIndividualPermissions();
+    document.querySelector('#individualPermissionsStatus').textContent = `Customize ${individualRoleLabel(individualPermissionState.role)} permissions. The list starts with the role defaults.`;
+    return;
+  }
+  if (individualPermissionMode !== 'customize') {
+    individualPermissionMode = 'role';
+    renderIndividualPermissions();
+    return;
+  }
+  if (!individualPermissionTarget || !window.confirm('Restore this account to its role permissions? Its account role will stay the same.')) {
+    event.currentTarget.value = 'customize';
+    return;
+  }
+  const selector = event.currentTarget;
+  selector.disabled = true;
+  try {
+    individualPermissionState = await api(`/api/leaders/${encodeURIComponent(individualPermissionTarget.account_id)}/permissions`, {method:'POST',body:JSON.stringify({reset:true})});
+    individualPermissionMode = 'role';
+    renderIndividualPermissions();
+    document.querySelector('#individualPermissionsStatus').textContent = `Restored ${individualRoleLabel(individualPermissionState.role)} permissions. The account role was not changed.`;
+  } catch(error) {
+    selector.value = 'customize';
+    document.querySelector('#individualPermissionsStatus').textContent = `Restore failed: ${error.message}`;
+  } finally { selector.disabled = false; }
+});
+document.querySelector('#individualPermissionsCustomize')?.addEventListener('click', () => {
+  individualPermissionMode = 'customize';
+  renderIndividualPermissions();
+});
 document.querySelector('#individualPermissionsClose')?.addEventListener('click', () => { document.querySelector('#individualPermissionsDialog').hidden = true; });
 document.querySelector('#individualPermissionsReset')?.addEventListener('click', async event => {
-  if (!individualPermissionTarget || !window.confirm('Reset this account to its current role defaults?')) return;
+  if (!individualPermissionTarget || !window.confirm('Restore this account to its role permissions? Its account role will stay the same.')) return;
   const button = event.currentTarget; button.disabled = true;
   try {
     individualPermissionState = await api(`/api/leaders/${encodeURIComponent(individualPermissionTarget.account_id)}/permissions`, {method:'POST',body:JSON.stringify({reset:true})});
+    individualPermissionMode = 'role';
     renderIndividualPermissions();
-    document.querySelector('#individualPermissionsStatus').textContent = 'Permissions reset to role defaults.';
+    document.querySelector('#individualPermissionsStatus').textContent = `Restored ${individualRoleLabel(individualPermissionState.role)} permissions. The account role was not changed.`;
   } catch(error) { document.querySelector('#individualPermissionsStatus').textContent = `Reset failed: ${error.message}`; }
   finally { button.disabled = false; }
 });

@@ -441,7 +441,7 @@ async function accountAction(db, id, action, actor) {
     default: throw new Error("Unknown account action.");
   }
   await db.batch([
-    db.prepare("UPDATE accounts SET status=?,role=?,activated_at=?,approved_by=?,admin_changed_at=?,admin_changed_by=?,updated_at=? WHERE account_id=?").bind(status,role,activated,approvedBy,changedAt,changedBy,now,id),
+    db.prepare("UPDATE accounts SET status=?,role=?,permissions_override_json=?,activated_at=?,approved_by=?,admin_changed_at=?,admin_changed_by=?,updated_at=? WHERE account_id=?").bind(status,role,role!==target.role?"{}":target.permissions_override_json||"{}",activated,approvedBy,changedAt,changedBy,now,id),
     db.prepare("INSERT INTO account_audit(created_at,account_id,name,callsign,action,actor_name) VALUES(?,?,?,?,?,?)").bind(now,id,target.name,target.callsign,action,actor.name),
     ...(["deny","delete","deactivate"].includes(action) ? [db.prepare("DELETE FROM auth_sessions WHERE account_id=?").bind(id)] : [])
   ]);

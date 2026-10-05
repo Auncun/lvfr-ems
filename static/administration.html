@@ -66,8 +66,9 @@
     </section>
     <section id="individualPermissionsDialog" class="admin-card individual-permissions-dialog" role="dialog" aria-modal="true" aria-labelledby="individualPermissionsTitle" hidden>
       <div class="admin-header"><div><h2 id="individualPermissionsTitle">Individual permissions</h2><p id="individualPermissionsStatus" class="muted" aria-live="polite"></p></div><button type="button" id="individualPermissionsClose">Close</button></div>
+      <label class="permission-search" for="individualPermissionMode"><span>Permission mode</span><select id="individualPermissionMode"><option value="role">Role default</option><option value="customize">Customize</option></select></label>
       <div id="individualPermissionsList" class="role-permission-groups"></div>
-      <div class="admin-actions"><button type="button" id="individualPermissionsReset">Reset to role default</button><button type="button" class="primary" id="individualPermissionsSave">Save individual permissions</button></div>
+      <div class="admin-actions"><button type="button" id="individualPermissionsCustomize" class="primary">Customize permissions</button><button type="button" id="individualPermissionsReset" hidden>Restore to Role</button><button type="button" id="individualPermissionsSave" hidden>Save customization</button></div>
     </section>
     <section id="commandHistorySection" class="admin-card command-section" aria-labelledby="auditHeading" hidden>
       <div class="admin-header"><h2 id="auditHeading">Recent account activity</h2><button type="button" id="clearAccountAuditBtn" class="danger">Clear D1 audit</button></div>
