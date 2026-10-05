@@ -641,20 +641,27 @@ export async function handleD1(context) {
       const actor=await requireAdmin(db,token);
       const rows=(await db.prepare("SELECT role FROM role_permissions ORDER BY role").all()).results||[];
       const roles=new Set(["member","leader","commander",...rows.map(row=>String(row.role||"").toLowerCase())]);
-      const profiles={};
-      for(const role of roles) if(role!=="admin") profiles[role]=await rolePermissions(db,role);
-      return json({profiles,keys:ROLE_PERMISSION_KEYS,actor_permissions:await accountPermissions(db,actor)});
+      const profiles={}, effective=await accountPermissions(db,actor);
+      const visibleKeys=actor.role==="admin"?ROLE_PERMISSION_KEYS:ROLE_PERMISSION_KEYS.filter(key=>effective[key]===true);
+      for(const role of roles) if(role!=="admin"&&role!==actor.role) {
+        const profile=await rolePermissions(db,role);
+        profiles[role]=Object.fromEntries(visibleKeys.map(key=>[key,Boolean(profile[key])]));
+      }
+      return json({profiles,keys:visibleKeys,actor_permissions:Object.fromEntries(visibleKeys.map(key=>[key,true]))});
     }
     if(route==="/api/role-permissions"&&method==="POST") {
       const actor=await requireAdmin(db,token), role=String(data.role||"").toLowerCase();
       if(!/^[a-z][a-z0-9_-]{1,31}$/.test(role)||role==="admin") throw Object.assign(new Error("Choose a valid role name."),{status:400});
-      if(actor.role!=="admin"&&["commander","member","leader"].includes(role)&&role==="commander") throw Object.assign(new Error("Only Operation can edit the Commander profile."),{status:403});
+      if(role===actor.role) throw Object.assign(new Error("You cannot edit the permission profile for your own role."),{status:403});
       const incoming=data.permissions&&typeof data.permissions==="object"?data.permissions:{};
-      const permissions=Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,Boolean(incoming[key])]));
+      let permissions=Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,Boolean(incoming[key])]));
+      const effective=await accountPermissions(db,actor);
       if(actor.role==="commander") {
-        const [current, personal]=await Promise.all([rolePermissions(db,role),accountPermissions(db,actor)]);
-        const attemptedGrant=ROLE_PERMISSION_KEYS.find(key=>permissions[key]&&!current[key]&&!personal[key]);
-        if(attemptedGrant) throw Object.assign(new Error("You cannot grant a permission that you do not have."),{status:403});
+        const current=await rolePermissions(db,role);
+        const attemptedChange=ROLE_PERMISSION_KEYS.find(key=>!effective[key]&&Object.hasOwn(incoming,key)&&Boolean(incoming[key])!==Boolean(current[key]));
+        if(attemptedChange) throw Object.assign(new Error("You cannot change a permission that you do not have."),{status:403});
+        permissions={...current};
+        for(const key of ROLE_PERMISSION_KEYS) if(effective[key]===true&&Object.hasOwn(incoming,key)) permissions[key]=Boolean(incoming[key]);
       }
       const now=new Date().toISOString();
       await db.prepare(`INSERT INTO role_permissions(role,permissions_json,updated_at,updated_by) VALUES(?,?,?,?)
@@ -671,7 +678,8 @@ export async function handleD1(context) {
       }).filter(Boolean);
       if(revocations.length) await db.batch(revocations);
       await appendAudit(db,{account_id:"role:"+role,name:role,callsign:""},"Updated role permissions",actor.name);
-      return json({ok:true,role,permissions,updated_at:now,updated_by:actor.name});
+      const responsePermissions=actor.role==="admin"?permissions:Object.fromEntries(ROLE_PERMISSION_KEYS.filter(key=>effective[key]===true).map(key=>[key,permissions[key]]));
+      return json({ok:true,role,permissions:responsePermissions,updated_at:now,updated_by:actor.name});
     }
     requireRolePermission(user,user.permissions,permissionForRequest(route,method,data));
     if(route==="/api/notifications" && method==="GET") {

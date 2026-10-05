@@ -107,6 +107,9 @@ export async function proxyToAppsScript(context, route, incoming, sessionToken, 
 
   if (!payload.ok) {
     const message = payload.error || "The request was rejected.";
+    if (route === "/internal/loi" && /sign in with your name and password|session expired/i.test(message)) {
+      return Response.json({ detail: "The deployed Apps Script is missing the internal LOI handler. Deploy the current apps-script/Code.gs as a new web-app version, then try again." }, { status: 502 });
+    }
     const status = /sign in again|access token/i.test(message) ? 401 : 400;
     return Response.json({ detail: message }, { status });
   }

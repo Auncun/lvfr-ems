@@ -270,6 +270,7 @@ const permissionGroups = [
 ];
 let rolePermissionProfiles = {};
 let permissionEditorCapabilities = {};
+let editablePermissionKeys = [];
 let selectedPermissionRole = 'member';
 function roleTitle(role) { return ({member:'Member',leader:'Leader',commander:'Commander'})[role] || role.replace(/[_-]+/g,' ').replace(/\b\w/g, ch => ch.toUpperCase()); }
 function renderRolePermissions() {
@@ -277,13 +278,13 @@ function renderRolePermissions() {
   if (!panel) return;
   const query = document.querySelector('#permissionSearch').value.trim().toLocaleLowerCase();
   const roleOrder = {member:0,leader:1,commander:2};
-  const roles = Object.keys(rolePermissionProfiles).filter(role => role !== 'admin').sort((a,b) => (roleOrder[a] ?? 3) - (roleOrder[b] ?? 3) || a.localeCompare(b));
+  const roles = Object.keys(rolePermissionProfiles).filter(role => role !== 'admin' && role !== String(currentUser?.role || '').toLowerCase()).sort((a,b) => (roleOrder[a] ?? 3) - (roleOrder[b] ?? 3) || a.localeCompare(b));
   if (!roles.includes(selectedPermissionRole)) selectedPermissionRole = roles[0] || '';
   document.querySelector('#permissionRoleNav').innerHTML = roles.map(role => `<button type="button" data-select-permission-role="${esc(role)}" aria-current="${role===selectedPermissionRole}">${esc(roleTitle(role))}</button>`).join('');
   panel.innerHTML = roles.filter(role => role === selectedPermissionRole).map(role => {
     const roleLabel = roleTitle(role);
     const groups = permissionGroups.map(group => {
-      const items = group.items.filter(([, label, description]) => !query || `${label} ${description} ${group.name}`.toLocaleLowerCase().includes(query));
+      const items = group.items.filter(([key, label, description]) => editablePermissionKeys.includes(key) && (!query || `${label} ${description} ${group.name}`.toLocaleLowerCase().includes(query)));
       if (!items.length) return '';
       return `<section class="permission-group"><h4>${esc(group.name)}</h4>${items.map(([key, label, description]) => `
         <label class="permission-item"><input type="checkbox" data-permission-key="${key}" ${rolePermissionProfiles[role]?.[key] ? 'checked' : ''} ${currentUser?.role !== 'admin' && permissionEditorCapabilities[key] !== true && !rolePermissionProfiles[role]?.[key] ? 'disabled' : ''}><span><strong>${esc(label)}</strong><small>${esc(description)}</small></span></label>`).join('')}</section>`;
@@ -298,6 +299,7 @@ async function loadRolePermissions() {
     const result = await api('/api/role-permissions');
     rolePermissionProfiles = result.profiles || {};
     permissionEditorCapabilities = result.actor_permissions || {};
+    editablePermissionKeys = Array.isArray(result.keys) ? result.keys : Object.keys(permissionEditorCapabilities).filter(key => permissionEditorCapabilities[key] === true);
     renderRolePermissions();
     rolePermissionsLoaded = true;
     status.textContent = 'Role settings loaded. Changes apply to every account with that role.';
@@ -341,6 +343,7 @@ document.querySelector('#rolePermissionsPanel').addEventListener('click', async 
     }
     rolePermissionProfiles = persisted.profiles || rolePermissionProfiles;
     permissionEditorCapabilities = persisted.actor_permissions || permissionEditorCapabilities;
+    editablePermissionKeys = Array.isArray(persisted.keys) ? persisted.keys : editablePermissionKeys;
     renderRolePermissions();
     status.textContent = `${role === 'member' ? 'Member' : role === 'leader' ? 'Leader' : 'Commander'} permissions saved.`;
     status.className = 'permission-status success';
@@ -352,7 +355,7 @@ document.querySelector('#createPermissionRole')?.addEventListener('click', async
   const input = document.querySelector('#newPermissionRole'), role = input.value.trim().toLowerCase().replace(/\s+/g,'_');
   if (!/^[a-z][a-z0-9_-]{1,31}$/.test(role)) return setMessage('Use 2–32 letters, numbers, underscores, or hyphens for the role name.', 'error');
   if (rolePermissionProfiles[role]) return setMessage('That role already exists.', 'error');
-  const empty = Object.fromEntries(permissionGroups.flatMap(group => group.items.map(([key]) => [key,false])));
+  const empty = Object.fromEntries(editablePermissionKeys.map(key => [key,false]));
   try {
     await api('/api/role-permissions', {method:'POST',body:JSON.stringify({role,permissions:empty})});
     rolePermissionProfiles[role] = empty;
