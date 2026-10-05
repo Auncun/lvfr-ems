@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-04-training-hours-d1-2',
+  apiVersion: '2026-10-05-training-hours-loi-d1-3',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -32,7 +32,7 @@ function doPost(e) {
     const route = String(input.route || '');
     const params = input.params || {};
     if (route === '/api/health' && String(input.method || 'GET') === 'GET') {
-      return output_({ ok: true, data: { ok: true, backend: 'Google Apps Script', version: LVFR.apiVersion } });
+      return output_({ ok: true, data: { ok: true, backend: 'Google Apps Script', version: LVFR.apiVersion, internal_loi: true } });
     }
     if (route === '/auth/signup' && String(input.method || 'GET') === 'POST') {
       return output_({ ok: true, data: signupWithPassword_(input.data || {}) });
@@ -1755,7 +1755,7 @@ function loiSheetConfig_(type) {
 function listLoiSheet_() {
   const result = { hert: [], fort: [] };
   ['HERT', 'FORT'].forEach(type => {
-    const config = loiSheetConfig_(type), count = Math.max(0, config.sheet.getMaxRows() - config.startRow + 1);
+    const config = loiSheetConfig_(type), count = Math.max(0, config.sheet.getLastRow() - config.startRow + 1);
     if (!count) return;
     const names = config.sheet.getRange(config.startRow, config.nameColumn, count, 1).getDisplayValues();
     const percents = config.percentColumn ? config.sheet.getRange(config.startRow, config.percentColumn, count, 1).getDisplayValues() : [];

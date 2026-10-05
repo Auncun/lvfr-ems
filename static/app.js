@@ -1213,13 +1213,16 @@ async function loadLoiLists() {
     loiLoadPromise = (async () => {
         const tables = [$("#hertLoiTable"), $("#fortLoiTable")];
         tables.forEach(table => { if (table) table.innerHTML = '<div class="empty">Loading LOI lists…</div>'; });
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 20000);
         try {
-            const result = await api("/api/loi");
+            const result = await api("/api/loi", { signal: controller.signal });
             loiLists = { hert: Array.isArray(result.hert) ? result.hert : [], fort: Array.isArray(result.fort) ? result.fort : [] };
             renderLoiLists();
         } catch (error) {
-            tables.forEach(table => { if (table) table.innerHTML = `<div class="empty">Could not load LOI lists: ${esc(error.message)}</div>`; });
-        } finally { loiLoadPromise = null; }
+            const message = error.name === "AbortError" ? "Loading LOI lists timed out. Retry in a moment." : `Could not load LOI lists: ${error.message}`;
+            tables.forEach(table => { if (table) table.innerHTML = `<div class="empty">${esc(message)}</div>`; });
+        } finally { window.clearTimeout(timeout); loiLoadPromise = null; }
     })();
     return loiLoadPromise;
 }

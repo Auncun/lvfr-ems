@@ -114,6 +114,16 @@ async function gasCall(env, route, method, data = {}, token = "", params = {}) {
   if (!payload.ok) throw new Error(payload.error || "Apps Script request failed.");
   return payload.data;
 }
+async function explainLoiBridgeFailure(env, message) {
+  if(!/internal LOI handler|sign in with your name and password|session expired/i.test(String(message||""))) return message;
+  let version="unavailable", hasHandler="unknown";
+  try {
+    const health=await gasCall(env,"/api/health","GET");
+    version=String(health?.version||"unknown");
+    hasHandler=health?.internal_loi===true?"yes":"no";
+  } catch {}
+  return `The Apps Script URL configured in Cloudflare reports version ${version} (internal_loi: ${hasHandler}), but its /internal/loi request fell through to login. Deploy the current apps-script/Code.gs (health must report internal_loi: true) to the exact /exec URL configured as GAS_WEB_APP_URL in Cloudflare.`;
+}
 async function rosterIdentity(env, name) {
   const member = await gasCall(env, "/auth/roster-lookup", "POST", { name });
   if (!member || !member.name || !member.callsign) throw new Error("Name was not found on the LVFR roster.");
@@ -761,7 +771,12 @@ export async function handleD1(context) {
       const {proxyToAppsScript}=await import("../[[path]].js");
       if(method==="GET") {
         const sheetResponse=await proxyToAppsScript(context,"/internal/loi",url,"",{});
-        if(!sheetResponse.ok) return sheetResponse;
+        if(!sheetResponse.ok) {
+          const failure=await sheetResponse.clone().json().catch(()=>({}));
+          if(/internal LOI handler|sign in with your name and password|session expired/i.test(String(failure.detail||"")))
+            return json({detail:await explainLoiBridgeFailure(env,failure.detail)},502);
+          return sheetResponse;
+        }
         return sheetResponse;
       }
       const action=String(data.action||"").toLowerCase(), type=String(data.type||"").toUpperCase();
@@ -773,7 +788,7 @@ export async function handleD1(context) {
       if(action==="add"&&type==="FORT"&&(!Number.isFinite(percent)||percent<0||percent>100)) throw new Error("FORT LOI % on test must be a number from 0 to 100.");
       const sheetResponse=await proxyToAppsScript(context,"/internal/loi",url,"",{...data,type,action,name:member.name,callsign:member.callsign,test_percent:percent});
       const saved=await sheetResponse.json().catch(()=>({}));
-      if(!sheetResponse.ok) throw Object.assign(new Error(saved.detail||"Could not update the LOI Sheet."),{status:sheetResponse.status});
+      if(!sheetResponse.ok) throw Object.assign(new Error(await explainLoiBridgeFailure(env,saved.detail||"Could not update the LOI Sheet.")),{status:/internal LOI handler|sign in with your name and password|session expired/i.test(String(saved.detail||""))?502:sheetResponse.status});
       const eventAction=action==="add"?"Added":action==="passed"?"Passed":"Failed";
       const testPercent=type==="FORT"?Number(saved.test_percent??percent):null;
       const logDate=new Date().toISOString(), details=JSON.stringify({loi_type:type,test_percent:testPercent});
