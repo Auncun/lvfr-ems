@@ -42,14 +42,14 @@
     },
     {
       href: '/administration', title: 'Operation Command', admin: true, items: [
-        { label: 'Accounts', anchor: '#accountsHeading', children: [
+        { label: 'Accounts', anchor: '#accountsHeading', availability: '#commandAccountsSection', children: [
           { label: 'All accounts', status: 'all' },
           { label: 'Pending accounts', status: 'pending' },
           { label: 'Active accounts', status: 'approved' },
           { label: 'Deactivated accounts', status: 'deactivated' }
         ] },
-        { label: 'Access Permissions', anchor: '#permissionsHeading' },
-        { label: 'Recent account activity', anchor: '#auditHeading' }
+        { label: 'Access Permissions', anchor: '#permissionsHeading', availability: '#commandPermissionsSection' },
+        { label: 'Recent account activity', anchor: '#auditHeading', availability: '#commandHistorySection' }
       ]
     }
   ];
@@ -178,7 +178,7 @@
   sidebar.querySelector('input').addEventListener('input', event => {
     const query = event.target.value.trim().toLocaleLowerCase();
     const user = window.lvfrCachedUser?.();
-    const adminAllowed = currentPath === '/administration' || !!user?.is_admin;
+    const adminAllowed = currentPath === '/administration' || !!user?.is_admin || user?.permissions?.operation_command_access === true;
     const filterEntries = container => {
       let anyVisible = false;
       container.querySelectorAll(':scope > [data-sidebar-entry]').forEach(entry => {
@@ -317,7 +317,7 @@
   const refreshAccess = () => {
     const user = window.lvfrCachedUser?.();
     const adminLink = bottomNav?.querySelector('[data-admin-app]');
-    if (adminLink) adminLink.hidden = currentPath !== '/administration' && !user?.is_admin;
+    if (adminLink) adminLink.hidden = currentPath !== '/administration' && !user?.is_admin && user?.permissions?.operation_command_access !== true;
     sidebar.querySelector('input').dispatchEvent(new Event('input'));
     refreshActiveNavigation();
   };

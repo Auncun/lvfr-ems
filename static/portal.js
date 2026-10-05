@@ -1,7 +1,7 @@
 function showAvailableApps(user) {
   if (!user) return;
-  const isCommander = Boolean(user.is_admin) || ['admin', 'commander'].includes(String(user.role || '').toLowerCase());
-  document.querySelector('#administrationCard')?.toggleAttribute('hidden', !isCommander);
+  const canOpenOperationCommand = Boolean(user.is_admin) || ['admin', 'commander'].includes(String(user.role || '').toLowerCase()) || user.permissions?.operation_command_access === true;
+  document.querySelector('#administrationCard')?.toggleAttribute('hidden', !canOpenOperationCommand);
   const role = String(user.role || '').trim().toLowerCase();
   const approved = String(user.status || '').toLowerCase() === 'approved';
   document.querySelector('#emsCard')?.toggleAttribute('hidden', !approved || !(role === 'admin' || user.permissions?.portal_access === true));

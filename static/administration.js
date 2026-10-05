@@ -21,6 +21,13 @@ function setMessage(text, kind = '') {
   messageEl.textContent = text;
   messageEl.className = `admin-status ${kind}`.trim();
 }
+function canManageRoleProfiles() {
+  return ['admin', 'commander'].includes(String(currentUser?.role || '').toLowerCase())
+    || currentUser?.permissions?.operation_command_access === true;
+}
+function canManageCommandAccounts() {
+  return ['admin', 'commander'].includes(String(currentUser?.role || '').toLowerCase());
+}
 async function api(path, options = {}) {
   const response = await fetch(path, {
     ...options,
@@ -42,12 +49,22 @@ function allAccounts() {
   ];
 }
 function configureOperationAccess() {
-  const allowed = ['admin', 'commander'].includes(currentUser?.role);
+  const allowed = canManageRoleProfiles(), accountManager = canManageCommandAccounts();
+  document.querySelector('[data-command-section="accounts"]')?.toggleAttribute('hidden', !accountManager);
+  document.querySelector('[data-command-section="history"]')?.toggleAttribute('hidden', !accountManager);
   document.querySelector('[data-command-section="permissions"]')?.toggleAttribute('hidden', !allowed);
+  document.querySelector('.permission-member-picker')?.toggleAttribute('hidden', currentUser?.role !== 'admin');
+  document.querySelector('.custom-role-tools')?.toggleAttribute('hidden', !allowed);
+  if (!accountManager) {
+    commandSections.accounts.hidden = true;
+    commandSections.history.hidden = true;
+    commandSections.permissions.hidden = !allowed;
+    if (allowed) showCommandSection('permissions');
+  }
   if (allowed && !rolePermissionsLoaded && !rolePermissionsLoadPromise) {
     rolePermissionsLoadPromise = loadRolePermissions().finally(() => { rolePermissionsLoadPromise = null; });
   }
-  if (!allowed && commandSections.permissions?.hidden === false) showCommandSection('accounts');
+  if (!allowed && commandSections.permissions?.hidden === false && accountManager) showCommandSection('accounts');
 }
 function accountActions(account) {
   const id = esc(account.account_id);
@@ -124,6 +141,13 @@ document.querySelector('#clearAccountAuditBtn')?.addEventListener('click', async
 });
 async function loadAccounts(silent = false) {
   const cachedUser = window.lvfrCachedUser?.();
+  currentUser = currentUser || cachedUser;
+  configureOperationAccess();
+  if (currentUser && !canManageCommandAccounts() && canManageRoleProfiles()) {
+    setMessage('Operation Command access is limited to Access Permissions.');
+    return;
+  }
+  if (currentUser && !canManageRoleProfiles()) { location.replace('/portal'); return; }
   const cacheKey = `lvfr.admin.accounts.${cachedUser?.account_id || cachedUser?.id || 'current'}.v1`;
   let hadCached = false;
   try {
@@ -244,6 +268,7 @@ function applyOptimisticAccountAction(source, action) {
 const permissionGroups = [
   { name: 'Application access', items: [
     ['portal_access', 'EMS Operations', 'Open the EMS Operations application.'],
+    ['operation_command_access', 'Operation Command access', 'Open Access Permissions to manage role profiles. Does not grant account management.'],
     ['watch_command_view', 'Watch Command: view', 'Open Watch Command logs and activity.'],
     ['watch_command_edit', 'Watch Command: edit', 'Create and update Watch Command records.'],
     ['watch_command_roster', 'Watch Command: roster lookup', 'Search member names and callsigns.'],
@@ -540,7 +565,12 @@ const commandSections = {
   history: document.querySelector('#commandHistorySection'),
 };
 function showCommandSection(name, updateHash = false) {
-  if (name === 'permissions' && !['admin', 'commander'].includes(currentUser?.role)) name = 'accounts';
+  if (!canManageCommandAccounts() && !canManageRoleProfiles()) return;
+  if (name === 'permissions' && !canManageRoleProfiles()) {
+    if (!canManageCommandAccounts()) return;
+    name = 'accounts';
+  }
+  if (name !== 'permissions' && !canManageCommandAccounts()) name = 'permissions';
   if (!commandSections[name]) return;
   Object.entries(commandSections).forEach(([key, section]) => { section.hidden = key !== name; });
   document.querySelectorAll('[data-command-section]').forEach(button => {

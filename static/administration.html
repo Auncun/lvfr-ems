@@ -59,7 +59,7 @@
       <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Account</th><th>Callsign</th><th>Status</th><th>Role</th><th>Presence</th><th>Created</th><th>Actions</th></tr></thead><tbody id="accountRows"><tr><td colspan="7">Loading accounts…</td></tr></tbody></table></div>
     </section>
     <section id="commandPermissionsSection" class="admin-card permissions-card command-section" aria-labelledby="permissionsHeading" hidden>
-      <div class="admin-header permissions-heading"><div><h2 id="permissionsHeading">Access Permissions</h2><p class="muted">Commanders can edit Member and Leader profiles, but can only enable permissions they already have. Operation also manages the Commander profile and individual accounts.</p></div></div>
+      <div class="admin-header permissions-heading"><div><h2 id="permissionsHeading">Access Permissions</h2><p class="muted">Commanders and users with Operation Command access can manage role profiles, but can only change permissions they already have. Only Operation manages accounts and individual permissions.</p></div></div>
       <label class="permission-search"><span>Find a permission</span><input id="permissionSearch" type="search" placeholder="Search pages and actions"></label>
       <div class="permission-member-picker"><label>Find a member <input id="permissionMemberSearch" type="search" placeholder="Search name or callsign"></label><div id="permissionMemberResults" class="permission-member-results" hidden></div></div>
       <div class="role-editor-layout"><nav id="permissionRoleNav" class="permission-role-nav" aria-label="Permission profiles"></nav><div class="role-editor-main"><div id="rolePermissionsPanel" class="role-permissions-panel"><div class="empty">Loading role permissions...</div></div><div class="custom-role-tools"><label>New role <input id="newPermissionRole" maxlength="32" placeholder="e.g. training_lead"></label><button type="button" id="createPermissionRole">Create role</button></div></div></div>
@@ -80,7 +80,7 @@
   <script src="/static/header-controls.js?v=header-controls-1"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
   <script src="/static/administration.js?v=role-permissions-filter-20261005-1"></script>
-  <script src="/static/sidebar.js?v=command-permissions-20261004-1"></script>
+  <script src="/static/sidebar.js?v=operation-command-access-20261005-1"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 </body>
 </html>
