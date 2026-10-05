@@ -27,6 +27,7 @@ function migrateTrainingHoursToD1() {
     else callsignByName.set(name, callsign);
   });
 
+  const unmatched = [];
   const count = Math.max(0, hours.getLastRow() - 1);
   const records = count ? hours.getRange(2, 2, count, 5).getDisplayValues().reduce((result, row, index) => {
     const name = String(row[0] || '').trim().replace(/\s+/g, ' ');
@@ -35,8 +36,10 @@ function migrateTrainingHoursToD1() {
     if (!name || /^(name|member|member name|callsign|date|time|training hours?)$/i.test(name)) return result;
     if (!time) return result;
     const callsign = callsignByName.get(name.toLowerCase());
-    if (!callsign) throw new Error('Training Hours row ' + (index + 2) + ' has a missing or ambiguous roster name: ' + name);
-    result.push({ callsign, date: String(row[2] || '').trim(), time, source_row: index + 2 });
+    // One name that is not on the roster must not block every other row from
+    // syncing. Send it anyway so D1 keeps its place; the Worker skips it.
+    if (!callsign) unmatched.push('row ' + (index + 2) + ': ' + name);
+    result.push({ callsign: callsign || '', name, date: String(row[2] || '').trim(), time, source_row: index + 2 });
     return result;
   }, []) : [];
 
@@ -54,8 +57,8 @@ function migrateTrainingHoursToD1() {
   }
   const imported = Number(result.imported || 0), skipped = Number(result.skipped || 0);
   console.log('Training Hours import result: source=' + records.length + ', imported=' + imported + ', skipped=' + skipped + '.');
-  if (skipped || imported !== records.length) {
-    throw new Error('Training Hours import was incomplete: source=' + records.length + ', imported=' + imported + ', skipped=' + skipped + '. Sync the roster to D1 and check that every Training Hours name matches one current roster member, then rerun the import.');
+  if (skipped || unmatched.length) {
+    console.warn('Training Hours rows not matched to one current roster member (kept in D1 as-is, not synced): ' + unmatched.join('; '));
   }
   return result;
 }
@@ -63,7 +66,7 @@ function migrateTrainingHoursToD1() {
 // Installable Sheet edit trigger calls this after a Training Hours row changes.
 // Importing the full snapshot keeps add, edit, and removal changes aligned with D1.
 function syncTrainingHoursSheetToD1_() {
-  return migrateTrainingHoursToD1();
+  return withScriptLock_(() => migrateTrainingHoursToD1(), 30000);
 }
 
 // One-time history import. It copies existing Sheets logs/notifications into D1;

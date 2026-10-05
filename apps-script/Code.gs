@@ -1713,8 +1713,26 @@ function mirrorTrainingHoursFromD1_(data) {
     throw new Error('Training Hours row no longer matches this roster member.');
   }
   if (action === 'remove') {
-    if (row) { sheet.getRange(row, 2).clearContent(); sheet.getRange(row, 4).clearContent(); sheet.getRange(row, 6).clearContent(); }
-    return { ok: true, changed: Boolean(row), row };
+    // Older D1 rows may not have a source_row yet. Resolve those against the
+    // original member/date/time tuple instead of reporting a successful no-op.
+    if (!row) {
+      const date = String(data.date || '').trim();
+      const time = String(data.previous_time || '').trim();
+      const count = Math.max(0, sheet.getLastRow() - 1);
+      if (count && date && time) {
+        const values = sheet.getRange(2, 2, count, 5).getDisplayValues();
+        const matches = [];
+        values.forEach((values, index) => {
+          if (normalizeMemberName_(values[0]) === normalizeMemberName_(member.name) &&
+              String(values[2] || '').trim() === date && String(values[4] || '').trim() === time) matches.push(index + 2);
+        });
+        if (matches.length === 1) row = matches[0];
+        else if (matches.length > 1) throw new Error('Training Hours row is ambiguous; refresh the Sheet-to-D1 row mapping before removing it.');
+      }
+    }
+    if (!row) throw new Error('Training Hours Sheet row was not found for removal.');
+    sheet.getRange(row, 2).clearContent(); sheet.getRange(row, 4).clearContent(); sheet.getRange(row, 6).clearContent();
+    return { ok: true, changed: true, row };
   }
   if (!['add', 'time'].includes(action)) throw new Error('Invalid Training Hours mirror action.');
   const time = String(data.time || '').trim();

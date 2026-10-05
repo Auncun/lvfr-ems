@@ -732,7 +732,29 @@ export async function handleD1(context) {
           const responseDetail=mirrorResult.detail||mirrorResult.error||JSON.stringify(mirrorResult);
           throw new Error("Apps Script Sheet1 mirror was not confirmed (HTTP "+sheetMirror.status+"): "+String(responseDetail||"empty response").slice(0,400));
         }
-        if(mirrorResult.row&&!existing?.source_row) await db.prepare("UPDATE training_hours SET source_row=? WHERE id=? AND source_row IS NULL").bind(mirrorResult.row,savedId).run();
+        if(mirrorResult.row&&!existing?.source_row) {
+          const sheetRow=Number(mirrorResult.row);
+          // A Sheet-to-D1 import can claim this row between the Apps Script
+          // write and this acknowledgement. Only attach the row if no other
+          // D1 record owns it; otherwise collapse an identical import-created
+          // duplicate into that already-mapped record.
+          await db.prepare("UPDATE training_hours SET source_row=? WHERE id=? AND source_row IS NULL AND NOT EXISTS (SELECT 1 FROM training_hours WHERE source_row=? AND id<>?)")
+            .bind(sheetRow,savedId,sheetRow,savedId).run();
+          const saved=await db.prepare("SELECT id,source_row,callsign,training_date,time FROM training_hours WHERE id=?").bind(savedId).first();
+          if(saved&&Number(saved.source_row)===sheetRow) {
+            // The web-created record retained ownership of the Sheet row.
+          } else {
+            const imported=await db.prepare("SELECT id,callsign,training_date,time FROM training_hours WHERE source_row=?").bind(sheetRow).first();
+            if(!imported||imported.callsign!==member.callsign||imported.training_date!==trainingDate||imported.time!==time) {
+              throw new Error("The Training Hours Sheet row was claimed by a different D1 record; refresh the row mapping before retrying.");
+            }
+            // The import found the just-created Sheet entry and attached its
+            // source_row first. Keep that canonical row and remove the
+            // unlinked placeholder created by this request.
+            await db.prepare("DELETE FROM training_hours WHERE id=? AND source_row IS NULL").bind(savedId).run();
+            savedId=Number(imported.id)||savedId;
+          }
+        }
       } catch(error) {
         sheetSynced=false;
         sheetSyncError=String(error?.message||error).slice(0,500);
