@@ -1736,7 +1736,6 @@ function appendArchiveLog_(entry) {
 function terminateMember_(data, user) {
   const member = memberByCallsign_(data.callsign), sheet = rosterSheet_();
   sheet.getRange(member.row, 3, 1, 7).clearContent().setBackground('#ffffff');
-  sheet.getRange(member.row, 4).setValue(new Date());
   sheet.getRange(member.row, 11).clearContent().setBackground('#ffffff'); // K only; L and M untouched
   const timestamp = new Date().toISOString(), reason = String(data.note || '');
   appendArchiveLog_({ timestamp, event: 'Terminated', member: member.name, callsign: member.callsign, old_callsign: '', new_callsign: '', old_rank: member.rank, new_rank: '', details: reason, actor: actorName_(user), actor_callsign: user.callsign });

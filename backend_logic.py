@@ -1,4 +1,3 @@
-
 import os
 import sqlite3
 import datetime
@@ -4554,15 +4553,12 @@ def perform_termination(
         SET
             name='',
             rank=rank,
-            rank_assigned_date=?,
+            rank_assigned_date='',
             days_in_rank=0,
             notes=NULL
         WHERE callsign=?
         """,
-        (
-            datetime.date.today().isoformat(),
-            callsign
-        )
+        (callsign,)
     )
 
     cur.execute(
