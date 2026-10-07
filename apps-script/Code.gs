@@ -150,7 +150,14 @@ function dispatch_(route, method, params, data, user) {
     if (user._d1Bridge) requireRolePermission_(user, 'full_sync_manage');
     else requireAdmin_(user);
     const result = syncRosterSnapshotToD1_('full-manual', true);
-    return Object.assign({}, result, { message: 'Full roster sync completed' });
+    // Full Sync also restores the operational logs (termination, promotion, ...)
+    // from the Sheet, so logs removed with "Delete this log from D1" come back.
+    let logs;
+    try { logs = restoreOperationalLogsToD1_(); }
+    catch (error) {
+      throw new Error('Roster was synchronized, but restoring logs from Google Sheets failed: ' + (error && error.message ? error.message : error));
+    }
+    return Object.assign({}, result, { logs_restored: logs.operational_logs, message: 'Full sync completed: ' + result.members + ' members and ' + logs.operational_logs + ' log entries restored from Google Sheets' });
   }
   if (route === '/api/notifications' && method === 'GET') { requireApproved_(user); return listNotifications_(user); }
   if (route === '/api/notifications/read' && method === 'POST') { requireApproved_(user); return markNotificationsRead_(data, user); }
@@ -1334,6 +1341,55 @@ function syncRosterSnapshotToD1_(source, forceFull) {
   } finally {
     if (lockAcquired) lock.releaseLock();
   }
+}
+
+// Full Sync helper: replaces D1 operational_logs with the current Sheet content
+// ('PWA Activity Log' plus the legacy 'Logs' archive). Sheets are never changed.
+function restoreOperationalLogsToD1_() {
+  const properties = PropertiesService.getScriptProperties();
+  const workerUrl = String(properties.getProperty('LVFR_D1_SYNC_URL') || '').trim().replace(/\/$/, '');
+  const workerSecret = String(properties.getProperty('LVFR_D1_WORKER_SECRET') || '');
+  if (!workerUrl || !workerSecret) throw new Error('Configure LVFR_D1_SYNC_URL and LVFR_D1_WORKER_SECRET in Script Properties.');
+  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+  const cellRows = name => {
+    const sheet = spreadsheet.getSheetByName(name);
+    if (!sheet || sheet.getLastRow() < 2) return [];
+    return sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getDisplayValues();
+  };
+  const operational = [], usedKeys = {};
+  const uniqueKey = base => { let key = base, n = 1; while (usedKeys[key]) key = base + '#' + (++n); usedKeys[key] = true; return key; };
+  cellRows(APP_LOG_TAB).forEach(row => {
+    const kind = String(row[1] || '').toLowerCase();
+    if (!row[0] || !kind || kind === 'training_time') return; // training_time lives in training_hours_log
+    operational.push({ source_key: uniqueKey('app:' + row[0]), kind, log_date: row[2], callsign: row[3], member_name: row[4], action: row[5], details: row[6], changed_by: row[7], old_rank: row[8], new_rank: row[9], old_callsign: row[10], new_callsign: row[11] });
+  });
+  cellRows('Logs').forEach(row => {
+    const event = String(row[1] || ''), lower = event.toLowerCase();
+    const kind = lower.includes('terminat') ? 'termination'
+      : lower.includes('training') || lower.includes('hert') ? 'training'
+      : lower.includes('exam') ? 'exam'
+      : lower.includes('note') ? 'note'
+      : lower.includes('activity') ? 'activity'
+      : lower.includes('instructor') ? 'instructor'
+      : lower.includes('callsign') ? 'callsign'
+      : lower.includes('promot') || lower.includes('demot') || lower.includes('rank') ? 'promotion' : '';
+    if (!kind || !row[0]) return;
+    operational.push({ source_key: uniqueKey('archive:' + row[0] + ':' + row[1]), kind, log_date: row[0], callsign: row[3], member_name: row[2], action: event, details: row[8], changed_by: row[9], old_rank: row[6], new_rank: row[7], old_callsign: row[4], new_callsign: row[5] });
+  });
+  const size = 200, batches = Math.max(1, Math.ceil(operational.length / size));
+  for (let i = 0; i < batches; i++) {
+    const response = UrlFetchApp.fetch(workerUrl + '/internal/logs/import', {
+      method: 'post', contentType: 'application/json', headers: { 'X-LVFR-Worker-Secret': workerSecret },
+      payload: JSON.stringify({ operational_logs: operational.slice(i * size, (i + 1) * size), replace_operational_logs: i === 0 }), muteHttpExceptions: true
+    });
+    let result = null;
+    try { result = JSON.parse(response.getContentText()); } catch (ignored) {}
+    if (response.getResponseCode() < 200 || response.getResponseCode() >= 300 || !result || result.ok !== true) {
+      throw new Error('D1 log restore failed on batch ' + (i + 1) + ': HTTP ' + response.getResponseCode() + ' ' + response.getContentText().slice(0, 300));
+    }
+  }
+  console.log('Full Sync restored ' + operational.length + ' operational log rows to D1.');
+  return { ok: true, operational_logs: operational.length };
 }
 
 // Run once from the Apps Script editor to seed D1 before bootstrapping the
