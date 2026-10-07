@@ -1040,9 +1040,8 @@ export async function handleD1(context) {
     }
     if(route==="/api/overwrite" && method==="POST") {
       if(user.role!=="admin") throw Object.assign(new Error("Only Operation can overwrite the D1 roster."),{status:403});
-      // Reuse the deployed Full Sync Apps Script route so Overwrite works
-      // without requiring a separate Apps Script deployment for this alias.
-      const result=await syncMembersFromAppsScript(env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET),true);
+      const result=await gasCall(env,"/api/overwrite","POST",{},await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
+      if(!result||result.ok!==true) throw new Error("Apps Script returned an invalid overwrite result.");
       return json(result);
     }
     const instructorWrite=route.match(/^\/api\/member\/([^/]+)\/instructor$/);
