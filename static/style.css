@@ -71,6 +71,7 @@ body {
 .training-action-choices { display:grid; gap:7px; max-height:48vh; overflow:auto; }
 .training-action-choice { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:9px; border:1px solid #303945; border-radius:8px; background:#0d1219; }
 .training-hours-time-edit { display:flex; align-items:center; gap:6px; min-width:190px; }
+.table-sort-button { padding:0; border:0; background:transparent; color:inherit; font:inherit; font-weight:inherit; }
 .training-hours-time-edit input { min-width:80px; width:100%; }
 .role-permissions-panel { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; align-items:start; }
 .role-editor-layout { display:grid; grid-template-columns:180px minmax(0,1fr); gap:18px; align-items:start; }
@@ -148,7 +149,9 @@ body {
 }
 .tab.active {
     background:#1f6feb;
-    border-color:#388bfd
+    border-color:#388bfd;
+    color:#fff;
+    box-shadow:0 0 0 1px #1f6feb55
 }
 .primary {
     background:#238636;

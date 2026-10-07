@@ -1154,56 +1154,49 @@ async function loadMembers(silent = false, forceFresh = false) {
 function renderTrainingDirectory(members = allMembersCache || []) {
     const has = value => value === true || Number(value) === 1;
     const instructorHas = (member, type) => String(member.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes(type);
-    const hertSearch = String(document.querySelector('[data-training-panel="HERT"] input[type="search"]')?.value || "").trim().toLocaleLowerCase();
-    const fortSearch = String(document.querySelector('[data-training-panel="FORT"] input[type="search"]')?.value || "").trim().toLocaleLowerCase();
-    const hertFilter = $("#hertTrainingFilter")?.value || "all";
-    const fortFilter = $("#fortTrainingFilter")?.value || "all";
     const headerActions = (group, field, skill = "") => {
-        const capability = group === "HERT" ? "training_hert_manage" : "training_fort_manage";
         const allowed = field === "instructor" ? currentUserHasPermission("instructor_manage") : canManageTraining(group);
         return allowed ? `<div class="training-header-actions"><button type="button" class="primary" data-training-open data-group="${group}" data-field="${field}" data-skill="${skill}" data-remove="false">Add</button><button type="button" class="danger" data-training-open data-group="${group}" data-field="${field}" data-skill="${skill}" data-remove="true">Remove</button></div>` : "";
     };
-    const render = (query, type) => {
-        const container = document.querySelector(type === "FORT" ? "#fortTrainingTable" : "#hertTrainingTable");
+    const render = (type, mode, searchId, tableId) => {
+        const container = $(tableId);
         if (!container) return;
+        const query = String($(searchId)?.value || "").trim().toLocaleLowerCase();
         const rows = members.filter(member => {
-            const matchesTraining = type === "FORT"
-                ? fortFilter === "basic" ? has(member.has_basic_firefighting)
-                    : fortFilter === "advanced" ? has(member.has_advanced_firefighting)
-                    : fortFilter === "instructor" ? instructorHas(member, "FORT")
-                    : has(member.has_basic_firefighting) || has(member.has_advanced_firefighting) || instructorHas(member, "FORT")
-                : hertFilter === "certified" ? has(member.has_hert)
-                    : hertFilter === "instructor" ? instructorHas(member, "HERT")
-                    : has(member.has_hert) || instructorHas(member, "HERT");
+            const matchesTraining = type === "HERT"
+                ? mode === "certified" ? has(member.has_hert) : instructorHas(member, "HERT")
+                : mode === "training" ? has(member.has_basic_firefighting) || has(member.has_advanced_firefighting) : instructorHas(member, "FORT");
             return matchesTraining && (!query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query));
         });
-        const instructorHeader = `${type} Instructor${headerActions(type, "instructor")}`;
-        const fortBasicHeader = `Basic FORT${headerActions(type, "training", "Basic Firefighting")}`;
-        const fortAdvancedHeader = `Advanced FORT${headerActions(type, "training", "Advanced Firefighting")}`;
-        const hertTrainingHeader = `HERT Certified${headerActions(type, "training", "Hert")}`;
-        container.innerHTML = `<table><thead><tr><th>Callsign</th><th>Member</th>${type === "FORT" ? `<th>${fortBasicHeader}</th><th>${fortAdvancedHeader}</th><th>${instructorHeader}</th>` : `<th>${hertTrainingHeader}</th><th>${instructorHeader}</th>`}</tr></thead><tbody>${rows.length ? rows.map(member => {
-            const instructorValue = instructorHas(member, type) ? "Instructor" : "Not an Instructor";
-            return type === "HERT"
-                ? `<tr><td><strong>${esc(member.callsign)}</strong></td><td>${esc(member.name)}</td><td>${has(member.has_hert) ? "Certified" : "Not certified"}</td><td>${instructorValue}</td></tr>`
-                : `<tr><td><strong>${esc(member.callsign)}</strong></td><td>${esc(member.name)}</td><td>${has(member.has_basic_firefighting) ? "Certified" : "Not certified"}</td><td>${has(member.has_advanced_firefighting) ? "Certified" : "Not certified"}</td><td>${instructorValue}</td></tr>`;
-        }).join("") : `<tr><td colspan="${type === "FORT" ? 5 : 4}">No members found.</td></tr>`}</tbody></table>`;
+        const isInstructor = mode === "instructor";
+        const headings = type === "HERT"
+            ? isInstructor ? `<th>HERT Instructor${headerActions(type, "instructor")}</th>` : `<th>HERT Certified${headerActions(type, "training", "Hert")}</th>`
+            : isInstructor ? `<th>FORT Instructor${headerActions(type, "instructor")}</th>` : `<th>Basic FORT${headerActions(type, "training", "Basic Firefighting")}</th><th>Advanced FORT${headerActions(type, "training", "Advanced Firefighting")}</th>`;
+        container.innerHTML = `<table><thead><tr><th>Callsign</th><th>Member</th>${headings}</tr></thead><tbody>${rows.length ? rows.map(member => {
+            const value = isInstructor ? (instructorHas(member, type) ? "Instructor" : "Not an Instructor")
+                : type === "HERT" ? (has(member.has_hert) ? "Certified" : "Not certified")
+                    : `<td>${has(member.has_basic_firefighting) ? "Certified" : "Not certified"}</td><td>${has(member.has_advanced_firefighting) ? "Certified" : "Not certified"}</td>`;
+            return `<tr><td><strong>${esc(member.callsign)}</strong></td><td>${esc(member.name)}</td>${type === "FORT" && !isInstructor ? value : `<td>${value}</td>`}</tr>`;
+        }).join("") : `<tr><td colspan="${type === "FORT" && !isInstructor ? 4 : 3}">No members found.</td></tr>`}</tbody></table>`;
     };
-    render(fortSearch, "FORT");
-    render(hertSearch, "HERT");
+    render("HERT", "certified", "#hertCertifiedSearch", "#hertTrainingTable");
+    render("HERT", "instructor", "#hertInstructorSearch", "#hertInstructorTable");
+    render("FORT", "training", "#fortTrainingSearch", "#fortTrainingTable");
+    render("FORT", "instructor", "#fortInstructorSearch", "#fortInstructorTable");
 }
 
 document.querySelectorAll(".training-directory-search input").forEach(input => input.addEventListener("input", () => renderTrainingDirectory()));
-$("#fortTrainingFilter")?.addEventListener("change", () => renderTrainingDirectory());
-$("#hertTrainingFilter")?.addEventListener("change", () => renderTrainingDirectory());
 document.querySelectorAll("[data-training-view]").forEach(button => button.addEventListener("click", () => {
     document.querySelectorAll("[data-training-view]").forEach(item => item.classList.toggle("active", item === button));
     document.querySelectorAll("[data-training-panel]").forEach(panel => { panel.hidden = panel.dataset.trainingPanel !== button.dataset.trainingView; });
     if (button.dataset.trainingView === "HOURS") void loadTrainingHours();
-    if (button.dataset.trainingView === "LOI") void loadLoiLists();
 }));
-document.querySelectorAll("[data-loi-type]").forEach(button => button.addEventListener("click", () => {
-    document.querySelectorAll("[data-loi-type]").forEach(item => item.classList.toggle("active", item === button));
-    document.querySelectorAll("[data-loi-panel]").forEach(panel => { panel.hidden = panel.dataset.loiPanel !== button.dataset.loiType; });
+document.querySelectorAll("[data-training-section]").forEach(button => button.addEventListener("click", () => {
+    const panel = button.closest("[data-training-panel]");
+    panel?.querySelectorAll("[data-training-section]").forEach(item => item.classList.toggle("active", item === button));
+    panel?.querySelectorAll("[data-training-subpanel]").forEach(section => { section.hidden = section.dataset.trainingSubpanel !== button.dataset.trainingSection; });
+    if (button.dataset.trainingSection.endsWith("_LOI")) void loadLoiLists();
+    else renderTrainingDirectory();
 }));
 
 let loiLists = { hert: [], fort: [] };
@@ -1373,6 +1366,8 @@ let trainingHoursRows = [];
 let trainingHoursSignature = "";
 let trainingHoursSaves = 0;
 let trainingHoursLoading = false;
+let trainingHoursSortByName = false;
+let trainingHoursNameSortDescending = false;
 function trainingHoursHasUnsavedInput() {
     const active = document.activeElement;
     return Boolean(active && $("#trainingHoursTable")?.contains(active) && active.matches?.("input") && active.value !== active.defaultValue);
@@ -1409,12 +1404,29 @@ function renderTrainingHours() {
         const member = memberByName.get(String(row.name || "").trim().toLocaleLowerCase());
         return !query || `${row.name} ${member?.callsign || ""} ${row.date} ${row.time}`.toLocaleLowerCase().includes(query);
     });
+    const rankOrder = Array.isArray(config?.ranks) ? config.ranks : ["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer"];
+    const rankIndex = value => { const rank = String(value || "").trim().toLocaleLowerCase(); const index = rankOrder.findIndex(item => String(item).trim().toLocaleLowerCase() === rank); return index < 0 ? 999 : index; };
+    rows.sort((a, b) => {
+        const memberA = memberByName.get(String(a.name || "").trim().toLocaleLowerCase());
+        const memberB = memberByName.get(String(b.name || "").trim().toLocaleLowerCase());
+        if (trainingHoursSortByName) {
+            const result = String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" });
+            return trainingHoursNameSortDescending ? -result : result;
+        }
+        const byRank = rankIndex(a.rank || memberA?.rank) - rankIndex(b.rank || memberB?.rank);
+        return byRank || String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" }) || String(b.date || "").localeCompare(String(a.date || ""));
+    });
     const canEdit = currentUserHasPermission("training_hours_manage");
-    table.innerHTML = rows.length ? `<table><thead><tr><th>Callsign</th><th>Member</th><th>Date</th><th>Training Hours</th>${canEdit ? "<th>Actions</th>" : ""}</tr></thead><tbody>${rows.map(row => {
+    table.innerHTML = rows.length ? `<table><thead><tr><th>Callsign</th><th><button type="button" id="trainingHoursNameSort" class="table-sort-button" aria-label="Sort Training Hours by name">Name${trainingHoursSortByName ? trainingHoursNameSortDescending ? " ↓" : " ↑" : ""}</button></th><th>Date</th><th>Training Hours</th>${canEdit ? "<th>Actions</th>" : ""}</tr></thead><tbody>${rows.map(row => {
         const member = memberByName.get(String(row.name || "").trim().toLocaleLowerCase());
         const timeCell = canEdit ? `<div class="training-hours-time-edit"><input type="text" data-training-hours-time value="${esc(row.time)}" aria-label="Training hours for ${esc(row.name)} on ${esc(row.date)}"><button type="button" class="primary" data-training-hours-save data-id="${esc(row.id)}" data-name="${esc(row.name)}" data-callsign="${esc(row.callsign || member?.callsign || "")}">Save</button></div>` : esc(row.time);
         return `<tr><td><strong>${esc(row.callsign || member?.callsign || "")}</strong></td><td>${esc(row.name)}</td><td>${esc(row.date)}</td><td>${timeCell}</td>${canEdit ? `<td><button type="button" class="danger" data-training-hours-remove data-id="${esc(row.id)}" data-name="${esc(row.name)}" data-callsign="${esc(row.callsign || member?.callsign || "")}">Remove</button></td>` : ""}</tr>`;
     }).join("")}</tbody></table>` : '<div class="empty">No Training Hours records match this search.</div>';
+    table.querySelector("#trainingHoursNameSort")?.addEventListener("click", () => {
+        if (trainingHoursSortByName) trainingHoursNameSortDescending = !trainingHoursNameSortDescending;
+        else { trainingHoursSortByName = true; trainingHoursNameSortDescending = false; }
+        renderTrainingHours();
+    });
 }
 function renderTrainingHoursAddChoices() {
     const choices = $("#trainingHoursAddChoices");
@@ -1613,6 +1625,7 @@ function renderEligibleRows(loadedRows) {
 
                                     <td>
 
+                                        ${currentUserHasPermission("profile_view") ? `<button type="button" data-action="profile" data-callsign="${esc(m.callsign)}">View</button>` : ""}
                                         <button
                                             type="button"
                                             class="primary"
@@ -1752,6 +1765,7 @@ function renderInactive() {
 
                             <td>
 
+                                ${currentUserHasPermission("profile_view") ? `<button type="button" data-action="profile" data-callsign="${esc(m.callsign)}">View</button>` : ""}
                                 <button
                                     type="button"
                                     class="danger"
@@ -2235,6 +2249,10 @@ async function loadMembersLog(
 ) {
 
     currentLogType = type;
+    const canDeleteD1Log = currentUserHasPermission("logs_delete_d1");
+    if (membersLogDelete) membersLogDelete.hidden = !canDeleteD1Log || type === "instructor";
+    const instructorLogDelete = $("#instructorLogDeleteBtn");
+    if (instructorLogDelete) instructorLogDelete.hidden = !canDeleteD1Log || type !== "instructor";
     const logContent = $("#membersLogContent"), instructorLog = $("#instructorLog");
     if (logContent) logContent.style.display = type === "instructor" ? "none" : "";
     if (instructorLog) instructorLog.style.display = type === "instructor" ? "" : "none";
@@ -4658,17 +4676,16 @@ document
 
                     document
                         .querySelectorAll(".tab")
-                        .forEach(
-                            x =>
-                                x.classList.remove(
-                                    "active"
-                                )
-                        );
+                        .forEach(x => {
+                            x.classList.remove("active");
+                            x.removeAttribute("aria-current");
+                        });
 
 
                     b.classList.add(
                         "active"
                     );
+                    b.setAttribute("aria-current", "page");
 
 
                     document
@@ -4961,6 +4978,43 @@ const eligibleRankFilter = $("#eligibleRankFilter");
 if (eligibleRankFilter) {
     eligibleRankFilter.addEventListener("change", loadEligible);
 }
+$("#refreshEligibleBtn")?.addEventListener("click", async event => {
+    const button = event.currentTarget; button.disabled = true;
+    try { await loadEligible(true); } finally { button.disabled = false; }
+});
+$("#refreshDoNotPromoteBtn")?.addEventListener("click", async event => {
+    const button = event.currentTarget; button.disabled = true;
+    try { await loadDoNotPromote(); } finally { button.disabled = false; }
+});
+$("#refreshInactiveBtn")?.addEventListener("click", async event => {
+    const button = event.currentTarget; button.disabled = true;
+    try { await loadInactive(true); } finally { button.disabled = false; }
+});
+async function withListRefresh(button, refresh) {
+    button.disabled = true;
+    try { await refresh(); } catch (error) { toast(error.message || "Could not refresh this list."); }
+    finally { button.disabled = false; }
+}
+$("#refreshMembersBtn")?.addEventListener("click", event => withListRefresh(event.currentTarget, () => loadMembers(true, true)));
+$("#refreshMembersLogBtn")?.addEventListener("click", event => withListRefresh(event.currentTarget, () => {
+    apiReadCache.delete(`/api/members-log?log_type=${encodeURIComponent(currentLogType)}`);
+    return loadMembersLog(currentLogType);
+}));
+$("#refreshTrainingBtn")?.addEventListener("click", event => withListRefresh(event.currentTarget, async () => {
+    const view = document.querySelector("[data-training-view].active")?.dataset.trainingView || "FORT";
+    const selectedSection = document.querySelector(`[data-training-panel="${view}"] [data-training-section].active`)?.dataset.trainingSection || "";
+    if (view === "HOURS") { apiReadCache.delete("/api/training-hours"); await loadTrainingHours(); }
+    else if (selectedSection.endsWith("_LOI")) { apiReadCache.delete("/api/loi"); await loadLoiLists(); }
+    else await loadMembers(true, true);
+}));
+$("#refreshStatisticsBtn")?.addEventListener("click", event => withListRefresh(event.currentTarget, async () => {
+    await loadMembers(true, true);
+    renderStatistics();
+}));
+$("#refreshLeadersBtn")?.addEventListener("click", event => withListRefresh(event.currentTarget, () => {
+    apiReadCache.delete("/api/leaders");
+    return loadLeaders();
+}));
 
 
 // ------------------------------------------------------------
@@ -5089,21 +5143,26 @@ if (membersLogClear) {
 }
 
 const membersLogDelete = $("#membersLogDeleteBtn");
-membersLogDelete?.addEventListener("click", async event => {
-    event.preventDefault();
-    if (!currentUserIsAdmin || !currentLogType) return;
-    if (!window.confirm(`Delete all ${currentLogType} entries from the website's D1 log? Google Sheets will remain unchanged.`)) return;
-    membersLogDelete.disabled = true;
+async function deleteCurrentD1Log(button) {
+    if (!currentUserHasPermission("logs_delete_d1") || !currentLogType) return;
+    const kind = currentLogType;
+    if (!window.confirm(`Delete all ${kind} entries from the website's D1 log? Google Sheets will remain unchanged.`)) return;
+    button.disabled = true;
     try {
-        await api("/api/members-log/clear", { method: "POST", body: JSON.stringify({ log_type: currentLogType }) });
-        try { sessionStorage.removeItem(`lvfr.log.${currentUserAccountId}.${currentLogType}.v1`); } catch {}
+        await api("/api/members-log/clear", { method: "POST", body: JSON.stringify({ log_type: kind }) });
+        try { sessionStorage.removeItem(`lvfr.log.${currentUserAccountId}.${kind}.v1`); } catch {}
         currentLogRows = [];
         renderMembersLog();
         toast("D1 log cleared. Google Sheets was not changed.");
     } catch (error) {
         toast(`Could not clear D1 log: ${error.message}`);
-    } finally { membersLogDelete.disabled = false; }
+    } finally { button.disabled = false; }
+}
+membersLogDelete?.addEventListener("click", async event => {
+    event.preventDefault();
+    await deleteCurrentD1Log(membersLogDelete);
 });
+$("#instructorLogDeleteBtn")?.addEventListener("click", async event => { event.preventDefault(); await deleteCurrentD1Log(event.currentTarget); });
 
 
 // ============================================================
@@ -5153,8 +5212,10 @@ function applyAccountUser(user) {
     window.lvfrCacheUser?.(user);
     currentUserIsAdmin = Boolean(user.is_admin);
     currentUserIsOperation = String(user.role || "").toLowerCase() === "admin";
-    if (membersLogDelete) membersLogDelete.hidden = !currentUserIsAdmin;
     currentUserPermissions = user.permissions || {};
+    if (membersLogDelete) membersLogDelete.hidden = !currentUserHasPermission("logs_delete_d1") || currentLogType === "instructor";
+    const instructorLogDelete = $("#instructorLogDeleteBtn");
+    if (instructorLogDelete) instructorLogDelete.hidden = !currentUserHasPermission("logs_delete_d1") || currentLogType !== "instructor";
     currentUserPermissionOverrides = user.permission_overrides || {};
     if (!currentUserHasPermission("portal_access")) {
         location.replace("/watch-command");
@@ -5195,12 +5256,19 @@ function applyAccountUser(user) {
     });
     const trainingHoursTab = document.querySelector('[data-training-view="HOURS"]');
     if (trainingHoursTab) trainingHoursTab.style.display = currentUserHasPermission("training_hours_view") ? "" : "none";
-    const loiViewTab = document.querySelector('[data-training-view="LOI"]');
     const canViewLoi = currentUserHasPermission("training_view") || currentUserHasPermission("loi_manage");
-    if (loiViewTab) loiViewTab.style.display = canViewLoi ? "" : "none";
+    const canViewTraining = currentUserHasPermission("training_view");
     const trainingDirectoryTab = document.querySelector('.tab[data-tab="trainingDirectory"]');
-    if (trainingDirectoryTab) trainingDirectoryTab.style.display = canViewLoi ? "" : "none";
-    document.querySelectorAll('[data-training-view="FORT"], [data-training-view="HERT"]').forEach(button => { button.style.display = currentUserHasPermission("training_view") ? "" : "none"; });
+    if (trainingDirectoryTab) trainingDirectoryTab.style.display = (canViewLoi || currentUserHasPermission("training_hours_view")) ? "" : "none";
+    document.querySelectorAll('[data-training-view="FORT"], [data-training-view="HERT"]').forEach(button => { button.style.display = (canViewTraining || canViewLoi) ? "" : "none"; });
+    document.querySelectorAll('[data-training-section="HERT_CERTIFIED"], [data-training-section="HERT_INSTRUCTOR"], [data-training-section="FORT_TRAINING"], [data-training-section="FORT_INSTRUCTOR"]').forEach(button => { button.style.display = canViewTraining ? "" : "none"; });
+    document.querySelectorAll('[data-training-section="HERT_LOI"], [data-training-section="FORT_LOI"]').forEach(button => { button.style.display = canViewLoi ? "" : "none"; });
+    if (!canViewTraining && canViewLoi) {
+        document.querySelector('[data-training-view="HERT"]')?.click();
+        document.querySelector('[data-training-section="HERT_LOI"]')?.click();
+    } else if (!canViewLoi && currentUserHasPermission("training_hours_view")) {
+        document.querySelector('[data-training-view="HOURS"]')?.click();
+    }
     const addTrainingHoursButton = $("#openTrainingHoursAdd");
     if (addTrainingHoursButton) addTrainingHoursButton.style.display = currentUserHasPermission("training_hours_manage") ? "" : "none";
     document.querySelectorAll("[data-open-loi-add]").forEach(button => { button.hidden = !currentUserHasPermission("loi_manage"); });
@@ -5359,7 +5427,7 @@ function refreshVisibleRosterView() {
     else if (activeTab === "inactive" && currentUserHasPermission("inactive_view")) void loadInactive(true);
     else if (activeTab === "trainingDirectory") {
         if ($('[data-training-view="HOURS"]')?.classList.contains("active")) { if (currentUserHasPermission("training_hours_view")) void loadTrainingHours(true); }
-        else if ($('[data-training-view="LOI"]')?.classList.contains("active")) {
+        else if (document.querySelector('[data-training-panel]:not([hidden]) [data-training-section].active')?.dataset.trainingSection.endsWith("_LOI")) {
             // LOI refreshes when its tab opens or after a mutation. Sheet edits
             // flow back to D1 through Apps Script triggers; there is no poll.
         }

@@ -18,7 +18,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=command-permissions-20261004-1"
+    href="/static/style.css?v=all-lists-refresh-20261007-1"
 >
 
 <style>
@@ -214,6 +214,7 @@
     <button
         data-tab="members"
         class="tab active"
+        aria-current="page"
     >
         Members
     </button>
@@ -293,6 +294,7 @@
         </div>
 
 
+        <button type="button" id="refreshMembersBtn">Refresh</button>
         <span
             id="memberCount"
             class="count"
@@ -385,16 +387,21 @@
 </section>
 
 <section id="trainingDirectory" class="panel">
-  <div class="section-head"><div><h2>Training</h2></div></div>
-  <div class="training-directory-tabs"><button type="button" class="log-tab active" data-training-view="FORT">FORT</button><button type="button" class="log-tab" data-training-view="HERT">HERT</button><button type="button" class="log-tab" data-training-view="HOURS">Training Hours</button><button type="button" class="log-tab" data-training-view="LOI">LOI</button></div>
-  <section class="training-directory-view" data-training-panel="FORT"><div class="training-directory-filters"><label class="training-directory-search">Search FORT list<input type="search" aria-label="Search FORT list" placeholder="Search callsign or member"></label><label>Filter FORT<select id="fortTrainingFilter" aria-label="Filter FORT list"><option value="all">All FORT members</option><option value="basic">Basic FORT</option><option value="advanced">Advanced FORT</option><option value="instructor">FORT Instructor</option></select></label></div><div id="fortTrainingTable" class="table-wrap"></div></section>
-  <section class="training-directory-view" data-training-panel="HERT" hidden><div class="training-directory-filters"><label class="training-directory-search">Search HERT list<input type="search" aria-label="Search HERT list" placeholder="Search callsign or member"></label><label>Filter HERT<select id="hertTrainingFilter" aria-label="Filter HERT list"><option value="all">All HERT members</option><option value="certified">HERT Certified</option><option value="instructor">HERT Instructor</option></select></label></div><div id="hertTrainingTable" class="table-wrap"></div></section>
-  <section class="training-directory-view" data-training-panel="HOURS" hidden><div class="training-directory-filters"><label class="training-directory-search">Search Training Hours<input id="trainingHoursSearch" type="search" aria-label="Search Training Hours" placeholder="Search callsign or member"></label><button type="button" class="primary" id="openTrainingHoursAdd">Add Training Record</button></div><div id="trainingHoursTable" class="table-wrap"></div></section>
-  <section class="training-directory-view" data-training-panel="LOI" hidden>
-    <div class="training-directory-tabs loi-subtabs"><button type="button" class="log-tab active" data-loi-type="HERT">HERT LOI</button><button type="button" class="log-tab" data-loi-type="FORT">FORT LOI</button></div>
-    <section data-loi-panel="HERT"><div class="training-directory-filters"><label class="training-directory-search">Search HERT LOI<input id="hertLoiSearch" type="search" placeholder="Search member"></label><button type="button" class="primary" data-open-loi-add="HERT">Add HERT LOI</button></div><div id="hertLoiTable" class="table-wrap"></div></section>
-    <section data-loi-panel="FORT" hidden><div class="training-directory-filters"><label class="training-directory-search">Search FORT LOI<input id="fortLoiSearch" type="search" placeholder="Search member"></label><button type="button" class="primary" data-open-loi-add="FORT">Add FORT LOI</button></div><div id="fortLoiTable" class="table-wrap"></div></section>
+  <div class="section-head"><div><h2>Training</h2></div><button type="button" id="refreshTrainingBtn">Refresh</button></div>
+  <div class="training-directory-tabs"><button type="button" class="log-tab active" data-training-view="HERT">HERT</button><button type="button" class="log-tab" data-training-view="FORT">FORT</button><button type="button" class="log-tab" data-training-view="HOURS">Training Hours</button></div>
+  <section class="training-directory-view" data-training-panel="HERT">
+    <div class="training-directory-tabs"><button type="button" class="log-tab active" data-training-section="HERT_CERTIFIED">HERT Certified</button><button type="button" class="log-tab" data-training-section="HERT_INSTRUCTOR">Instructor</button><button type="button" class="log-tab" data-training-section="HERT_LOI">LOI</button></div>
+    <section data-training-subpanel="HERT_CERTIFIED"><div class="training-directory-filters"><label class="training-directory-search">Search HERT members<input type="search" id="hertCertifiedSearch" aria-label="Search HERT Certified members" placeholder="Search callsign or member"></label></div><div id="hertTrainingTable" class="table-wrap"></div></section>
+    <section data-training-subpanel="HERT_INSTRUCTOR" hidden><div class="training-directory-filters"><label class="training-directory-search">Search HERT instructors<input type="search" id="hertInstructorSearch" aria-label="Search HERT instructors" placeholder="Search callsign or member"></label></div><div id="hertInstructorTable" class="table-wrap"></div></section>
+    <section data-training-subpanel="HERT_LOI" hidden><div class="training-directory-filters"><label class="training-directory-search">Search HERT LOI<input id="hertLoiSearch" type="search" placeholder="Search member"></label><button type="button" class="primary" data-open-loi-add="HERT">Add HERT LOI</button></div><div id="hertLoiTable" class="table-wrap"></div></section>
   </section>
+  <section class="training-directory-view" data-training-panel="FORT" hidden>
+    <div class="training-directory-tabs"><button type="button" class="log-tab active" data-training-section="FORT_TRAINING">FORT Training</button><button type="button" class="log-tab" data-training-section="FORT_INSTRUCTOR">Instructor</button><button type="button" class="log-tab" data-training-section="FORT_LOI">LOI</button></div>
+    <section data-training-subpanel="FORT_TRAINING"><div class="training-directory-filters"><label class="training-directory-search">Search FORT members<input type="search" id="fortTrainingSearch" aria-label="Search FORT members" placeholder="Search callsign or member"></label></div><div id="fortTrainingTable" class="table-wrap"></div></section>
+    <section data-training-subpanel="FORT_INSTRUCTOR" hidden><div class="training-directory-filters"><label class="training-directory-search">Search FORT instructors<input type="search" id="fortInstructorSearch" aria-label="Search FORT instructors" placeholder="Search callsign or member"></label></div><div id="fortInstructorTable" class="table-wrap"></div></section>
+    <section data-training-subpanel="FORT_LOI" hidden><div class="training-directory-filters"><label class="training-directory-search">Search FORT LOI<input id="fortLoiSearch" type="search" placeholder="Search member"></label><button type="button" class="primary" data-open-loi-add="FORT">Add FORT LOI</button></div><div id="fortLoiTable" class="table-wrap"></div></section>
+  </section>
+  <section class="training-directory-view" data-training-panel="HOURS" hidden><div class="training-directory-filters"><label class="training-directory-search">Search Training Hours<input id="trainingHoursSearch" type="search" aria-label="Search Training Hours" placeholder="Search callsign or member"></label><button type="button" class="primary" id="openTrainingHoursAdd">Add Training Record</button></div><div id="trainingHoursTable" class="table-wrap"></div></section>
   <div id="trainingHoursAddDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="trainingHoursAddTitle"><div class="modal-box"><button type="button" class="close" id="closeTrainingHoursAdd" aria-label="Close">&times;</button><h2 id="trainingHoursAddTitle">Add Training Record</h2><label class="training-directory-search">Search members<input id="trainingHoursAddSearch" type="search" placeholder="Search callsign or member"></label><div id="trainingHoursAddChoices" class="training-action-choices"></div></div></div>
   <div id="loiAddDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="loiAddTitle"><div class="modal-box"><button type="button" class="close" id="closeLoiAdd" aria-label="Close">&times;</button><h2 id="loiAddTitle">Add LOI</h2><label class="training-directory-search">Search members<input id="loiAddSearch" type="search" placeholder="Search callsign or member"></label><div id="loiAddChoices" class="training-action-choices"></div></div></div>
   <div id="trainingActionDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="trainingActionTitle"><div class="modal-box"><button type="button" class="close" id="closeTrainingAction" aria-label="Close">&times;</button><h2 id="trainingActionTitle"></h2><label class="training-directory-search">Search members<input id="trainingActionSearch" type="search" placeholder="Search callsign or member"></label><div id="trainingActionChoices" class="training-action-choices"></div></div></div>
@@ -422,6 +429,7 @@
 
 
         </div>
+        <button type="button" id="refreshEligibleBtn">Refresh</button>
 
 
     </div>
@@ -450,7 +458,7 @@
      ========================================================= -->
 
 <section id="doNotPromote" class="panel">
-    <div class="section-head"><div><h2>Do not Promote</h2></div></div>
+    <div class="section-head"><div><h2>Do not Promote</h2></div><button type="button" id="refreshDoNotPromoteBtn">Refresh</button></div>
     <div class="table-wrap" id="doNotPromoteTable"></div>
 </section>
 
@@ -476,6 +484,7 @@
 
 
         </div>
+        <button type="button" id="refreshInactiveBtn">Refresh</button>
 
 
     </div>
@@ -539,6 +548,7 @@
         </div>
 
 
+        <button type="button" id="refreshMembersLogBtn">Refresh</button>
     </div>
 
 
@@ -694,6 +704,7 @@
         <div class="log-toolbar">
             <input id="instructorLogSearch" type="text" placeholder="Search instructor log" autocomplete="off">
             <button type="button" id="instructorLogClearBtn">Clear</button>
+            <button type="button" id="instructorLogDeleteBtn" class="danger" hidden>Delete this log from D1</button>
         </div>
         <div id="instructorLogTable" class="table-wrap"></div>
     </div>
@@ -702,7 +713,7 @@
 
 
 <section id="statistics" class="panel">
-    <div class="section-head"><div><h2>Statistics</h2><p>Training and instructor coverage</p></div></div>
+    <div class="section-head"><div><h2>Statistics</h2><p>Training and instructor coverage</p></div><button type="button" id="refreshStatisticsBtn">Refresh</button></div>
     <div class="statistics-filters">
         <div class="statistics-rank-control">
             <span>Include ranks <small>(none selected means all)</small></span>
@@ -753,6 +764,7 @@
         <div>
             <h2>Supervisors</h2>
         </div>
+        <button type="button" id="refreshLeadersBtn">Refresh</button>
     </div>
 
     <div class="log-tabs">
@@ -835,7 +847,7 @@
 
 <script src="/static/session-auth.js?v=shared-session-7"></script>
 <script src="/static/account-settings.js?v=account-settings-5"></script>
-<script src="/static/app.js?v=loi-zones-20261005-3"></script>
+<script src="/static/app.js?v=training-section-layout-20261007-1"></script>
 <script src="/static/sidebar.js?v=operation-command-access-20261005-1"></script>
 <script src="/static/mobile-popovers.js?v=portal-controls-20261004-1"></script>
 

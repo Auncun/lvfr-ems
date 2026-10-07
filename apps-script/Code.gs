@@ -63,6 +63,11 @@ function doPost(e) {
       }
       return output_({ ok: true, data: { ok: true } });
     }
+    if (route === '/internal/logs/clear' && String(input.method || '') === 'POST') {
+      const expected = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
+      if (!expected || !input.workerSecret || !constantTimeEquals_(String(input.workerSecret), expected)) throw new Error('Log cleanup authentication failed.');
+      return output_({ ok: true, data: clearLogsFromSheets_(input.data || {}) });
+    }
     if (route === '/internal/loi') {
       const expected = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
       if (!expected || !input.workerSecret || !constantTimeEquals_(String(input.workerSecret), expected)) throw new Error('LOI authentication failed.');
@@ -2612,4 +2617,33 @@ function requiredProperty_(key) {
 function output_(value) {
   return ContentService.createTextOutput(JSON.stringify(value))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function clearLogsFromSheets_(input) {
+  const allowed = ['promotion', 'callsign', 'termination', 'training', 'training_time', 'loi', 'exam', 'note', 'activity', 'instructor', 'account_audit'];
+  const requested = Array.isArray(input.items) ? input.items.map(value => String(value || '').trim().toLowerCase()) : [];
+  if (!requested.length || requested.some(kind => kind !== 'notifications' && !allowed.includes(kind))) throw new Error('Choose valid log categories.');
+  const result = withScriptLock_(() => {
+    const items = [...new Set(requested)];
+    const logs = items.filter(kind => kind !== 'notifications');
+    const memberLogs = logs.filter(kind => kind !== 'account_audit');
+    if (memberLogs.length) {
+      const sheet = appLogSheet_();
+      const last = sheet.getLastRow();
+      if (last > 1) {
+        const kinds = sheet.getRange(2, 2, last - 1, 1).getDisplayValues().map(row => String(row[0] || '').toLowerCase());
+        const remove = new Set(memberLogs);
+        for (let i = kinds.length - 1; i >= 0; i--) if (remove.has(kinds[i])) sheet.deleteRow(i + 2);
+      }
+      invalidateMemberLogsCache_();
+    }
+    if (logs.includes('account_audit')) {
+      const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+      const sheet = spreadsheet.getSheetByName('Account Audit');
+      if (sheet && sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
+    }
+    return { ok: true, items };
+  });
+  if (result && result.ok && result.items.includes('notifications')) clearNotificationSheets_();
+  return result;
 }

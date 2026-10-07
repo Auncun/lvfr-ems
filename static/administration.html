@@ -5,7 +5,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Operation Command | LVFR EMS</title>
-  <link rel="stylesheet" href="/static/style.css?v=watch-permission-fix-20261005-1">
+  <link rel="stylesheet" href="/static/style.css?v=full-clean-training-rank-20261007-1">
   <style>
     body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:72px 24px 24px}
     .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -19,6 +19,7 @@
     .command-tabs{display:flex;gap:8px;overflow-x:auto;margin:0 0 16px;padding:4px 0 8px;border-bottom:1px solid #27303b}.command-tab{flex:0 0 auto;padding:10px 15px;border:1px solid #303945;border-radius:10px;background:#111720;color:#aeb9c7;font-weight:650}.command-tab.active{border-color:#3984ce;background:#15283a;color:#b8d8ff;box-shadow:inset 0 -2px #58a6ff}.command-section[hidden]{display:none!important}
     @media(max-width:650px){.admin-shell{padding:14px 14px 28px;min-width:0}.admin-card{padding:14px;min-width:0}.admin-header>*,.admin-toolbar>*{min-width:0;max-width:100%}.admin-table-wrap{width:100%;overflow-x:visible;-webkit-overflow-scrolling:touch}.admin-table{display:block;min-width:0!important;width:100%}.admin-table thead{display:none}.admin-table tbody{display:grid;gap:10px}.admin-table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px;padding:10px;border:1px solid #303945;border-radius:12px;background:#0c1219}.admin-table td{display:block;min-width:0;padding:8px 3px!important;border:0!important;border-bottom:1px solid #26313d}.admin-table td::before{content:attr(data-label);display:block;margin-bottom:4px;color:#8b9aaa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}.admin-table td:first-child,.admin-table td:last-child{grid-column:1/-1}.admin-table td:last-child{border:0!important}.admin-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.admin-actions button{min-width:0;overflow-wrap:anywhere}}
     .permissions-card{border-color:#34485d;background:linear-gradient(145deg,#111b27,#111720 60%)}.permissions-heading{align-items:flex-start}.permissions-heading h2{margin:0}.permissions-heading p{max-width:680px;margin:7px 0 0;line-height:1.5}
+    #fullCleaningDialog{max-width:calc(100vw - 28px);max-height:calc(100dvh - 28px);padding:0;border:1px solid #394555;border-radius:14px;background:#111720;color:#f3f6fa}#fullCleaningDialog::backdrop{background:#000a}#fullCleaningDialog form{max-height:calc(100dvh - 30px);overflow:auto}
   </style>
 </head>
 <body>
@@ -72,14 +73,36 @@
       <div class="admin-actions"><button type="button" id="individualPermissionsCustomize" class="primary">Customize permissions</button><button type="button" id="individualPermissionsReset" hidden>Restore to Role</button><button type="button" id="individualPermissionsSave" hidden>Save customization</button></div>
     </section>
     <section id="commandHistorySection" class="admin-card command-section" aria-labelledby="auditHeading" hidden>
-      <div class="admin-header"><h2 id="auditHeading">Recent account activity</h2><button type="button" id="clearAccountAuditBtn" class="danger">Clear D1 audit</button></div>
+      <div class="admin-header"><h2 id="auditHeading">Recent account activity</h2><div class="admin-actions"><button type="button" id="openFullCleaning" class="danger" hidden>Full Cleaning</button><button type="button" id="clearAccountAuditBtn" class="danger">Clear D1 audit</button></div></div>
       <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Date</th><th>Account</th><th>Action</th><th>By</th></tr></thead><tbody id="auditRows"><tr><td colspan="4">Loading history…</td></tr></tbody></table></div>
     </section>
+    <dialog id="fullCleaningDialog" aria-labelledby="fullCleaningTitle">
+      <form method="dialog" class="admin-card" style="min-width:min(440px,calc(100vw - 32px));margin:0">
+        <h2 id="fullCleaningTitle">Full Cleaning</h2><p class="muted">Choose the logs or notifications to remove from D1 and Google Sheets.</p>
+        <label class="permission-item"><input type="checkbox" id="cleanAllLogs"><span><strong>All</strong><small>Select every log and notifications.</small></span></label>
+        <div class="role-permission-groups">
+          <label class="permission-item"><input type="checkbox" data-clean-log="promotion"><span><strong>Promotion</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="callsign"><span><strong>Callsign</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="termination"><span><strong>Termination</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="training"><span><strong>Training</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="training_time"><span><strong>Training Hours</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="loi"><span><strong>LOI</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="exam"><span><strong>Exam</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="note"><span><strong>Notes</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="activity"><span><strong>Activity</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="instructor"><span><strong>Instructor</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="account_audit"><span><strong>Account Audit</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="notifications"><span><strong>Notifications</strong></span></label>
+        </div>
+        <p id="fullCleaningStatus" class="admin-status" role="status"></p>
+        <div class="admin-actions"><button type="button" id="cancelFullCleaning">Cancel</button><button type="button" id="confirmFullCleaning" class="danger">Delete selected</button></div>
+      </form>
+    </dialog>
   </main>
   <script src="/static/session-auth.js?v=shared-session-7"></script>
   <script src="/static/header-controls.js?v=header-controls-1"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
-  <script src="/static/administration.js?v=role-permissions-filter-20261005-1"></script>
+  <script src="/static/administration.js?v=full-clean-permissions-20261007-1"></script>
   <script src="/static/sidebar.js?v=operation-command-access-20261005-1"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 </body>

@@ -50,6 +50,7 @@ function allAccounts() {
 }
 function configureOperationAccess() {
   const allowed = canManageRoleProfiles(), accountManager = canManageCommandAccounts();
+  document.querySelector('#openFullCleaning')?.toggleAttribute('hidden', currentUser?.role !== 'admin');
   document.querySelector('[data-command-section="accounts"]')?.toggleAttribute('hidden', !accountManager);
   document.querySelector('[data-command-section="history"]')?.toggleAttribute('hidden', !accountManager);
   document.querySelector('[data-command-section="permissions"]')?.toggleAttribute('hidden', !allowed);
@@ -137,6 +138,55 @@ document.querySelector('#clearAccountAuditBtn')?.addEventListener('click', async
     setMessage('D1 account audit cleared. Google Sheets was not changed.', 'success');
   } catch (error) {
     setMessage(`Could not clear D1 account audit: ${error.message}`, 'error');
+  } finally { button.disabled = false; }
+});
+const fullCleaningDialog = document.querySelector('#fullCleaningDialog');
+const cleanAllLogs = document.querySelector('#cleanAllLogs');
+document.querySelector('#openFullCleaning')?.addEventListener('click', () => {
+  if (currentUser?.role !== 'admin') return;
+  cleanAllLogs.checked = false;
+  cleanAllLogs.indeterminate = false;
+  fullCleaningDialog.querySelectorAll('[data-clean-log]').forEach(input => { input.checked = false; });
+  const status = document.querySelector('#fullCleaningStatus');
+  status.textContent = ''; status.className = 'admin-status';
+  fullCleaningDialog.showModal();
+});
+cleanAllLogs?.addEventListener('change', () => {
+  cleanAllLogs.indeterminate = false;
+  fullCleaningDialog.querySelectorAll('[data-clean-log]').forEach(input => { input.checked = cleanAllLogs.checked; });
+});
+fullCleaningDialog?.querySelectorAll('[data-clean-log]').forEach(input => input.addEventListener('change', () => {
+  const options = [...fullCleaningDialog.querySelectorAll('[data-clean-log]')];
+  cleanAllLogs.checked = options.every(option => option.checked);
+  cleanAllLogs.indeterminate = options.some(option => option.checked) && !cleanAllLogs.checked;
+}));
+document.querySelector('#cancelFullCleaning')?.addEventListener('click', () => fullCleaningDialog.close());
+document.querySelector('#confirmFullCleaning')?.addEventListener('click', async event => {
+  if (!currentUser?.is_admin) return;
+  const items = cleanAllLogs.checked ? ['all'] : [...fullCleaningDialog.querySelectorAll('[data-clean-log]:checked')].map(input => input.dataset.cleanLog);
+  const status = document.querySelector('#fullCleaningStatus');
+  if (!items.length) { status.textContent = 'Select at least one log or choose All.'; status.className = 'admin-status error'; return; }
+  const description = cleanAllLogs.checked ? 'all logs and notifications' : `${items.length} selected item(s)`;
+  if (!window.confirm(`Permanently delete ${description} from D1 and Google Sheets?`)) return;
+  const button = event.currentTarget;
+  button.disabled = true; status.textContent = 'Cleaning selected data...'; status.className = 'admin-status';
+  try {
+    await api('/api/logs/clean', { method: 'POST', body: JSON.stringify({ items }) });
+    const accountId = currentUser.account_id || currentUser.id || 'current';
+    const knownLogs = ['promotion','callsign','termination','training','training_time','loi','exam','note','activity','instructor'];
+    try { knownLogs.forEach(kind => sessionStorage.removeItem(`lvfr.log.${accountId}.${kind}.v1`)); } catch {}
+    if (items.includes('account_audit') || items.includes('all')) { overview.audit = []; renderAudit(); void loadAccounts(true); }
+    if (items.includes('notifications') || items.includes('all')) {
+      notificationItems = [];
+      try { localStorage.setItem(notificationCacheKey, '[]'); } catch {}
+      renderNotifications(0);
+    }
+    status.textContent = 'Selected logs and notifications were removed from D1 and Google Sheets.';
+    status.className = 'admin-status success';
+    window.setTimeout(() => fullCleaningDialog.close(), 1000);
+  } catch (error) {
+    status.textContent = `Cleanup failed: ${error.message}`;
+    status.className = 'admin-status error';
   } finally { button.disabled = false; }
 });
 async function loadAccounts(silent = false) {
@@ -277,6 +327,7 @@ const permissionGroups = [
     ['members_view', 'Members list', 'View the roster and member list.'], ['eligible_view', 'Eligible list', 'View promotion eligibility.'], ['promotion_access', 'Access Promotion', 'Open the Promotion page and view eligible members.'],
     ['profile_view', 'Member profiles', 'Open member View / Manage details.'], ['inactive_view', 'Can Be Terminated list', 'View members marked for termination.'],
     ['logs_view', 'Members Log', 'View member operation logs.'], ['statistics_view', 'Statistics', 'View roster statistics.'],
+    ['logs_delete_d1', 'Delete logs from D1', 'Delete the selected log from the website database.'], ['logs_clean_full', 'Full Cleaning', 'Delete selected logs and notifications from D1 and Google Sheets.'],
     ['training_view', 'Training lists', 'Open FORT, HERT, and instructor directories.'], ['training_hours_view', 'Training Hours: view', 'View Training Hours records.'],
     ['do_not_promote_view', 'Do not Promote: view', 'View the Do not Promote list.'], ['sync_view', 'Sync status', 'View roster synchronization status.'],
   ] },
