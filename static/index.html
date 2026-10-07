@@ -18,7 +18,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=all-lists-refresh-20261007-1"
+    href="/static/style.css?v=refresh-icons-blue-submenus-20261007-1"
 >
 
 <style>
@@ -294,13 +294,10 @@
         </div>
 
 
-        <button type="button" id="refreshMembersBtn">Refresh</button>
-        <span
-            id="memberCount"
-            class="count"
-        >
-            0
-        </span>
+        <div class="member-heading-controls">
+            <span id="memberCount" class="count">0</span>
+            <button type="button" class="list-refresh" id="refreshMembersBtn" aria-label="Refresh members" title="Refresh members"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M20 12a8 8 0 1 1-2.34-5.66L20 12"/></svg></button>
+        </div>
 
 
     </div>
@@ -387,16 +384,16 @@
 </section>
 
 <section id="trainingDirectory" class="panel">
-  <div class="section-head"><div><h2>Training</h2></div><button type="button" id="refreshTrainingBtn">Refresh</button></div>
-  <div class="training-directory-tabs"><button type="button" class="log-tab active" data-training-view="HERT">HERT</button><button type="button" class="log-tab" data-training-view="FORT">FORT</button><button type="button" class="log-tab" data-training-view="HOURS">Training Hours</button></div>
+  <div class="section-head"><div><h2>Training</h2></div><button type="button" class="list-refresh" id="refreshTrainingBtn" aria-label="Refresh training list" title="Refresh training list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M20 12a8 8 0 1 1-2.34-5.66L20 12"/></svg></button></div>
+  <div class="training-directory-tabs"><button type="button" class="log-tab active" id="hertTrainingTab" data-training-view="HERT" aria-current="page">HERT</button><button type="button" class="log-tab" id="fortTrainingTab" data-training-view="FORT">FORT</button><button type="button" class="log-tab" id="trainingHoursTab" data-training-view="HOURS">Training Hours</button></div>
   <section class="training-directory-view" data-training-panel="HERT">
-    <div class="training-directory-tabs"><button type="button" class="log-tab active" data-training-section="HERT_CERTIFIED">HERT Certified</button><button type="button" class="log-tab" data-training-section="HERT_INSTRUCTOR">Instructor</button><button type="button" class="log-tab" data-training-section="HERT_LOI">LOI</button></div>
+    <div class="training-directory-tabs"><button type="button" class="log-tab active" id="hertCertifiedTab" data-training-section="HERT_CERTIFIED" aria-current="page">HERT Certified</button><button type="button" class="log-tab" id="hertInstructorTab" data-training-section="HERT_INSTRUCTOR">Instructor</button><button type="button" class="log-tab" id="hertLoiTab" data-training-section="HERT_LOI">LOI</button></div>
     <section data-training-subpanel="HERT_CERTIFIED"><div class="training-directory-filters"><label class="training-directory-search">Search HERT members<input type="search" id="hertCertifiedSearch" aria-label="Search HERT Certified members" placeholder="Search callsign or member"></label></div><div id="hertTrainingTable" class="table-wrap"></div></section>
     <section data-training-subpanel="HERT_INSTRUCTOR" hidden><div class="training-directory-filters"><label class="training-directory-search">Search HERT instructors<input type="search" id="hertInstructorSearch" aria-label="Search HERT instructors" placeholder="Search callsign or member"></label></div><div id="hertInstructorTable" class="table-wrap"></div></section>
     <section data-training-subpanel="HERT_LOI" hidden><div class="training-directory-filters"><label class="training-directory-search">Search HERT LOI<input id="hertLoiSearch" type="search" placeholder="Search member"></label><button type="button" class="primary" data-open-loi-add="HERT">Add HERT LOI</button></div><div id="hertLoiTable" class="table-wrap"></div></section>
   </section>
   <section class="training-directory-view" data-training-panel="FORT" hidden>
-    <div class="training-directory-tabs"><button type="button" class="log-tab active" data-training-section="FORT_TRAINING">FORT Training</button><button type="button" class="log-tab" data-training-section="FORT_INSTRUCTOR">Instructor</button><button type="button" class="log-tab" data-training-section="FORT_LOI">LOI</button></div>
+    <div class="training-directory-tabs"><button type="button" class="log-tab active" id="fortTrainingSectionTab" data-training-section="FORT_TRAINING">FORT Training</button><button type="button" class="log-tab" id="fortInstructorTab" data-training-section="FORT_INSTRUCTOR">Instructor</button><button type="button" class="log-tab" id="fortLoiTab" data-training-section="FORT_LOI">LOI</button></div>
     <section data-training-subpanel="FORT_TRAINING"><div class="training-directory-filters"><label class="training-directory-search">Search FORT members<input type="search" id="fortTrainingSearch" aria-label="Search FORT members" placeholder="Search callsign or member"></label></div><div id="fortTrainingTable" class="table-wrap"></div></section>
     <section data-training-subpanel="FORT_INSTRUCTOR" hidden><div class="training-directory-filters"><label class="training-directory-search">Search FORT instructors<input type="search" id="fortInstructorSearch" aria-label="Search FORT instructors" placeholder="Search callsign or member"></label></div><div id="fortInstructorTable" class="table-wrap"></div></section>
     <section data-training-subpanel="FORT_LOI" hidden><div class="training-directory-filters"><label class="training-directory-search">Search FORT LOI<input id="fortLoiSearch" type="search" placeholder="Search member"></label><button type="button" class="primary" data-open-loi-add="FORT">Add FORT LOI</button></div><div id="fortLoiTable" class="table-wrap"></div></section>
@@ -429,7 +426,7 @@
 
 
         </div>
-        <button type="button" id="refreshEligibleBtn">Refresh</button>
+        <button type="button" class="list-refresh" id="refreshEligibleBtn" aria-label="Refresh eligible list" title="Refresh eligible list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M20 12a8 8 0 1 1-2.34-5.66L20 12"/></svg></button>
 
 
     </div>
@@ -458,7 +455,7 @@
      ========================================================= -->
 
 <section id="doNotPromote" class="panel">
-    <div class="section-head"><div><h2>Do not Promote</h2></div><button type="button" id="refreshDoNotPromoteBtn">Refresh</button></div>
+    <div class="section-head"><div><h2>Do not Promote</h2></div><button type="button" class="list-refresh" id="refreshDoNotPromoteBtn" aria-label="Refresh Do not Promote list" title="Refresh Do not Promote list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M20 12a8 8 0 1 1-2.34-5.66L20 12"/></svg></button></div>
     <div class="table-wrap" id="doNotPromoteTable"></div>
 </section>
 
@@ -484,7 +481,7 @@
 
 
         </div>
-        <button type="button" id="refreshInactiveBtn">Refresh</button>
+        <button type="button" class="list-refresh" id="refreshInactiveBtn" aria-label="Refresh termination list" title="Refresh termination list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M20 12a8 8 0 1 1-2.34-5.66L20 12"/></svg></button>
 
 
     </div>
@@ -548,7 +545,7 @@
         </div>
 
 
-        <button type="button" id="refreshMembersLogBtn">Refresh</button>
+        <button type="button" class="list-refresh" id="refreshMembersLogBtn" aria-label="Refresh member log" title="Refresh member log"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M20 12a8 8 0 1 1-2.34-5.66L20 12"/></svg></button>
     </div>
 
 
@@ -713,7 +710,7 @@
 
 
 <section id="statistics" class="panel">
-    <div class="section-head"><div><h2>Statistics</h2><p>Training and instructor coverage</p></div><button type="button" id="refreshStatisticsBtn">Refresh</button></div>
+    <div class="section-head"><div><h2>Statistics</h2><p>Training and instructor coverage</p></div><button type="button" class="list-refresh" id="refreshStatisticsBtn" aria-label="Refresh statistics" title="Refresh statistics"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M20 12a8 8 0 1 1-2.34-5.66L20 12"/></svg></button></div>
     <div class="statistics-filters">
         <div class="statistics-rank-control">
             <span>Include ranks <small>(none selected means all)</small></span>
@@ -764,7 +761,7 @@
         <div>
             <h2>Supervisors</h2>
         </div>
-        <button type="button" id="refreshLeadersBtn">Refresh</button>
+        <button type="button" class="list-refresh" id="refreshLeadersBtn" aria-label="Refresh supervisors" title="Refresh supervisors"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M20 12a8 8 0 1 1-2.34-5.66L20 12"/></svg></button>
     </div>
 
     <div class="log-tabs">
@@ -847,8 +844,8 @@
 
 <script src="/static/session-auth.js?v=shared-session-7"></script>
 <script src="/static/account-settings.js?v=account-settings-5"></script>
-<script src="/static/app.js?v=training-section-layout-20261007-1"></script>
-<script src="/static/sidebar.js?v=operation-command-access-20261005-1"></script>
+<script src="/static/app.js?v=refresh-icons-blue-submenus-20261007-1"></script>
+<script src="/static/sidebar.js?v=refresh-icons-blue-submenus-20261007-1"></script>
 <script src="/static/mobile-popovers.js?v=portal-controls-20261004-1"></script>
 
 

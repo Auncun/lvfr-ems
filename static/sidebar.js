@@ -5,8 +5,17 @@
       href: '/', title: 'LVFR EMS Operations', items: [
         { label: 'Members', tab: 'members' },
         { label: 'Training', children: [
-          { label: 'FORT', tab: 'trainingDirectory', training: 'FORT' },
-          { label: 'HERT', tab: 'trainingDirectory', training: 'HERT' }
+          { label: 'HERT', tab: 'trainingDirectory', training: 'HERT', availability: '#hertTrainingTab', children: [
+            { label: 'HERT Certified', tab: 'trainingDirectory', training: 'HERT', trainingSection: 'HERT_CERTIFIED', availability: '#hertCertifiedTab' },
+            { label: 'HERT Instructor', tab: 'trainingDirectory', training: 'HERT', trainingSection: 'HERT_INSTRUCTOR', availability: '#hertInstructorTab' },
+            { label: 'HERT LOI', tab: 'trainingDirectory', training: 'HERT', trainingSection: 'HERT_LOI', availability: '#hertLoiTab' }
+          ] },
+          { label: 'FORT', tab: 'trainingDirectory', training: 'FORT', availability: '#fortTrainingTab', children: [
+            { label: 'FORT Training', tab: 'trainingDirectory', training: 'FORT', trainingSection: 'FORT_TRAINING', availability: '#fortTrainingSectionTab' },
+            { label: 'FORT Instructor', tab: 'trainingDirectory', training: 'FORT', trainingSection: 'FORT_INSTRUCTOR', availability: '#fortInstructorTab' },
+            { label: 'FORT LOI', tab: 'trainingDirectory', training: 'FORT', trainingSection: 'FORT_LOI', availability: '#fortLoiTab' }
+          ] },
+          { label: 'Training Hours', tab: 'trainingDirectory', training: 'HOURS', availability: '#trainingHoursTab' }
         ] },
         { label: 'Eligible', tab: 'eligible' },
         { label: 'Do not Promote', tab: 'doNotPromote', availability: '#doNotPromoteTab' },
@@ -62,9 +71,10 @@
     const availability = item.availability ? ` data-availability="${item.availability}"` : '';
     const attrs = item.tab ? ` data-tab="${item.tab}"` : '';
     const extra = item.log ? ` data-log="${item.log}"` : item.leader ? ` data-leader="${item.leader}"` : item.status ? ` data-status="${item.status}"` : item.training ? ` data-training="${item.training}"` : '';
+    const trainingSection = item.trainingSection ? ` data-training-section="${item.trainingSection}"` : '';
     const control = item.anchor
       ? `<a class="sidebar-item-action" href="${page.href}${item.anchor}" data-sidebar-item data-page="${page.href}"${availability}>${esc(item.label)}</a>`
-      : `<button class="sidebar-item-action" type="button" data-sidebar-item data-page="${page.href}"${attrs}${extra}${availability}>${esc(item.label)}</button>`;
+      : `<button class="sidebar-item-action" type="button" data-sidebar-item data-page="${page.href}"${attrs}${extra}${trainingSection}${availability}>${esc(item.label)}</button>`;
     const expand = children.length
       ? `<button type="button" class="sidebar-expand sidebar-tree-expand" aria-label="Show ${esc(item.label)} submenus" title="Show submenus" aria-expanded="false" aria-controls="${id}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`
       : '';
@@ -153,6 +163,7 @@
       }
       document.querySelector(`[data-tab="${targetTab}"]`)?.click();
       if (item.dataset.training) document.querySelector(`[data-training-view="${item.dataset.training}"]`)?.click();
+      if (item.dataset.trainingSection) document.querySelector(`[data-training-section="${item.dataset.trainingSection}"]`)?.click();
       if (item.dataset.log) document.querySelector(`[data-log="${item.dataset.log}"]`)?.click();
       if (item.dataset.leader) document.querySelector(`[data-leader-view="${item.dataset.leader}"]`)?.click();
       close();
@@ -255,6 +266,11 @@
       if (tab === 'membersLog') {
         const log = document.querySelector('.log-tabs .log-tab.active[data-log]')?.dataset.log;
         if (log) selector += `[data-log="${log}"]`;
+      } else if (tab === 'trainingDirectory') {
+        const training = document.querySelector('[data-training-view].active')?.dataset.trainingView;
+        const section = document.querySelector(`[data-training-panel="${training}"] [data-training-section].active`)?.dataset.trainingSection;
+        if (section) selector += `[data-training="${training}"][data-training-section="${section}"]`;
+        else if (training) selector += `[data-training="${training}"]:not([data-training-section])`;
       } else if (tab === 'leaders') {
         const view = document.querySelector('.leader-view-tab.active[data-leader-view]')?.dataset.leaderView;
         if (view) selector += `[data-leader="${view}"]`;
@@ -323,10 +339,10 @@
   };
   refreshAccess();
   document.addEventListener('click', event => {
-    if (event.target.closest('.tabs, .log-tabs, .admin-tabs')) requestAnimationFrame(refreshActiveNavigation);
+    if (event.target.closest('.tabs, .log-tabs, .training-directory-tabs, .admin-tabs')) requestAnimationFrame(refreshActiveNavigation);
   });
-  const navigationObservers = ['.tabs', '.log-tabs', '.admin-tabs']
-    .map(selector => document.querySelector(selector)).filter(Boolean);
+  const navigationObservers = ['.tabs', '.log-tabs', '.training-directory-tabs', '.admin-tabs']
+    .flatMap(selector => [...document.querySelectorAll(selector)]);
   navigationObservers.forEach(container => new MutationObserver(refreshActiveNavigation)
     .observe(container, { subtree: true, attributes: true, attributeFilter: ['class', 'aria-pressed', 'style'] }));
   let scrollUpdatePending = false;

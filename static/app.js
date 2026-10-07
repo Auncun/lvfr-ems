@@ -1187,13 +1187,21 @@ function renderTrainingDirectory(members = allMembersCache || []) {
 
 document.querySelectorAll(".training-directory-search input").forEach(input => input.addEventListener("input", () => renderTrainingDirectory()));
 document.querySelectorAll("[data-training-view]").forEach(button => button.addEventListener("click", () => {
-    document.querySelectorAll("[data-training-view]").forEach(item => item.classList.toggle("active", item === button));
+    document.querySelectorAll("[data-training-view]").forEach(item => {
+        const active = item === button;
+        item.classList.toggle("active", active);
+        if (active) item.setAttribute("aria-current", "page"); else item.removeAttribute("aria-current");
+    });
     document.querySelectorAll("[data-training-panel]").forEach(panel => { panel.hidden = panel.dataset.trainingPanel !== button.dataset.trainingView; });
     if (button.dataset.trainingView === "HOURS") void loadTrainingHours();
 }));
 document.querySelectorAll("[data-training-section]").forEach(button => button.addEventListener("click", () => {
     const panel = button.closest("[data-training-panel]");
-    panel?.querySelectorAll("[data-training-section]").forEach(item => item.classList.toggle("active", item === button));
+    panel?.querySelectorAll("[data-training-section]").forEach(item => {
+        const active = item === button;
+        item.classList.toggle("active", active);
+        if (active) item.setAttribute("aria-current", "page"); else item.removeAttribute("aria-current");
+    });
     panel?.querySelectorAll("[data-training-subpanel]").forEach(section => { section.hidden = section.dataset.trainingSubpanel !== button.dataset.trainingSection; });
     if (button.dataset.trainingSection.endsWith("_LOI")) void loadLoiLists();
     else renderTrainingDirectory();
