@@ -5451,8 +5451,10 @@ function refreshVisibleRosterView() {
     else if (activeTab === "trainingDirectory") {
         if ($('[data-training-view="HOURS"]')?.classList.contains("active")) { if (currentUserHasPermission("training_hours_view")) void loadTrainingHours(true); }
         else if (document.querySelector('[data-training-panel]:not([hidden]) [data-training-section].active')?.dataset.trainingSection.endsWith("_LOI")) {
-            // LOI refreshes when its tab opens or after a mutation. Sheet edits
-            // flow back to D1 through Apps Script triggers; there is no poll.
+            // Sheet edits flow to D1 through Apps Script triggers. Refresh the
+            // visible list so those external edits appear without reopening it.
+            apiReadCache.delete("/api/loi");
+            void loadLoiLists(true);
         }
         else if (["hert_certified_view","hert_instructor_view","fort_training_view","fort_instructor_view"].some(key=>currentUserHasPermission(key))) void loadMembers(true, true);
     }

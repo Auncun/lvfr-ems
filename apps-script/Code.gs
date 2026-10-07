@@ -1176,12 +1176,36 @@ function eligibleMembers_() {
 // formatting changes such as activity, training, exam, and instructor colors.
 function installRosterD1SyncTriggers() {
   const ids = [requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'), requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')];
-  const handlers = ['syncRosterToD1OnEdit_', 'syncRosterToD1OnChange_'];
-  ScriptApp.getProjectTriggers().filter(trigger => handlers.includes(trigger.getHandlerFunction()))
-    .forEach(trigger => ScriptApp.deleteTrigger(trigger));
-  ids.filter((id, index) => ids.indexOf(id) === index).forEach(id => ScriptApp.newTrigger('syncRosterToD1OnEdit_').forSpreadsheet(id).onEdit().create());
-  ScriptApp.newTrigger('syncRosterToD1OnChange_')
-    .forSpreadsheet(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')).onChange().create();
+  const desired = ids.filter((id, index) => ids.indexOf(id) === index)
+    .map(id => ({ handler: 'syncRosterToD1OnEdit_', spreadsheetId: id, event: 'edit' }));
+  desired.push({ handler: 'syncRosterToD1OnChange_', spreadsheetId: requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'), event: 'change' });
+  const existing = ScriptApp.getProjectTriggers();
+  desired.forEach(item => {
+    const matches = existing.filter(trigger => trigger.getHandlerFunction() === item.handler && trigger.getTriggerSourceId() === item.spreadsheetId);
+    matches.slice(1).forEach(trigger => ScriptApp.deleteTrigger(trigger));
+    if (matches.length) return;
+    const builder = ScriptApp.newTrigger(item.handler).forSpreadsheet(item.spreadsheetId);
+    (item.event === 'edit' ? builder.onEdit() : builder.onChange()).create();
+  });
+  return diagnoseRosterD1Sync();
+}
+
+// Reports trigger installation and non-secret sync configuration to the editor log.
+function diagnoseRosterD1Sync() {
+  const properties = PropertiesService.getScriptProperties();
+  const rosterId = String(properties.getProperty('LVFR_ROSTER_SPREADSHEET_ID') || '');
+  const privateId = String(properties.getProperty('LVFR_PRIVATE_SPREADSHEET_ID') || '');
+  const triggers = ScriptApp.getProjectTriggers().map(trigger => ({
+    handler: trigger.getHandlerFunction(), source_id: trigger.getTriggerSourceId()
+  })).filter(trigger => ['syncRosterToD1OnEdit_', 'syncRosterToD1OnChange_'].includes(trigger.handler));
+  const result = {
+    roster_spreadsheet_configured: Boolean(rosterId), private_spreadsheet_configured: Boolean(privateId),
+    d1_url_configured: Boolean(properties.getProperty('LVFR_D1_SYNC_URL')),
+    worker_secret_configured: Boolean(properties.getProperty('LVFR_D1_WORKER_SECRET')),
+    triggers
+  };
+  console.log('Roster D1 sync diagnostic: ' + JSON.stringify(result));
+  return result;
 }
 
 // Run once if Training Hours edits in the roster spreadsheet are not reaching D1.
@@ -1257,6 +1281,7 @@ function syncRosterToD1OnChange_(event) {
       if (event.source.getId() === requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')) {
         syncTrainingHoursSheetToD1_();
         syncLoiSheetToD1_();
+        syncRosterSnapshotToD1_('trigger:onChange:' + changeType, false);
       }
       return;
     }
