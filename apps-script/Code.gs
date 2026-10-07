@@ -1777,13 +1777,26 @@ function moveMember_(member, target, newRank, user, operation) {
   const destination = [...sourceValues.slice(0, 8)];
   destination[0] = target.callsign;
   destination[1] = member.name;
-  destination[2] = operation === 'CALLSIGN_CHANGE'
-    ? sourceValues[2]
-    : Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MM/dd/yyyy');
+  const destinationUsesRankDate = rankLevel_(newRank) <= rankLevel_('Paramedic');
+  if (destinationUsesRankDate) {
+    destination[2] = operation === 'CALLSIGN_CHANGE'
+      ? sourceValues[2]
+      : Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MM/dd/yyyy');
+  }
   destination[3] = '=TODAY()-D' + target.row;
-  sheet.getRange(target.row, 2, 1, 8).setValues([destination]);
+  // Senior ranks do not use column D. Leave the destination cell untouched
+  // when moving into Lead Paramedic or above.
+  sheet.getRange(target.row, 2, 1, 2).setValues([[destination[0], destination[1]]]);
+  if (destinationUsesRankDate) sheet.getRange(target.row, 4).setValue(destination[2]);
+  sheet.getRange(target.row, 5, 1, 4).setValues([destination.slice(3, 7)]);
+  sheet.getRange(target.row, 9).setValue(destination[7]);
   sheet.getRange(target.row, 11).setValue(sourceValues[9]); // Notes (K) only
-  sheet.getRange(member.row, 3, 1, 7).clearContent().setBackground('#ffffff');
+  if (rankLevel_(oldRank) > rankLevel_('Paramedic')) {
+    sheet.getRange(member.row, 3, 1, 1).clearContent().setBackground('#ffffff');
+    sheet.getRange(member.row, 5, 1, 5).clearContent().setBackground('#ffffff');
+  } else {
+    sheet.getRange(member.row, 3, 1, 7).clearContent().setBackground('#ffffff');
+  }
   sheet.getRange(member.row, 11).clearContent().setBackground('#ffffff'); // K only
   sheet.getRange(member.row, 2).setValue(oldCallsign);
   if (member.do_not_promote) moveDoNotPromoteCallsign_(oldCallsign, target.callsign, member.name);

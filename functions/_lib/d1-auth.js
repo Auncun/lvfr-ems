@@ -260,7 +260,7 @@ async function ensureOrderedMembersView(db) {
   orderedMembersViewReady = true;
 }
 const RANK_LEVEL = { "Probationary Volunteer":1, "Probationary":1, EMR:1, "EMR/Volunteer":1, Volunteer:2, "Senior Volunteer":3, EMT:4, AEMT:5, "Advanced EMT":5, Paramedic:6, "Lead Paramedic":7, Lieutenant:8, Captain:9, "Division Commander":10, "County Command":11, Chief:12, Commissioners:13 };
-async function applyRosterMutationD1(db, route, data, actor, context, env, url) {
+async function applyRosterMutationD1(db, route, data, actor) {
   await ensureCallsignSlotsTable(db);
   const admin=["admin","commander"].includes(String(actor.role||""));
   const cs=String(data.callsign||"").trim().toUpperCase(), old=await db.prepare("SELECT * FROM members WHERE upper(callsign)=?").bind(cs).first();
@@ -305,19 +305,7 @@ async function applyRosterMutationD1(db, route, data, actor, context, env, url) 
       db.prepare("DELETE FROM loi_entries WHERE upper(callsign)=upper(?) OR (coalesce(callsign,'')='' AND lower(trim(name))=lower(trim(?)))").bind(old.callsign,old.name),
       db.prepare("INSERT OR REPLACE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(rankForCallsign(old.callsign),old.callsign,old.sheet_row,now)
     ]);
-    let sheetCleaned=true,sheetCleanupError="";
-    try {
-      const bridgeAssertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(actor,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
-      const {proxyToAppsScript}=await import("../[[path]].js");
-      const cleanup=await proxyToAppsScript(context,"/internal/member/cleanup",url,bridgeAssertion,{callsign:old.callsign,name:old.name});
-      const cleanupResult=await cleanup.json().catch(()=>({}));
-      if(!cleanup.ok||cleanupResult.ok!==true) throw new Error(cleanupResult.detail||cleanupResult.error||"Apps Script did not confirm training cleanup.");
-    } catch(error) {
-      sheetCleaned=false;
-      sheetCleanupError=String(error?.message||error).slice(0,400);
-      console.error("Terminated member training Sheet cleanup failed:",sheetCleanupError);
-    }
-    return {ok:true,sheet_cleaned:sheetCleaned,...(sheetCleanupError?{sheet_cleanup_error:sheetCleanupError}:{})};
+    return {ok:true};
   }
   else if(["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign"].includes(route)) {
     const nextRank=route==="/api/promote"?(rankEligibility(memberFromRow(old)).next_rank):String(data.new_rank||old.rank).trim();
@@ -1126,7 +1114,7 @@ export async function handleD1(context) {
       const mutationData={...data};
       if(instructorWrite) mutationData.callsign=decodeURIComponent(instructorWrite[1]).toUpperCase();
       const oldMember=await db.prepare("SELECT * FROM members WHERE upper(callsign)=upper(?)").bind(mutationData.callsign).first();
-      const result=await applyRosterMutationD1(db,route,mutationData,user,context,env,url);
+      const result=await applyRosterMutationD1(db,route,mutationData,user);
       if(result.changed!==false && oldMember) await writeOperationalLog(db,oldMember,route,mutationData,result,user);
       const isHertTraining=route==="/api/training" && String(mutationData.training||"").trim().toLowerCase()==="hert";
       // Sheets can be out of sync with D1 (for example after a manual edit or
@@ -1139,6 +1127,22 @@ export async function handleD1(context) {
         const { proxyToAppsScript } = await import("../[[path]].js");
         const sheetResponse=await proxyToAppsScript(context,route,url,assertion,mutationData);
         if(!sheetResponse.ok) return json({detail:"Instructor state was saved in D1, but Google Sheets could not be updated: "+await sheetResponse.text()},502);
+      } else if(route==="/api/terminate") {
+        let sheetCleaned=true,sheetCleanupError="";
+        try {
+          const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
+          const { proxyToAppsScript } = await import("../[[path]].js");
+          const sheetResponse=await proxyToAppsScript(context,route,url,assertion,mutationData);
+          if(!sheetResponse.ok) throw new Error(await sheetResponse.text());
+          const sheetResult=await sheetResponse.json().catch(()=>({}));
+          if(sheetResult.ok!==true) throw new Error(sheetResult.error||"Apps Script did not confirm the termination and training cleanup.");
+        } catch(error) {
+          sheetCleaned=false;
+          sheetCleanupError=String(error?.message||error).slice(0,400);
+          console.error("Terminated member Sheet cleanup failed:",sheetCleanupError);
+        }
+        result.sheet_cleaned=sheetCleaned;
+        if(sheetCleanupError) result.sheet_cleanup_error=sheetCleanupError;
       } else if(result.changed!==false || isHertTraining) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
         const { proxyToAppsScript } = await import("../[[path]].js");
