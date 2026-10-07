@@ -260,7 +260,7 @@ async function ensureOrderedMembersView(db) {
   orderedMembersViewReady = true;
 }
 const RANK_LEVEL = { "Probationary Volunteer":1, "Probationary":1, EMR:1, "EMR/Volunteer":1, Volunteer:2, "Senior Volunteer":3, EMT:4, AEMT:5, "Advanced EMT":5, Paramedic:6, "Lead Paramedic":7, Lieutenant:8, Captain:9, "Division Commander":10, "County Command":11, Chief:12, Commissioners:13 };
-async function applyRosterMutationD1(db, route, data, actor) {
+async function applyRosterMutationD1(db, route, data, actor, context, env, url) {
   await ensureCallsignSlotsTable(db);
   const admin=["admin","commander"].includes(String(actor.role||""));
   const cs=String(data.callsign||"").trim().toUpperCase(), old=await db.prepare("SELECT * FROM members WHERE upper(callsign)=?").bind(cs).first();
@@ -285,7 +285,18 @@ async function applyRosterMutationD1(db, route, data, actor) {
     cols.has_supervisor_exam=remove?0:1;
     result={ok:true,changed:true,status:remove?"removed":"added",message:remove?"Exam removed":"Exam added"};
   }
-  else if(route==="/api/member/"+cs+"/instructor") { const type=String(data.instructor_type||"").toUpperCase(); if(!["HERT","FORT"].includes(type)) throw new Error("Choose HERT or FORT."); const set=new Set(String(old.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(Boolean)); if(data.assigned)set.add(type);else set.delete(type); cols.instructor_type=[...set].sort().join(" / "); }
+  else if(route==="/api/member/"+cs+"/instructor") {
+    const type=String(data.instructor_type||"").toUpperCase(), assigned=Boolean(data.assigned);
+    if(!["HERT","FORT"].includes(type)) throw new Error("Choose HERT or FORT.");
+    const set=new Set(String(old.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(Boolean));
+    const wasAssigned=set.has(type);
+    if(wasAssigned===assigned) result={ok:true,changed:false,assigned,instructor_type:type,status:assigned?"already_assigned":"already_removed",message:assigned?"Already assigned":"Already removed"};
+    else {
+      if(assigned)set.add(type);else set.delete(type);
+      result={ok:true,changed:true,assigned,instructor_type:type,status:assigned?"assigned":"removed",message:assigned?"Instructor added":"Instructor removed"};
+    }
+    cols.instructor_type=[...set].sort().join(" / ");
+  }
   else if(route==="/api/do-not-promote") cols.do_not_promote=data.blocked?1:0;
   else if(route==="/api/terminate") {
     await db.batch([
@@ -296,7 +307,7 @@ async function applyRosterMutationD1(db, route, data, actor) {
     ]);
     let sheetCleaned=true,sheetCleanupError="";
     try {
-      const bridgeAssertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
+      const bridgeAssertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(actor,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
       const {proxyToAppsScript}=await import("../[[path]].js");
       const cleanup=await proxyToAppsScript(context,"/internal/member/cleanup",url,bridgeAssertion,{callsign:old.callsign,name:old.name});
       const cleanupResult=await cleanup.json().catch(()=>({}));
@@ -1115,7 +1126,7 @@ export async function handleD1(context) {
       const mutationData={...data};
       if(instructorWrite) mutationData.callsign=decodeURIComponent(instructorWrite[1]).toUpperCase();
       const oldMember=await db.prepare("SELECT * FROM members WHERE upper(callsign)=upper(?)").bind(mutationData.callsign).first();
-      const result=await applyRosterMutationD1(db,route,mutationData,user);
+      const result=await applyRosterMutationD1(db,route,mutationData,user,context,env,url);
       if(result.changed!==false && oldMember) await writeOperationalLog(db,oldMember,route,mutationData,result,user);
       const isHertTraining=route==="/api/training" && String(mutationData.training||"").trim().toLowerCase()==="hert";
       // Sheets can be out of sync with D1 (for example after a manual edit or
