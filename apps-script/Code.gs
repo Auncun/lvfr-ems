@@ -152,16 +152,6 @@ function dispatch_(route, method, params, data, user) {
     const result = syncRosterSnapshotToD1_('full-manual', true);
     return Object.assign({}, result, { message: 'Full roster sync completed' });
   }
-  if (route === '/api/overwrite' && method === 'POST') {
-    if (String(user.role || '').toLowerCase() !== 'admin') throw new Error('Only Operation can overwrite the D1 roster.');
-    const result = syncRosterSnapshotToD1_('overwrite', true);
-    const history = migrateLogsAndNotificationsToD1();
-    return Object.assign({}, result, {
-      operational_logs_synced: Number(history.operational_logs || 0),
-      notifications_synced: Number(history.notifications || 0),
-      message: 'D1 roster, Callsign slots, logs, and notifications synchronized from Google Sheets'
-    });
-  }
   if (route === '/api/notifications' && method === 'GET') { requireApproved_(user); return listNotifications_(user); }
   if (route === '/api/notifications/read' && method === 'POST') { requireApproved_(user); return markNotificationsRead_(data, user); }
   if (route === '/api/leaders' && method === 'GET') { requireAdmin_(user); return leaderOverview_(); }

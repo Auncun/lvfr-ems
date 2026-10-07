@@ -1040,9 +1040,24 @@ export async function handleD1(context) {
     }
     if(route==="/api/overwrite" && method==="POST") {
       if(user.role!=="admin") throw Object.assign(new Error("Only Operation can overwrite the D1 roster."),{status:403});
-      const result=await gasCall(env,"/api/overwrite","POST",{},await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
-      if(!result||result.ok!==true) throw new Error("Apps Script returned an invalid overwrite result.");
-      return json(result);
+      const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
+      const result=await syncMembersFromAppsScript(env,assertion,true);
+      // Older deployed Apps Script releases do not yet have /api/overwrite.
+      // Read the existing termination-log API and restore missing D1 entries
+      // with the same source keys used by the Sheet history importer.
+      const history=await gasCall(env,"/api/termination-log","GET",{},assertion);
+      if(!Array.isArray(history)) throw new Error("Roster sync completed, but Apps Script returned an invalid termination log.");
+      let restored=0;
+      for(const row of history) {
+        const id=String(row.id||"");
+        const sourceKey=id.startsWith("archive-")
+          ? "archive:"+String(row.log_date||row.termination_date||"")+":"+String(row.action||row.event||"")
+          : id ? "app:"+id : "";
+        const inserted=await db.prepare(`INSERT OR IGNORE INTO operational_logs(source_key,kind,log_date,callsign,member_name,action,details,changed_by,old_rank,new_rank,old_callsign,new_callsign)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).bind(sourceKey,"termination",String(row.log_date||row.termination_date||""),String(row.callsign||""),String(row.member_name||""),String(row.action||row.event||"Terminated"),String(row.details||row.reason||""),String(row.changed_by||row.terminated_by||""),String(row.old_rank||row.rank||""),String(row.new_rank||""),String(row.old_callsign||""),String(row.new_callsign||"")).run();
+        restored+=Number(inserted?.meta?.changes||0);
+      }
+      return json({...result,termination_logs_synced:history.length,termination_logs_restored:restored,message:"D1 roster overwritten and termination logs synchronized from Google Sheets"});
     }
     const instructorWrite=route.match(/^\/api\/member\/([^/]+)\/instructor$/);
     if(method==="POST" && (MEMBER_WRITE_ROUTES.has(route)||instructorWrite)) {

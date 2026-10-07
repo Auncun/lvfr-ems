@@ -69,8 +69,8 @@ function syncTrainingHoursSheetToD1_() {
   return withScriptLock_(() => migrateTrainingHoursToD1(), 30000);
 }
 
-// Idempotent history import. It can be rerun to restore sheet-backed records
-// missing from D1; it does not modify or clear any source Sheet.
+// One-time history import. It copies existing Sheets logs/notifications into D1;
+// it does not modify or clear any source Sheet.
 function migrateLogsAndNotificationsToD1() {
   const properties = PropertiesService.getScriptProperties();
   const privateId = String(properties.getProperty('LVFR_PRIVATE_SPREADSHEET_ID') || '').trim();
