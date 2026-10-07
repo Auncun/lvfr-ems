@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-07-full-sync-logs',
+  apiVersion: '2026-10-07-termination-training-cleanup',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -80,6 +80,11 @@ function doPost(e) {
       const expected = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
       if (!expected || !input.workerSecret || !constantTimeEquals_(String(input.workerSecret), expected)) throw new Error('Training Hours mirror authentication failed.');
       return output_({ ok: true, data: mirrorTrainingHoursFromD1_(input.data || {}) });
+    }
+    if (route === '/internal/member/cleanup' && String(input.method || '') === 'POST') {
+      const expected = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
+      if (!expected || !input.workerSecret || !constantTimeEquals_(String(input.workerSecret), expected)) throw new Error('Member cleanup authentication failed.');
+      return output_({ ok: true, data: clearTerminatedMemberTraining_(input.data || {}) });
     }
     if (route === '/internal/notifications/clear' && String(input.method || '') === 'POST') {
       const expected = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
@@ -1799,12 +1804,68 @@ function appendArchiveLog_(entry) {
 
 function terminateMember_(data, user) {
   const member = memberByCallsign_(data.callsign), sheet = rosterSheet_();
-  sheet.getRange(member.row, 3, 1, 7).clearContent().setBackground('#ffffff');
+  const preserveRankDate = rankLevel_(member.rank) > rankLevel_('Paramedic');
+  sheet.getRange(member.row, 3, 1, 1).clearContent().setBackground('#ffffff');
+  if (preserveRankDate) sheet.getRange(member.row, 5, 1, 5).clearContent().setBackground('#ffffff');
+  else sheet.getRange(member.row, 4, 1, 6).clearContent().setBackground('#ffffff');
   sheet.getRange(member.row, 11).clearContent().setBackground('#ffffff'); // K only; L and M untouched
+  clearTerminatedMemberTraining_({ callsign: member.callsign, name: member.name });
   const timestamp = new Date().toISOString(), reason = String(data.note || '');
   appendArchiveLog_({ timestamp, event: 'Terminated', member: member.name, callsign: member.callsign, old_callsign: '', new_callsign: '', old_rank: member.rank, new_rank: '', details: reason, actor: actorName_(user), actor_callsign: user.callsign });
   appendAppLog_({ kind: 'termination', log_date: timestamp, callsign: member.callsign, member_name: member.name, action: 'Terminated', details: reason, changed_by: actorName_(user), old_rank: member.rank });
   return { ok: true };
+}
+
+// Remove active HERT/FORT qualifications, LOI entries and Training Hours for
+// a terminated member from the roster spreadsheet. Historical logs are kept.
+function clearTerminatedMemberTraining_(data) {
+  const callsign = String(data.callsign || '').trim().toUpperCase();
+  const name = String(data.name || '').trim().replace(/\s+/g, ' ');
+  const key = sheetNameKey_(name);
+  if (!/^[A-Z]+-\d+$/.test(callsign) || !key) throw new Error('A valid member callsign and name are required for training cleanup.');
+  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
+  const clearMatchingRows = (sheet, nameColumn, startRow, lastRow, columns) => {
+    if (!sheet || lastRow < startRow) return 0;
+    const count = lastRow - startRow + 1;
+    const names = sheet.getRange(startRow, nameColumn, count, 1).getDisplayValues();
+    let cleared = 0;
+    names.forEach((row, index) => {
+      const rowNumber = startRow + index;
+      if ((sheet.getName() === 'HERT Certified' && rowNumber === 3) || sheetNameKey_(row[0]) !== key) return;
+      columns.forEach(column => sheet.getRange(rowNumber, column).clearContent().setBackground('#ffffff'));
+      cleared++;
+    });
+    return cleared;
+  };
+  let hert = 0, fort = 0, loi = 0, hours = 0;
+  const hertSheet = spreadsheet.getSheetByName('HERT Certified');
+  if (hertSheet) {
+    hert += clearMatchingRows(hertSheet, 2, 2, Math.min(certZoneLastRow_(hertSheet), hertSheet.getLastRow()), [2, 4, 6]);
+    const config = LOI_SHEET_CONFIG.HERT;
+    loi += clearMatchingRows(hertSheet, config.nameColumn, config.startRow, hertSheet.getLastRow(), [config.nameColumn]);
+  }
+  const fortSheet = spreadsheet.getSheetByName('FIREFIGHTER CERT');
+  if (fortSheet) {
+    fort += clearMatchingRows(fortSheet, 1, 2, Math.min(certZoneLastRow_(fortSheet), fortSheet.getLastRow()), [1, 2, 4]);
+    const config = LOI_SHEET_CONFIG.FORT;
+    loi += clearMatchingRows(fortSheet, config.nameColumn, config.startRow, fortSheet.getLastRow(), [config.nameColumn, config.percentColumn]);
+  }
+  const hoursSheet = trainingHoursSheet_();
+  const count = Math.max(0, hoursSheet.getLastRow() - 1);
+  if (count) {
+    const names = hoursSheet.getRange(2, 2, count, 1).getDisplayValues();
+    names.forEach((row, index) => {
+      if (sheetNameKey_(row[0]) !== key) return;
+      const rowNumber = index + 2;
+      [2, 4, 6].forEach(column => hoursSheet.getRange(rowNumber, column).clearContent());
+      hours++;
+    });
+  }
+  SpreadsheetApp.flush();
+  CacheService.getScriptCache().remove('instructor-directory:v2');
+  CacheService.getScriptCache().remove('roster:members:v2');
+  CacheService.getScriptCache().remove('roster:name-index:v1');
+  return { ok: true, callsign, hert, fort, loi, training_hours: hours };
 }
 
 // FIREFIGHTER CERT and HERT Certified hold two different lists in the same tab:
