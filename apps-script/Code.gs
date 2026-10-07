@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-07-termination-training-cleanup',
+  apiVersion: '2026-10-08-training-hours-add-fix',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -2192,9 +2192,12 @@ function mirrorTrainingHoursFromD1Locked_(data) {
   const time = String(data.time || '').trim();
   if (!time) throw new Error('Training Hours time is required.');
   if (!row) {
+    // Use a row only when Name (B), Date (D) and Time (F) are ALL empty, so a
+    // half-cleared row or one that still holds a stray value is never reused.
     const count = Math.max(0, sheet.getMaxRows() - 1);
-    const names = sheet.getRange(2, 2, count, 1).getDisplayValues();
-    const emptyIndex = names.findIndex(values => !String(values[0] || '').trim());
+    const block = count ? sheet.getRange(2, 2, count, 5).getDisplayValues() : [];
+    const emptyIndex = block.findIndex(values =>
+      !String(values[0] || '').trim() && !String(values[2] || '').trim() && !String(values[4] || '').trim());
     if (emptyIndex >= 0) row = emptyIndex + 2;
     else { sheet.insertRowAfter(sheet.getMaxRows()); row = sheet.getMaxRows(); }
   }
@@ -2202,12 +2205,14 @@ function mirrorTrainingHoursFromD1Locked_(data) {
   sheet.getRange(row, 2).setValue(member.name);
   sheet.getRange(row, 4).setValue(dateValue || new Date());
   sheet.getRange(row, 4).setNumberFormat('MM/dd/yyyy');
-  sheet.getRange(row, 6).setValue(time);
+  // Keep the time exactly as typed (e.g. 2:30 or 1.5) instead of letting the
+  // Sheet auto-convert it to a clock value that no longer matches D1.
+  sheet.getRange(row, 6).setNumberFormat('@').setValue(time);
   SpreadsheetApp.flush();
   const writtenName = String(sheet.getRange(row, 2).getDisplayValue() || '').trim();
   const writtenTime = String(sheet.getRange(row, 6).getDisplayValue() || '').trim();
   if (normalizeMemberName_(writtenName) !== normalizeMemberName_(member.name) || writtenTime !== time) {
-    throw new Error('Training Hours row ' + row + ' did not keep the added record. Check Sheet protection or validation.');
+    throw new Error('Training Hours row ' + row + ' did not keep the added record (name="' + writtenName + '", time="' + writtenTime + '", expected time="' + time + '"). Check Sheet protection or validation.');
   }
   return { ok: true, changed: true, row };
 }
