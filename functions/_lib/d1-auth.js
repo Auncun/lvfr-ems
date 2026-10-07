@@ -290,23 +290,9 @@ async function applyRosterMutationD1(db, route, data, actor) {
   else if(route==="/api/terminate") {
     await db.batch([
       db.prepare("DELETE FROM members WHERE callsign=?").bind(old.callsign),
-      db.prepare("DELETE FROM training_hours WHERE upper(callsign)=upper(?)").bind(old.callsign),
-      db.prepare("DELETE FROM loi_entries WHERE upper(callsign)=upper(?) OR (coalesce(callsign,'')='' AND lower(trim(name))=lower(trim(?)))").bind(old.callsign,old.name),
       db.prepare("INSERT OR REPLACE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(rankForCallsign(old.callsign),old.callsign,old.sheet_row,now)
     ]);
-    let sheetCleaned=true,sheetCleanupError="";
-    try {
-      const bridgeAssertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
-      const {proxyToAppsScript}=await import("../[[path]].js");
-      const cleanup=await proxyToAppsScript(context,"/internal/member/cleanup",url,bridgeAssertion,{callsign:old.callsign,name:old.name});
-      const cleanupResult=await cleanup.json().catch(()=>({}));
-      if(!cleanup.ok||cleanupResult.ok!==true) throw new Error(cleanupResult.detail||cleanupResult.error||"Apps Script did not confirm training cleanup.");
-    } catch(error) {
-      sheetCleaned=false;
-      sheetCleanupError=String(error?.message||error).slice(0,400);
-      console.error("Terminated member training Sheet cleanup failed:",sheetCleanupError);
-    }
-    return {ok:true,sheet_cleaned:sheetCleaned,...(sheetCleanupError?{sheet_cleanup_error:sheetCleanupError}:{})};
+    return {ok:true};
   }
   else if(["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign"].includes(route)) {
     const nextRank=route==="/api/promote"?(rankEligibility(memberFromRow(old)).next_rank):String(data.new_rank||old.rank).trim();

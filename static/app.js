@@ -146,7 +146,6 @@ function startBackgroundMutation(url, options) {
             throw new Error("Your session expired. Please sign in again.");
         }
         if (!response.ok) throw new Error(result.detail || result.error || "Save failed.");
-        if (path === "/api/terminate" && result.sheet_cleaned === false) toast(`Member terminated, but Google Sheets training cleanup failed: ${result.sheet_cleanup_error || "run cleanup manually"}.`);
         if (path === "/api/training") toast(result.message || `${payload.training} ${result.changed ? (payload.remove ? "removed" : "added") : "already in that state"}.`);
         else if (path === "/api/exam") toast(result.message || `Supervisor Exam ${result.changed ? (payload.remove ? "removed" : "added") : "already in that state"}.`);
         window.dispatchEvent(new CustomEvent("lvfr:background-updated", { detail: { route: path, callsign, payload, result, optimisticCallsign: optimisticTarget } }));
