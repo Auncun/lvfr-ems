@@ -16,9 +16,7 @@ export async function onRequest(context) {
     return handleD1(context);
   }
 
-  // Keep the legacy Apps Script deployment compatible with the Overwrite
-  // action by forwarding the roster replacement through its existing route.
-  const route = incoming.pathname === "/api/overwrite" ? "/api/full-sync" : incoming.pathname;
+  const route = incoming.pathname;
   const authorization = request.headers.get("Authorization") || "";
   const sessionToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   let data = {};

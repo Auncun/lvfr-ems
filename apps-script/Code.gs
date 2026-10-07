@@ -1286,8 +1286,8 @@ function syncRosterSnapshotToD1_(source, forceFull) {
     CacheService.getScriptCache().removeAll(['instructor-directory:v2', 'members:do-not-promote:v1', 'members:do-not-promote:list:v1']);
     console.log('Roster D1 sync reading current Google Sheet snapshot; readOnly=' + forceFull + '.');
     const members = forceFull ? readRosterMembers_(true) : readRosterMembers_();
-    if (source === 'overwrite' && members.length === 0) {
-      throw new Error('Overwrite stopped because the Google Sheet returned no roster members. D1 was not changed.');
+    if (forceFull && members.length === 0) {
+      throw new Error('Full Sync stopped because the Google Sheet returned no roster members. D1 was not changed.');
     }
     const callsign_slots = availableCallsignInventory_();
     const available_callsigns = availableCallsigns_();

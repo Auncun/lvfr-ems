@@ -4901,31 +4901,6 @@ fullSyncButton?.addEventListener("click", async () => {
     }
 });
 
-const overwriteButton = $("#overwriteBtn");
-overwriteButton?.addEventListener("click", async () => {
-    if (!currentUserIsOperation || !window.confirm("Overwrite will delete the current D1 roster and Callsign slots, then rebuild them from the complete current Google Sheet. This cannot be undone. Continue?")) return;
-    overwriteButton.disabled = true;
-    overwriteButton.textContent = "Overwriting...";
-    try {
-        const result = await api("/api/overwrite", { method: "POST" });
-        const sourceMembers = memberRowsFromResponse(await api("/api/members"));
-        if (!sourceMembers) throw new Error("The roster response was invalid. Refresh the page and try again.");
-        allMembersCache = sourceMembers;
-        allMembersCacheAt = Date.now();
-        memberCache.clear();
-        sourceMembers.forEach(member => memberCache.set(String(member.callsign || "").toUpperCase(), member));
-        memberListRenderKey = "";
-        await loadMembers();
-        await syncStatus();
-        toast(result.message || `Overwrite completed - ${sourceMembers.length} members`);
-    } catch (error) {
-        toast(error.message || "Overwrite failed.");
-    } finally {
-        overwriteButton.disabled = false;
-        overwriteButton.textContent = "Overwrite";
-    }
-});
-
 // ============================================================
 // SEARCH
 // ============================================================
@@ -5268,8 +5243,6 @@ function applyAccountUser(user) {
     if (commandSyncPanel) commandSyncPanel.hidden = !currentUserHasPermission("portal_access");
     const fullSyncButton = $("#fullSyncBtn");
     if (fullSyncButton) fullSyncButton.hidden = !currentUserCanFullSync;
-    const overwriteButton = $("#overwriteBtn");
-    if (overwriteButton) overwriteButton.hidden = !currentUserIsOperation;
     currentInstructorTypes = String(user.instructor_type || "")
         .split("/").map(value => value.trim().toUpperCase()).filter(Boolean);
     const account = $("#accountName");
