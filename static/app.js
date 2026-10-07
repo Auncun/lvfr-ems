@@ -3303,23 +3303,6 @@ async function profile(
                 <div class="actions">
 
 
-                    ${currentUserHasPermission("promotion_manage") && (currentUserIsAdmin && !m.do_not_promote || (m.eligible && String(m.rank || "").trim().toLowerCase() === "emt" && String(m.next_rank || "").trim().toLowerCase() === "aemt")) ? `<button
-                        type="button"
-                        class="primary"
-                        data-action="promote"
-                        data-callsign="${esc(m.callsign)}"
-                    >
-                        Promote
-                    </button>
-                    ` : ""}
-
-                    ${currentUserHasPermission("do_not_promote_manage") ? `<button type="button" class="${m.do_not_promote ? "danger" : ""}"
-                        data-action="do-not-promote" data-blocked="${m.do_not_promote ? "false" : "true"}"
-                        data-callsign="${esc(m.callsign)}">
-                        ${m.do_not_promote ? "Remove from Do not Promote" : "Add to Do not Promote"}
-                    </button>` : ""}
-
-
                     ${currentUserHasPermission("profile_view") ? `<button
                         type="button"
                         data-action="open-manage"
@@ -3409,6 +3392,9 @@ function openManage(cs) {
         rank => String(rank).trim().toLowerCase() === "lead paramedic"
     );
     const showRankDate = currentUserHasPermission("rank_date_manage") && (currentRankIndex < 0 || leadParamedicIndex < 0 || currentRankIndex > leadParamedicIndex);
+    const managedMember = activeProfileMember?.callsign === cs
+        ? activeProfileMember
+        : memberCache.get(String(cs || "").trim().toUpperCase()) || {};
 
     $("#modalContent").innerHTML = `
 
@@ -3665,6 +3651,22 @@ function openManage(cs) {
                     data-action="rank-tools" data-callsign="${esc(cs)}"
                 >
                     Rank / Callsign Tools
+                </button>` : ""}
+
+
+                ${currentUserHasPermission("promotion_manage") && (currentUserIsAdmin && !managedMember.do_not_promote || (managedMember.eligible && String(managedMember.rank || "").trim().toLowerCase() === "emt" && String(managedMember.next_rank || "").trim().toLowerCase() === "aemt")) ? `<button
+                    type="button"
+                    class="primary"
+                    data-action="promote"
+                    data-callsign="${esc(cs)}"
+                >
+                    Promote
+                </button>` : ""}
+
+                ${currentUserHasPermission("do_not_promote_manage") ? `<button type="button" class="${managedMember.do_not_promote ? "danger" : ""}"
+                    data-action="do-not-promote" data-blocked="${managedMember.do_not_promote ? "false" : "true"}"
+                    data-callsign="${esc(cs)}">
+                    ${managedMember.do_not_promote ? "Remove from Do not Promote" : "Add to Do not Promote"}
                 </button>` : ""}
 
 
