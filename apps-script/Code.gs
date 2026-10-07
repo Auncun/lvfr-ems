@@ -1803,22 +1803,23 @@ function moveMember_(member, target, newRank, user, operation) {
   destination[0] = target.callsign;
   destination[1] = member.name;
   const destinationUsesRankDate = rankLevel_(newRank) <= rankLevel_('Paramedic');
+  const destinationUsesDaysFormula = destinationUsesRankDate;
   if (destinationUsesRankDate) {
     destination[2] = operation === 'CALLSIGN_CHANGE'
       ? sourceValues[2]
       : Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MM/dd/yyyy');
   }
-  destination[3] = '=TODAY()-D' + target.row;
-  // Senior ranks do not use column D. Leave the destination cell untouched
-  // when moving into Lead Paramedic or above.
+  if (destinationUsesDaysFormula) destination[3] = '=TODAY()-D' + target.row;
+  // Lead Paramedic and senior ranks do not use columns D or E. Leave both
+  // destination cells untouched when moving into one of those ranks.
   sheet.getRange(target.row, 2, 1, 2).setValues([[destination[0], destination[1]]]);
   if (destinationUsesRankDate) sheet.getRange(target.row, 4).setValue(destination[2]);
-  sheet.getRange(target.row, 5, 1, 4).setValues([destination.slice(3, 7)]);
-  sheet.getRange(target.row, 9).setValue(destination[7]);
+  if (destinationUsesDaysFormula) sheet.getRange(target.row, 5).setValue(destination[3]);
+  sheet.getRange(target.row, 6, 1, 4).setValues([destination.slice(4, 8)]);
   sheet.getRange(target.row, 11).setValue(sourceValues[9]); // Notes (K) only
   if (rankLevel_(oldRank) > rankLevel_('Paramedic')) {
     sheet.getRange(member.row, 3, 1, 1).clearContent().setBackground('#ffffff');
-    sheet.getRange(member.row, 5, 1, 5).clearContent().setBackground('#ffffff');
+    sheet.getRange(member.row, 6, 1, 4).clearContent().setBackground('#ffffff');
   } else {
     sheet.getRange(member.row, 3, 1, 7).clearContent().setBackground('#ffffff');
   }
@@ -1842,9 +1843,9 @@ function appendArchiveLog_(entry) {
 
 function terminateMember_(data, user) {
   const member = memberByCallsign_(data.callsign), sheet = rosterSheet_();
-  const preserveRankDate = rankLevel_(member.rank) > rankLevel_('Paramedic');
+  const preserveSeniorRankFields = rankLevel_(member.rank) > rankLevel_('Paramedic');
   sheet.getRange(member.row, 3, 1, 1).clearContent().setBackground('#ffffff');
-  if (preserveRankDate) sheet.getRange(member.row, 5, 1, 5).clearContent().setBackground('#ffffff');
+  if (preserveSeniorRankFields) sheet.getRange(member.row, 6, 1, 4).clearContent().setBackground('#ffffff');
   else sheet.getRange(member.row, 4, 1, 6).clearContent().setBackground('#ffffff');
   sheet.getRange(member.row, 11).clearContent().setBackground('#ffffff'); // K only; L and M untouched
   clearTerminatedMemberTraining_({ callsign: member.callsign, name: member.name });
