@@ -117,7 +117,12 @@ async function gasCall(env, route, method, data = {}, token = "", params = {}) {
   if (!payload || typeof payload.ok !== "boolean") {
     const contentType = response.headers.get("content-type") || "unknown content type";
     const detail = responseText.replace(/\s+/g," ").trim().slice(0,240);
-    throw new Error(`Apps Script request ${route} returned an invalid response (HTTP ${response.status}, ${contentType})${detail?`: ${detail}`:"."}`);
+    let responseLocation = response.url;
+    try { const parsedUrl=new URL(response.url); responseLocation=parsedUrl.origin+parsedUrl.pathname; } catch {}
+    const htmlHint = /text\/html/i.test(contentType)
+      ? ` Google returned an HTML page from ${responseLocation}; set the Cloudflare GAS_WEB_APP_URL variable to the active Apps Script /exec URL, then confirm the Web App is deployed to execute as its owner and allows access to anyone. Do not use a /dev or script.googleusercontent.com URL.`
+      : "";
+    throw new Error(`Apps Script request ${route} returned an invalid response (HTTP ${response.status}, ${contentType}).${htmlHint}${detail?` Response: ${detail}`:""}`);
   }
   if (!payload.ok) throw new Error(payload.error || "Apps Script request failed.");
   return payload.data;
