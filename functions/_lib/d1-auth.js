@@ -1,7 +1,9 @@
 const enc = new TextEncoder();
 const json = (body, status = 200, headers = {}) => Response.json(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
 const nowSeconds = () => Math.floor(Date.now() / 1000);
-const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view","logs_delete_d1","logs_clean_full","training_view","training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
+const LOG_VIEW_PERMISSIONS = ["promotion_log_view","callsign_log_view","termination_log_view","training_log_view","training_hours_log_view","loi_log_view","exam_log_view","note_log_view","activity_log_view","instructor_log_view"];
+const TRAINING_VIEW_PERMISSIONS = ["hert_certified_view","hert_instructor_view","hert_loi_view","fort_training_view","fort_instructor_view","fort_loi_view"];
+const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
 const DEFAULT_ROLE_PERMISSIONS = {
   member: { portal_access:false,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:false,eligible_view:false,promotion_access:false,profile_view:false,inactive_view:false,logs_view:false,training_view:false,training_fort_manage:false,training_hert_manage:false,training_hours_view:false,training_hours_manage:false,loi_manage:false,statistics_view:false,notes_manage:false,promotion_manage:false,callsign_manage:false,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:false,sync_manage:false },
   leader: { portal_access:true,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,promotion_access:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,loi_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true },
@@ -12,7 +14,13 @@ async function rolePermissions(db, role) {
   const base=DEFAULT_ROLE_PERMISSIONS[normalized]||{};
   const row=await db.prepare("SELECT permissions_json FROM role_permissions WHERE role=?").bind(normalized).first();
   let saved={}; try { saved=JSON.parse(row?.permissions_json||"{}"); } catch {}
-  return Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,typeof saved[key]==="boolean"?saved[key]:Boolean(base[key])]));
+  const result=Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,typeof saved[key]==="boolean"?saved[key]:Boolean(base[key])]));
+  // Existing role profiles used the two parent capabilities for every child list.
+  for(const key of LOG_VIEW_PERMISSIONS) if(typeof saved[key]!=="boolean") result[key]=typeof saved.logs_view==="boolean"?saved.logs_view:Boolean(base.logs_view);
+  for(const key of TRAINING_VIEW_PERMISSIONS) if(typeof saved[key]!=="boolean") result[key]=typeof saved.training_view==="boolean"?saved.training_view:Boolean(base.training_view);
+  result.logs_view=LOG_VIEW_PERMISSIONS.every(key=>result[key]);
+  result.training_view=TRAINING_VIEW_PERMISSIONS.every(key=>result[key]);
+  return result;
 }
 function parsePermissionOverrides(value) {
   try {
@@ -20,22 +28,42 @@ function parsePermissionOverrides(value) {
     return Object.fromEntries(ROLE_PERMISSION_KEYS.filter(key=>typeof parsed[key]==="boolean").map(key=>[key,parsed[key]]));
   } catch { return {}; }
 }
+function expandLegacyPermissionOverrides(value) {
+  const overrides={...value};
+  if(Object.hasOwn(overrides,"logs_view")) {
+    for(const key of LOG_VIEW_PERMISSIONS) if(!Object.hasOwn(overrides,key)) overrides[key]=overrides.logs_view;
+    delete overrides.logs_view;
+  }
+  if(Object.hasOwn(overrides,"training_view")) {
+    for(const key of TRAINING_VIEW_PERMISSIONS) if(!Object.hasOwn(overrides,key)) overrides[key]=overrides.training_view;
+    delete overrides.training_view;
+  }
+  return overrides;
+}
 async function accountPermissions(db, account) {
   if(String(account.role||"").toLowerCase()==="admin") return Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,true]));
-  const role=await rolePermissions(db,account.role), overrides=parsePermissionOverrides(account.permissions_override_json);
-  return Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,Object.hasOwn(overrides,key)?overrides[key]:role[key]]));
+  const role=await rolePermissions(db,account.role), overrides=expandLegacyPermissionOverrides(parsePermissionOverrides(account.permissions_override_json));
+  const result=Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,Object.hasOwn(overrides,key)?overrides[key]:role[key]]));
+  for(const key of LOG_VIEW_PERMISSIONS) if(!Object.hasOwn(overrides,key)&&Object.hasOwn(overrides,"logs_view")) result[key]=overrides.logs_view;
+  for(const key of TRAINING_VIEW_PERMISSIONS) if(!Object.hasOwn(overrides,key)&&Object.hasOwn(overrides,"training_view")) result[key]=overrides.training_view;
+  result.logs_view=LOG_VIEW_PERMISSIONS.every(key=>result[key]);
+  result.training_view=TRAINING_VIEW_PERMISSIONS.every(key=>result[key]);
+  return result;
 }
 function permissionForRequest(route, method, data={}) {
-  if(route==="/api/members"&&method==="GET") return ["members_view","training_view","statistics_view","loi_manage"];
+  if(route==="/api/members"&&method==="GET") return ["members_view",...TRAINING_VIEW_PERMISSIONS,"training_view","statistics_view","loi_manage","training_fort_manage","training_hert_manage","training_hours_manage","instructor_manage"];
   if(route==="/api/eligible"&&method==="GET") return ["eligible_view","promotion_access"];
   if(route==="/api/inactive"&&method==="GET") return "inactive_view";
-  if(route==="/api/members-log"&&method==="GET") return "logs_view";
+  if(route==="/api/members-log"&&method==="GET") return logViewPermission(data.log_type);
   if(route==="/api/members-log/clear"&&method==="POST") return "logs_delete_d1";
   if(route==="/api/logs/clean"&&method==="POST") return "logs_clean_full";
-  if(["/api/promotions","/api/training-log","/api/exam-log","/api/termination-log"].includes(route)&&method==="GET") return "logs_view";
+  if(route==="/api/promotions"&&method==="GET") return "promotion_log_view";
+  if(route==="/api/training-log"&&method==="GET") return "training_log_view";
+  if(route==="/api/exam-log"&&method==="GET") return "exam_log_view";
+  if(route==="/api/termination-log"&&method==="GET") return "termination_log_view";
   if(route==="/api/training-hours") return method==="GET"?"training_hours_view":"training_hours_manage";
-  if(route==="/api/loi") return method==="GET"?["training_view","loi_manage"]:"loi_manage";
-  if(route==="/api/instructors"&&method==="GET") return "training_view";
+  if(route==="/api/loi") return method==="GET"?["hert_loi_view","fort_loi_view","loi_manage"]:"loi_manage";
+  if(route==="/api/instructors"&&method==="GET") return ["hert_instructor_view","fort_instructor_view"];
   if(route==="/api/statistics"&&method==="GET") return "statistics_view";
   if(route==="/api/sync-status"&&method==="GET") return "sync_view";
   if(route==="/api/sync"&&method==="POST") return "sync_manage";
@@ -53,6 +81,9 @@ function permissionForRequest(route, method, data={}) {
   if(route==="/api/training"&&method==="POST") return String(data.training||"").toLowerCase()==="hert"?"training_hert_manage":"training_fort_manage";
   const writes={"/api/note":"notes_manage","/api/promote":"promotion_manage","/api/change-callsign":"callsign_manage","/api/activity":"activity_manage","/api/exam":"exam_manage","/api/date":"rank_date_manage","/api/force-promote":"rank_manage","/api/demote":"rank_manage","/api/change-rank":"rank_manage","/api/terminate":"termination_manage"};
   return method==="POST"?writes[route]||null:null;
+}
+function logViewPermission(kind) {
+  return ({promotion:"promotion_log_view",callsign:"callsign_log_view",termination:"termination_log_view",training:"training_log_view",training_time:"training_hours_log_view",loi:"loi_log_view",exam:"exam_log_view",note:"note_log_view",activity:"activity_log_view",instructor:"instructor_log_view"})[String(kind||"").toLowerCase()]||"logs_view";
 }
 function requireRolePermission(user, permissions, key) {
   if(!key || user.role === "admin") return;
@@ -702,8 +733,8 @@ export async function handleD1(context) {
       const target=await db.prepare("SELECT account_id,name,role,permissions_override_json FROM accounts WHERE account_id=?").bind(id).first();
       if(!target||target.role==="admin") throw Object.assign(new Error("That account's permissions cannot be changed."),{status:404});
       const defaults=await rolePermissions(db,target.role);
-      if(method==="GET") return json({account_id:id,role:target.role,defaults,overrides:parsePermissionOverrides(target.permissions_override_json)});
-      const overrides=data.reset===true?{}:parsePermissionOverrides(JSON.stringify(data.overrides||{}));
+      if(method==="GET") return json({account_id:id,role:target.role,defaults,overrides:expandLegacyPermissionOverrides(parsePermissionOverrides(target.permissions_override_json))});
+      const overrides=data.reset===true?{}:expandLegacyPermissionOverrides(parsePermissionOverrides(JSON.stringify(data.overrides||{})));
       const now=new Date().toISOString();
       await db.prepare("UPDATE accounts SET permissions_override_json=?,updated_at=? WHERE account_id=?").bind(JSON.stringify(overrides),now,id).run();
       await appendAudit(db,{account_id:id,name:target.name,callsign:target.callsign||""},data.reset===true?"Reset individual permissions":"Updated individual permissions",actor.name);
@@ -727,7 +758,10 @@ export async function handleD1(context) {
       requireRoleProfileManager(actor);
       if(!/^[a-z][a-z0-9_-]{1,31}$/.test(role)||role==="admin") throw Object.assign(new Error("Choose a valid role name."),{status:400});
       if(role===actor.role) throw Object.assign(new Error("You cannot edit the permission profile for your own role."),{status:403});
-      const incoming=data.permissions&&typeof data.permissions==="object"?data.permissions:{};
+      const incoming={...(data.permissions&&typeof data.permissions==="object"?data.permissions:{})};
+      // Parent list permissions are aggregate UI controls; only child capabilities
+      // are authoritative so a partial profile can never inherit the whole list.
+      delete incoming.logs_view; delete incoming.training_view;
       let permissions=Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,Boolean(incoming[key])]));
       const effective=await accountPermissions(db,actor);
       if(actor.role!=="admin") {
@@ -737,6 +771,8 @@ export async function handleD1(context) {
         permissions={...current};
         for(const key of ROLE_PERMISSION_KEYS) if(effective[key]===true&&Object.hasOwn(incoming,key)) permissions[key]=Boolean(incoming[key]);
       }
+      permissions.logs_view=LOG_VIEW_PERMISSIONS.every(key=>permissions[key]===true);
+      permissions.training_view=TRAINING_VIEW_PERMISSIONS.every(key=>permissions[key]===true);
       const now=new Date().toISOString();
       await db.prepare(`INSERT INTO role_permissions(role,permissions_json,updated_at,updated_by) VALUES(?,?,?,?)
         ON CONFLICT(role) DO UPDATE SET permissions_json=excluded.permissions_json,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
@@ -755,7 +791,7 @@ export async function handleD1(context) {
       const responsePermissions=actor.role==="admin"?permissions:Object.fromEntries(ROLE_PERMISSION_KEYS.filter(key=>effective[key]===true).map(key=>[key,permissions[key]]));
       return json({ok:true,role,permissions:responsePermissions,updated_at:now,updated_by:actor.name});
     }
-    requireRolePermission(user,user.permissions,permissionForRequest(route,method,data));
+    requireRolePermission(user,user.permissions,permissionForRequest(route,method,{...data,log_type:data.log_type||url.searchParams.get("log_type")}));
     if(route==="/api/notifications" && method==="GET") {
       await refreshD1Notifications(db,user);
       const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? ORDER BY n.id DESC LIMIT 250").bind(user.account_id).all()).results||[];
@@ -823,7 +859,6 @@ export async function handleD1(context) {
       const kind=directLogKind||String(url.searchParams.get("log_type")||"promotion").toLowerCase();
       const allowed=["promotion","callsign","termination","training","training_time","loi","exam","note","activity","instructor"];
       if(!allowed.includes(kind)) throw Object.assign(new Error("Invalid log type: "+kind),{status:400});
-      if(kind==="termination") await requireAdmin(db,token);
       if(kind==="training_time") {
         const rows=await db.prepare("SELECT id,log_date,callsign,member_name,action,previous_time,new_time,changed_by FROM training_hours_log ORDER BY id DESC LIMIT 200").all();
         return json(rows.results||[]);
@@ -848,7 +883,7 @@ export async function handleD1(context) {
     if(route==="/api/loi" && (method==="GET"||method==="POST")) {
       if(method==="GET") {
         const rows=(await db.prepare("SELECT id,type,callsign,name,test_percent,source_row FROM loi_entries ORDER BY name COLLATE NOCASE,id").all()).results||[];
-        return json({hert:rows.filter(row=>row.type==="HERT").map(row=>({...row,row:row.id})),fort:rows.filter(row=>row.type==="FORT").map(row=>({...row,row:row.id}))});
+        return json({hert:user.permissions.hert_loi_view||user.permissions.loi_manage?rows.filter(row=>row.type==="HERT").map(row=>({...row,row:row.id})):[],fort:user.permissions.fort_loi_view||user.permissions.loi_manage?rows.filter(row=>row.type==="FORT").map(row=>({...row,row:row.id})):[]});
       }
       const action=String(data.action||"").toLowerCase(), type=String(data.type||"").toUpperCase();
       if(!["add","passed","failed"].includes(action)||!["HERT","FORT"].includes(type)) throw new Error("Choose a valid LOI action and type.");
@@ -1011,7 +1046,7 @@ export async function handleD1(context) {
     }
     if(route==="/api/inactive" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.activity==="Can Be Terminated").map(({callsign,name})=>({callsign,name})));
     if(route==="/api/do-not-promote" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.do_not_promote).map(({callsign,name})=>({callsign,name,added_at:"",added_by:""})));
-    if(route==="/api/instructors" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.instructor_type).map(({name,instructor_type})=>({name,type:instructor_type,date:""})));
+    if(route==="/api/instructors" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).flatMap(row=>String(row.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(type=>(type==="HERT"&&user.permissions.hert_instructor_view)||(type==="FORT"&&user.permissions.fort_instructor_view)).map(type=>({name:row.name,type,date:""}))));
     const memberRoute=route.match(/^\/api\/member\/([^/]+)$/);
     if(route==="/api/account/profile" && method==="GET") {
       const rows=await readMembers(db,user.callsign,env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));

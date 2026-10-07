@@ -2256,6 +2256,8 @@ async function loadMembersLog(
     type = currentLogType
 ) {
 
+    const logPermission = {promotion:"promotion_log_view",callsign:"callsign_log_view",termination:"termination_log_view",training:"training_log_view",training_time:"training_hours_log_view",loi:"loi_log_view",exam:"exam_log_view",note:"note_log_view",activity:"activity_log_view",instructor:"instructor_log_view"}[type];
+    if (!logPermission || !currentUserHasPermission(logPermission)) return;
     currentLogType = type;
     const canDeleteD1Log = currentUserHasPermission("logs_delete_d1");
     if (membersLogDelete) membersLogDelete.hidden = !canDeleteD1Log || type === "instructor";
@@ -4746,8 +4748,8 @@ document
                         b.dataset.tab ===
                         "membersLog"
                     ) {
-
-                        loadMembersLog("promotion");
+                        const firstLog = [...document.querySelectorAll("#membersLog .log-tab[data-log]")].find(item => getComputedStyle(item).display !== "none");
+                        if (firstLog) loadMembersLog(firstLog.dataset.log);
                     }
 
 
@@ -5257,32 +5259,36 @@ function applyAccountUser(user) {
     if (doNotPromoteTab) doNotPromoteTab.style.display = user.is_admin ? "" : "none";
     const inactiveTab = $("#inactiveTab");
     if (inactiveTab) inactiveTab.style.display = (user.is_admin || user.is_command) ? "" : "none";
-    const terminationLogTab = $("#terminationLogTab");
-    if (terminationLogTab) terminationLogTab.style.display = currentUserHasPermission("logs_view") ? "" : "none";
-    const instructorLogTab = $("#instructorLogTab");
-    if (instructorLogTab) instructorLogTab.style.display = currentUserHasPermission("logs_view") ? "" : "none";
+    const logViewPermissions = {promotion:"promotion_log_view",callsign:"callsign_log_view",termination:"termination_log_view",training:"training_log_view",training_time:"training_hours_log_view",loi:"loi_log_view",exam:"exam_log_view",note:"note_log_view",activity:"activity_log_view",instructor:"instructor_log_view"};
+    document.querySelectorAll("#membersLog .log-tab[data-log]").forEach(button => { button.style.display = currentUserHasPermission(logViewPermissions[button.dataset.log]) ? "" : "none"; });
+    const anyLogView = Object.values(logViewPermissions).some(key => currentUserHasPermission(key));
     const statisticsTab = $("#statisticsTab");
     if (statisticsTab) statisticsTab.style.display = canViewStatistics(user) ? "" : "none";
-    const tabPermissions = { members: "members_view", eligible: ["eligible_view", "promotion_access"], membersLog: "logs_view", trainingDirectory: "training_view", inactive: "inactive_view", statistics: "statistics_view" };
+    const tabPermissions = { members: "members_view", eligible: ["eligible_view", "promotion_access"], trainingDirectory: "training_view", inactive: "inactive_view", statistics: "statistics_view" };
     Object.entries(tabPermissions).forEach(([tab, permission]) => {
         const button = document.querySelector(`.tab[data-tab="${tab}"]`);
         if (button) button.style.display = (Array.isArray(permission) ? permission.some(key => currentUserHasPermission(key)) : currentUserHasPermission(permission)) ? "" : "none";
     });
+    const membersLogMainTab=document.querySelector('.tab[data-tab="membersLog"]');
+    if(membersLogMainTab) membersLogMainTab.style.display=anyLogView?"":"none";
     const trainingHoursTab = document.querySelector('[data-training-view="HOURS"]');
     if (trainingHoursTab) trainingHoursTab.style.display = currentUserHasPermission("training_hours_view") ? "" : "none";
-    const canViewLoi = currentUserHasPermission("training_view") || currentUserHasPermission("loi_manage");
-    const canViewTraining = currentUserHasPermission("training_view");
+    const canViewLoi = ["hert_loi_view","fort_loi_view"].some(key=>currentUserHasPermission(key)) || currentUserHasPermission("loi_manage");
+    const trainingViews = {HERT_CERTIFIED:"hert_certified_view",HERT_INSTRUCTOR:"hert_instructor_view",HERT_LOI:"hert_loi_view",FORT_TRAINING:"fort_training_view",FORT_INSTRUCTOR:"fort_instructor_view",FORT_LOI:"fort_loi_view"};
+    const canViewTraining = Object.values(trainingViews).some(key=>currentUserHasPermission(key));
     const trainingDirectoryTab = document.querySelector('.tab[data-tab="trainingDirectory"]');
-    if (trainingDirectoryTab) trainingDirectoryTab.style.display = (canViewLoi || currentUserHasPermission("training_hours_view")) ? "" : "none";
-    document.querySelectorAll('[data-training-view="FORT"], [data-training-view="HERT"]').forEach(button => { button.style.display = (canViewTraining || canViewLoi) ? "" : "none"; });
-    document.querySelectorAll('[data-training-section="HERT_CERTIFIED"], [data-training-section="HERT_INSTRUCTOR"], [data-training-section="FORT_TRAINING"], [data-training-section="FORT_INSTRUCTOR"]').forEach(button => { button.style.display = canViewTraining ? "" : "none"; });
-    document.querySelectorAll('[data-training-section="HERT_LOI"], [data-training-section="FORT_LOI"]').forEach(button => { button.style.display = canViewLoi ? "" : "none"; });
-    if (!canViewTraining && canViewLoi) {
-        document.querySelector('[data-training-view="HERT"]')?.click();
-        document.querySelector('[data-training-section="HERT_LOI"]')?.click();
-    } else if (!canViewLoi && currentUserHasPermission("training_hours_view")) {
-        document.querySelector('[data-training-view="HOURS"]')?.click();
-    }
+    if (trainingDirectoryTab) trainingDirectoryTab.style.display = (canViewTraining || canViewLoi || currentUserHasPermission("training_hours_view")) ? "" : "none";
+    document.querySelectorAll('[data-training-section]').forEach(button => { button.style.display = currentUserHasPermission(trainingViews[button.dataset.trainingSection]) || (button.dataset.trainingSection.endsWith("_LOI")&&currentUserHasPermission("loi_manage")) ? "" : "none"; });
+    const hertView = ["hert_certified_view","hert_instructor_view","hert_loi_view"].some(key=>currentUserHasPermission(key)) || currentUserHasPermission("loi_manage");
+    const fortView = ["fort_training_view","fort_instructor_view","fort_loi_view"].some(key=>currentUserHasPermission(key)) || currentUserHasPermission("loi_manage");
+    document.querySelector('[data-training-view="HERT"]').style.display = hertView ? "" : "none";
+    document.querySelector('[data-training-view="FORT"]').style.display = fortView ? "" : "none";
+    const availableTrainingSection = [...document.querySelectorAll('[data-training-section]')].find(button=>button.style.display!=="none");
+    if (availableTrainingSection) {
+        const topView=availableTrainingSection.dataset.trainingSection.startsWith("HERT_")?"HERT":"FORT";
+        if (document.querySelector(`[data-training-view="${topView}"]`)?.style.display!=="none") document.querySelector(`[data-training-view="${topView}"]`)?.click();
+        availableTrainingSection.click();
+    } else if (currentUserHasPermission("training_hours_view")) document.querySelector('[data-training-view="HOURS"]')?.click();
     const addTrainingHoursButton = $("#openTrainingHoursAdd");
     if (addTrainingHoursButton) addTrainingHoursButton.style.display = currentUserHasPermission("training_hours_manage") ? "" : "none";
     document.querySelectorAll("[data-open-loi-add]").forEach(button => { button.hidden = !currentUserHasPermission("loi_manage"); });
@@ -5417,8 +5423,9 @@ async function loadAccount() {
     try {
         if (!await loadAccount()) return;
         const tasks = [loadNotifications(), loadConfig()];
-        if (currentUserHasPermission("members_view") || currentUserHasPermission("training_view") || currentUserHasPermission("statistics_view")) tasks.push(loadMembers(true, true));
-        if (currentUserHasPermission("logs_view")) tasks.push(loadMembersLog("promotion"));
+        if (currentUserHasPermission("members_view") || ["hert_certified_view","hert_instructor_view","fort_training_view","fort_instructor_view"].some(key=>currentUserHasPermission(key)) || ["statistics_view","loi_manage","training_fort_manage","training_hert_manage","training_hours_manage","instructor_manage"].some(key=>currentUserHasPermission(key))) tasks.push(loadMembers(true, true));
+        const firstLog=[...document.querySelectorAll("#membersLog .log-tab[data-log]")].find(item=>getComputedStyle(item).display!=="none");
+        if (firstLog) tasks.push(loadMembersLog(firstLog.dataset.log));
         await Promise.all(tasks);
         if (currentUserHasPermission("sync_view")) void syncStatus();
     } catch (e) {
@@ -5445,7 +5452,7 @@ function refreshVisibleRosterView() {
             // LOI refreshes when its tab opens or after a mutation. Sheet edits
             // flow back to D1 through Apps Script triggers; there is no poll.
         }
-        else if (currentUserHasPermission("training_view")) void loadMembers(true, true);
+        else if (["hert_certified_view","hert_instructor_view","fort_training_view","fort_instructor_view"].some(key=>currentUserHasPermission(key))) void loadMembers(true, true);
     }
 }
 setInterval(refreshVisibleRosterView, 3000);

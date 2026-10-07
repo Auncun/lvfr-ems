@@ -326,9 +326,13 @@ const permissionGroups = [
   { name: 'Lists and records', items: [
     ['members_view', 'Members list', 'View the roster and member list.'], ['eligible_view', 'Eligible list', 'View promotion eligibility.'], ['promotion_access', 'Access Promotion', 'Open the Promotion page and view eligible members.'],
     ['profile_view', 'Member profiles', 'Open member View / Manage details.'], ['inactive_view', 'Can Be Terminated list', 'View members marked for termination.'],
-    ['logs_view', 'Members Log', 'View member operation logs.'], ['statistics_view', 'Statistics', 'View roster statistics.'],
+    { key:'logs_view', label:'Members Log (all)', description:'Allow every log tab.', children:[
+      ['promotion_log_view','Promotion log','View promotion and rank-change history.'],['callsign_log_view','Callsign log','View callsign-change history.'],['termination_log_view','Termination log','View termination history.'],['training_log_view','Training log','View FORT and HERT training history.'],['training_hours_log_view','Training Hours log','View Training Hours changes.'],['loi_log_view','LOI log','View LOI history.'],['exam_log_view','Exam log','View exam history.'],['note_log_view','Note log','View member-note history.'],['activity_log_view','Activity log','View activity-status history.'],['instructor_log_view','Instructor log','View instructor-assignment history.']
+    ]}, ['statistics_view', 'Statistics', 'View roster statistics.'],
     ['logs_delete_d1', 'Delete logs from D1', 'Delete the selected log from the website database.'], ['logs_clean_full', 'Full Cleaning', 'Delete selected logs and notifications from D1 and Google Sheets.'],
-    ['training_view', 'Training lists', 'Open FORT, HERT, and instructor directories.'], ['training_hours_view', 'Training Hours: view', 'View Training Hours records.'],
+    { key:'training_view', label:'Training lists (all)', description:'Allow every HERT and FORT training sublist.', children:[
+      ['hert_certified_view','HERT Certified','View HERT certification records.'],['hert_instructor_view','HERT Instructor','View HERT instructor records.'],['hert_loi_view','HERT LOI','View the HERT LOI list.'],['fort_training_view','FORT Training','View Basic and Advanced FORT records.'],['fort_instructor_view','FORT Instructor','View FORT instructor records.'],['fort_loi_view','FORT LOI','View the FORT LOI list.']
+    ]}, ['training_hours_view', 'Training Hours: view', 'View Training Hours records.'],
     ['do_not_promote_view', 'Do not Promote: view', 'View the Do not Promote list.'], ['sync_view', 'Sync status', 'View roster synchronization status.'],
   ] },
   { name: 'Training and member changes', items: [
@@ -349,6 +353,27 @@ let permissionEditorCapabilities = {};
 let editablePermissionKeys = [];
 let selectedPermissionRole = 'member';
 function roleTitle(role) { return ({member:'Member',leader:'Leader',commander:'Commander'})[role] || role.replace(/[_-]+/g,' ').replace(/\b\w/g, ch => ch.toUpperCase()); }
+function permissionEntryMatches(entry, query, groupName) {
+  if (!query) return true;
+  if (Array.isArray(entry)) return `${entry[1]} ${entry[2]} ${groupName}`.toLocaleLowerCase().includes(query);
+  return `${entry.label} ${entry.description} ${groupName} ${entry.children.map(item=>item.slice(1).join(' ')).join(' ')}`.toLocaleLowerCase().includes(query);
+}
+function renderPermissionEntry(entry, profile, query, groupName) {
+  if (Array.isArray(entry)) {
+    const [key,label,description]=entry;
+    if (!editablePermissionKeys.includes(key) || !permissionEntryMatches(entry,query,groupName)) return '';
+    return `<label class="permission-item"><input type="checkbox" data-permission-key="${key}" ${profile?.[key]?'checked':''} ${currentUser?.role!=='admin'&&permissionEditorCapabilities[key]!==true&&!profile?.[key]?'disabled':''}><span><strong>${esc(label)}</strong><small>${esc(description)}</small></span></label>`;
+  }
+  const children=entry.children.filter(item=>editablePermissionKeys.includes(item[0])&&permissionEntryMatches(item,query,groupName));
+  const showParent=children.length>0&&permissionEntryMatches(entry,query,groupName);
+  if (!children.length&&!showParent) return '';
+  const all=entry.children.filter(item=>editablePermissionKeys.includes(item[0]));
+  const checked=all.length>0&&all.every(item=>profile?.[item[0]]===true);
+  const partiallyChecked=all.some(item=>profile?.[item[0]]===true)&&!checked;
+  const parent=showParent?`<label class="permission-item permission-master"><input type="checkbox" data-permission-parent="${entry.key}" data-indeterminate="${partiallyChecked?'true':'false'}" ${checked?'checked':''} ${currentUser?.role!=='admin'&&all.some(item=>permissionEditorCapabilities[item[0]]!==true&&!profile?.[item[0]])?'disabled':''}><span><strong>${esc(entry.label)}</strong><small>${esc(entry.description)}</small></span></label>`:'';
+  const sublist=children.map(item=>renderPermissionEntry(item,profile,query,groupName)).join('');
+  return `<details class="permission-sublist" ${query?'open':''}><summary>${esc(entry.label)} <span>${all.filter(item=>profile?.[item[0]]===true).length}/${all.length}</span></summary>${parent}${sublist}</details>`;
+}
 function renderRolePermissions() {
   const panel = document.querySelector('#rolePermissionsPanel');
   if (!panel) return;
@@ -360,14 +385,14 @@ function renderRolePermissions() {
   panel.innerHTML = roles.filter(role => role === selectedPermissionRole).map(role => {
     const roleLabel = roleTitle(role);
     const groups = permissionGroups.map(group => {
-      const items = group.items.filter(([key, label, description]) => editablePermissionKeys.includes(key) && (!query || `${label} ${description} ${group.name}`.toLocaleLowerCase().includes(query)));
+      const items = group.items.filter(entry => permissionEntryMatches(entry,query,group.name) && (Array.isArray(entry)?editablePermissionKeys.includes(entry[0]):editablePermissionKeys.includes(entry.key)||entry.children.some(item=>editablePermissionKeys.includes(item[0]))));
       if (!items.length) return '';
-      return `<section class="permission-group"><h4>${esc(group.name)}</h4>${items.map(([key, label, description]) => `
-        <label class="permission-item"><input type="checkbox" data-permission-key="${key}" ${rolePermissionProfiles[role]?.[key] ? 'checked' : ''} ${currentUser?.role !== 'admin' && permissionEditorCapabilities[key] !== true && !rolePermissionProfiles[role]?.[key] ? 'disabled' : ''}><span><strong>${esc(label)}</strong><small>${esc(description)}</small></span></label>`).join('')}</section>`;
+      return `<details class="permission-group" ${query?'open':''}><summary>${esc(group.name)}</summary>${items.map(entry=>renderPermissionEntry(entry,rolePermissionProfiles[role],query,group.name)).join('')}</details>`;
     }).join('');
     const enabled = Object.values(rolePermissionProfiles[role] || {}).filter(Boolean).length;
     return `<article class="role-permission-card" data-permission-role="${role}"><header><div><span class="role-kicker">ROLE PROFILE</span><h3>${roleLabel}</h3></div><span class="permission-count">${enabled} enabled</span></header><div class="role-permission-groups">${groups || '<p class="muted">No permissions match your search.</p>'}</div><button type="button" class="primary" data-save-permissions="${role}">Save ${roleLabel} permissions</button></article>`;
   }).join('');
+  panel.querySelectorAll('[data-indeterminate="true"]').forEach(input => { input.indeterminate = true; });
 }
 async function loadRolePermissions() {
   const status = document.querySelector('#permissionStatus');
@@ -393,6 +418,16 @@ document.querySelector('#permissionRoleNav')?.addEventListener('click', event =>
   renderRolePermissions();
 });
 document.querySelector('#rolePermissionsPanel').addEventListener('change', event => {
+  const master = event.target.closest('[data-permission-parent]');
+  if (master) {
+    const role=master.closest('[data-permission-role]').dataset.permissionRole;
+    const entry=permissionGroups.flatMap(group=>group.items).find(item=>!Array.isArray(item)&&item.key===master.dataset.permissionParent);
+    if (!entry) return;
+    for(const [key] of entry.children) if(editablePermissionKeys.includes(key)&&(currentUser?.role==='admin'||permissionEditorCapabilities[key]===true)) rolePermissionProfiles[role][key]=master.checked;
+    rolePermissionProfiles[role][entry.key]=entry.children.every(([key])=>rolePermissionProfiles[role][key]===true);
+    renderRolePermissions();
+    return;
+  }
   const input = event.target.closest('[data-permission-key]');
   if (!input) return;
   const role = input.closest('[data-permission-role]').dataset.permissionRole;
@@ -401,9 +436,12 @@ document.querySelector('#rolePermissionsPanel').addEventListener('change', event
     return;
   }
   rolePermissionProfiles[role][input.dataset.permissionKey] = input.checked;
+  const parentEntry=permissionGroups.flatMap(group=>group.items).find(item=>!Array.isArray(item)&&item.children.some(child=>child[0]===input.dataset.permissionKey));
+  if(parentEntry) rolePermissionProfiles[role][parentEntry.key]=parentEntry.children.every(([key])=>rolePermissionProfiles[role][key]===true);
   if (currentUser?.role !== 'admin' && permissionEditorCapabilities[input.dataset.permissionKey] !== true && !input.checked) input.disabled = true;
   const count = input.closest('[data-permission-role]').querySelector('.permission-count');
   count.textContent = `${Object.values(rolePermissionProfiles[role]).filter(Boolean).length} enabled`;
+  if(parentEntry) renderRolePermissions();
 });
 document.querySelector('#rolePermissionsPanel').addEventListener('click', async event => {
   const button = event.target.closest('[data-save-permissions]');
@@ -476,10 +514,10 @@ function renderIndividualPermissions() {
   restore.hidden = !editing;
   save.hidden = !editing;
   if (!editing) { panel.replaceChildren(); return; }
-  panel.innerHTML = permissionGroups.map(group => `<section class="permission-group"><h4>${esc(group.name)}</h4>${group.items.map(([key,label,description]) => {
+  panel.innerHTML = permissionGroups.map(group => `<details class="permission-group" open><summary>${esc(group.name)}</summary>${group.items.map(entry => (Array.isArray(entry)?[entry]:entry.children).map(([key,label,description]) => {
     const checked = Object.hasOwn(overrides,key) ? overrides[key] : Boolean(defaults[key]);
     return `<label class="permission-item"><input type="checkbox" data-individual-permission="${key}" ${checked?'checked':''}><span><strong>${esc(label)}</strong><small>${esc(description)}</small></span></label>`;
-  }).join('')}</section>`).join('');
+  }).join('')).join('')}</details>`).join('');
 }
 async function openIndividualPermissions(account) {
   if (currentUser?.role !== 'admin') return;

@@ -93,7 +93,16 @@ body {
 .permission-count { padding:5px 9px; border:1px solid #345a7c; border-radius:999px; background:#15283a; color:#a9d1ff; font-size:11px; white-space:nowrap; }
 .role-permission-groups { display:grid; gap:12px; }
 .permission-group { padding:12px; border:1px solid #27323e; border-radius:12px; background:#0b1118a8; }
-.permission-group h4 { margin:0 0 6px; color:#9eb0c3; font-size:12px; text-transform:uppercase; letter-spacing:.06em; }
+.permission-group > summary,.permission-sublist > summary { display:flex; align-items:center; justify-content:space-between; gap:10px; color:#c8d5e2; cursor:pointer; list-style:none; }
+.permission-group > summary::-webkit-details-marker,.permission-sublist > summary::-webkit-details-marker { display:none; }
+.permission-group > summary::before,.permission-sublist > summary::before { content:""; width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:6px solid #8fa7bd; transition:transform .15s ease; }
+.permission-group[open] > summary::before,.permission-sublist[open] > summary::before { transform:rotate(90deg); }
+.permission-group > summary { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
+.permission-sublist { margin-top:8px; padding:9px 10px; border:1px solid #27323e; border-radius:9px; background:#080e14a8; }
+.permission-sublist > summary { font-size:13px; font-weight:650; }
+.permission-sublist > summary span { margin-left:auto; color:#95a2b1; font-size:11px; }
+.permission-sublist .permission-item { padding-left:22px; }
+.permission-master { border-bottom:1px solid #202b36; }
 .permission-item { display:flex; align-items:flex-start; gap:10px; padding:10px 4px; color:#d6dde6; cursor:pointer; }
 .permission-item + .permission-item { border-top:1px solid #202b36; }
 .permission-item input { flex:0 0 auto; width:18px; height:18px; margin:1px 0 0; accent-color:#4c9aff; }
