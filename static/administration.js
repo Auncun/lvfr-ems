@@ -142,6 +142,9 @@ document.querySelector('#clearAccountAuditBtn')?.addEventListener('click', async
 });
 const fullCleaningDialog = document.querySelector('#fullCleaningDialog');
 const cleanAllLogs = document.querySelector('#cleanAllLogs');
+fullCleaningDialog?.addEventListener('click', event => {
+  if (event.target === fullCleaningDialog) fullCleaningDialog.close();
+});
 document.querySelector('#openFullCleaning')?.addEventListener('click', () => {
   if (currentUser?.role !== 'admin') return;
   cleanAllLogs.checked = false;
@@ -372,11 +375,15 @@ function renderPermissionEntry(entry, profile, query, groupName) {
   const partiallyChecked=all.some(item=>profile?.[item[0]]===true)&&!checked;
   const parent=showParent?`<label class="permission-item permission-master"><input type="checkbox" data-permission-parent="${entry.key}" data-indeterminate="${partiallyChecked?'true':'false'}" ${checked?'checked':''} ${currentUser?.role!=='admin'&&all.some(item=>permissionEditorCapabilities[item[0]]!==true&&!profile?.[item[0]])?'disabled':''}><span><strong>${esc(entry.label)}</strong><small>${esc(entry.description)}</small></span></label>`:'';
   const sublist=children.map(item=>renderPermissionEntry(item,profile,query,groupName)).join('');
-  return `<details class="permission-sublist" ${query?'open':''}><summary>${esc(entry.label)} <span>${all.filter(item=>profile?.[item[0]]===true).length}/${all.length}</span></summary>${parent}${sublist}</details>`;
+  return `<details class="permission-sublist" data-permission-sublist="${entry.key}" ${query||openPermissionSubLists.has(entry.key)?'open':''}><summary>${esc(entry.label)} <span>${all.filter(item=>profile?.[item[0]]===true).length}/${all.length}</span></summary>${parent}${sublist}</details>`;
 }
+let openPermissionGroups = new Set();
+let openPermissionSubLists = new Set();
 function renderRolePermissions() {
   const panel = document.querySelector('#rolePermissionsPanel');
   if (!panel) return;
+  openPermissionGroups = new Set([...panel.querySelectorAll('details.permission-group[open]')].map(item=>item.dataset.permissionGroup).filter(Boolean));
+  openPermissionSubLists = new Set([...panel.querySelectorAll('details.permission-sublist[open]')].map(item=>item.dataset.permissionSublist).filter(Boolean));
   const query = document.querySelector('#permissionSearch').value.trim().toLocaleLowerCase();
   const roleOrder = {member:0,leader:1,commander:2};
   const roles = Object.keys(rolePermissionProfiles).filter(role => role !== 'admin' && role !== String(currentUser?.role || '').toLowerCase()).sort((a,b) => (roleOrder[a] ?? 3) - (roleOrder[b] ?? 3) || a.localeCompare(b));
@@ -387,7 +394,7 @@ function renderRolePermissions() {
     const groups = permissionGroups.map(group => {
       const items = group.items.filter(entry => permissionEntryMatches(entry,query,group.name) && (Array.isArray(entry)?editablePermissionKeys.includes(entry[0]):editablePermissionKeys.includes(entry.key)||entry.children.some(item=>editablePermissionKeys.includes(item[0]))));
       if (!items.length) return '';
-      return `<details class="permission-group" ${query?'open':''}><summary>${esc(group.name)}</summary>${items.map(entry=>renderPermissionEntry(entry,rolePermissionProfiles[role],query,group.name)).join('')}</details>`;
+      return `<details class="permission-group" data-permission-group="${esc(group.name)}" ${query||openPermissionGroups.has(group.name)?'open':''}><summary>${esc(group.name)}</summary>${items.map(entry=>renderPermissionEntry(entry,rolePermissionProfiles[role],query,group.name)).join('')}</details>`;
     }).join('');
     const enabled = Object.values(rolePermissionProfiles[role] || {}).filter(Boolean).length;
     return `<article class="role-permission-card" data-permission-role="${role}"><header><div><span class="role-kicker">ROLE PROFILE</span><h3>${roleLabel}</h3></div><span class="permission-count">${enabled} enabled</span></header><div class="role-permission-groups">${groups || '<p class="muted">No permissions match your search.</p>'}</div><button type="button" class="primary" data-save-permissions="${role}">Save ${roleLabel} permissions</button></article>`;

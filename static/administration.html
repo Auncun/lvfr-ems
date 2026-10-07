@@ -5,7 +5,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Operation Command | LVFR EMS</title>
-  <link rel="stylesheet" href="/static/style.css?v=fine-list-permissions-20261007-1">
+  <link rel="stylesheet" href="/static/style.css?v=full-cleaning-ux-20261007-1">
   <style>
     body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:72px 24px 24px}
     .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -19,7 +19,7 @@
     .command-tabs{display:flex;gap:8px;overflow-x:auto;margin:0 0 16px;padding:4px 0 8px;border-bottom:1px solid #27303b}.command-tab{flex:0 0 auto;padding:10px 15px;border:1px solid #303945;border-radius:10px;background:#111720;color:#aeb9c7;font-weight:650}.command-tab.active{border-color:#3984ce;background:#15283a;color:#b8d8ff;box-shadow:inset 0 -2px #58a6ff}.command-section[hidden]{display:none!important}
     @media(max-width:650px){.admin-shell{padding:14px 14px 28px;min-width:0}.admin-card{padding:14px;min-width:0}.admin-header>*,.admin-toolbar>*{min-width:0;max-width:100%}.admin-table-wrap{width:100%;overflow-x:visible;-webkit-overflow-scrolling:touch}.admin-table{display:block;min-width:0!important;width:100%}.admin-table thead{display:none}.admin-table tbody{display:grid;gap:10px}.admin-table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px;padding:10px;border:1px solid #303945;border-radius:12px;background:#0c1219}.admin-table td{display:block;min-width:0;padding:8px 3px!important;border:0!important;border-bottom:1px solid #26313d}.admin-table td::before{content:attr(data-label);display:block;margin-bottom:4px;color:#8b9aaa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}.admin-table td:first-child,.admin-table td:last-child{grid-column:1/-1}.admin-table td:last-child{border:0!important}.admin-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.admin-actions button{min-width:0;overflow-wrap:anywhere}}
     .permissions-card{border-color:#34485d;background:linear-gradient(145deg,#111b27,#111720 60%)}.permissions-heading{align-items:flex-start}.permissions-heading h2{margin:0}.permissions-heading p{max-width:680px;margin:7px 0 0;line-height:1.5}
-    #fullCleaningDialog{max-width:calc(100vw - 28px);max-height:calc(100dvh - 28px);padding:0;border:1px solid #394555;border-radius:14px;background:#111720;color:#f3f6fa}#fullCleaningDialog::backdrop{background:#000a}#fullCleaningDialog form{max-height:calc(100dvh - 30px);overflow:auto}
+    #fullCleaningDialog{max-width:calc(100vw - 28px);max-height:calc(100dvh - 28px);padding:0;border:1px solid #394555;border-radius:14px;background:#111720;color:#f3f6fa}#fullCleaningDialog::backdrop{background:#000a}#fullCleaningDialog form{max-height:calc(100dvh - 30px);overflow:auto}.full-cleaning-footer{position:sticky;bottom:0;z-index:2;margin:12px -20px -20px;padding:12px 20px max(12px,env(safe-area-inset-bottom));border-top:1px solid #303945;background:#111720}.full-cleaning-footer .admin-status{margin:0 0 8px}.full-cleaning-footer .admin-actions{margin:0}
   </style>
 </head>
 <body>
@@ -94,15 +94,17 @@
           <label class="permission-item"><input type="checkbox" data-clean-log="account_audit"><span><strong>Account Audit</strong></span></label>
           <label class="permission-item"><input type="checkbox" data-clean-log="notifications"><span><strong>Notifications</strong></span></label>
         </div>
-        <p id="fullCleaningStatus" class="admin-status" role="status"></p>
-        <div class="admin-actions"><button type="button" id="cancelFullCleaning">Cancel</button><button type="button" id="confirmFullCleaning" class="danger">Delete selected</button></div>
+        <footer class="full-cleaning-footer">
+          <p id="fullCleaningStatus" class="admin-status" role="status"></p>
+          <div class="admin-actions"><button type="button" id="cancelFullCleaning">Cancel</button><button type="button" id="confirmFullCleaning" class="danger">Delete selected</button></div>
+        </footer>
       </form>
     </dialog>
   </main>
   <script src="/static/session-auth.js?v=shared-session-7"></script>
   <script src="/static/header-controls.js?v=header-controls-1"></script>
   <script src="/static/account-settings.js?v=account-settings-5"></script>
-  <script src="/static/administration.js?v=fine-list-permissions-20261007-1"></script>
+  <script src="/static/administration.js?v=full-cleaning-ux-20261007-1"></script>
   <script src="/static/sidebar.js?v=operation-command-access-20261005-1"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 </body>
