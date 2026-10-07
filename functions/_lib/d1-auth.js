@@ -111,8 +111,14 @@ async function gasCall(env, route, method, data = {}, token = "", params = {}) {
   if (!target || !env.LVFR_D1_WORKER_SECRET) throw new Error("Apps Script bridge is not configured.");
   const response = await fetch(target, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ route, method, data, params, sessionToken: token, workerSecret: env.LVFR_D1_WORKER_SECRET }), redirect: "follow" });
-  const payload = await response.json().catch(() => null);
-  if (!payload || typeof payload.ok !== "boolean") throw new Error("Apps Script roster lookup failed.");
+  const responseText = await response.text();
+  let payload = null;
+  try { payload = JSON.parse(responseText); } catch {}
+  if (!payload || typeof payload.ok !== "boolean") {
+    const contentType = response.headers.get("content-type") || "unknown content type";
+    const detail = responseText.replace(/\s+/g," ").trim().slice(0,240);
+    throw new Error(`Apps Script request ${route} returned an invalid response (HTTP ${response.status}, ${contentType})${detail?`: ${detail}`:"."}`);
+  }
   if (!payload.ok) throw new Error(payload.error || "Apps Script request failed.");
   return payload.data;
 }
