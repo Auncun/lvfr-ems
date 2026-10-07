@@ -152,6 +152,11 @@ function dispatch_(route, method, params, data, user) {
     const result = syncRosterSnapshotToD1_('full-manual', true);
     return Object.assign({}, result, { message: 'Full roster sync completed' });
   }
+  if (route === '/api/overwrite' && method === 'POST') {
+    if (String(user.role || '').toLowerCase() !== 'admin') throw new Error('Only Operation can overwrite the D1 roster.');
+    const result = syncRosterSnapshotToD1_('overwrite', true);
+    return Object.assign({}, result, { message: 'D1 roster and Callsign slots overwritten from the complete Google Sheet snapshot' });
+  }
   if (route === '/api/notifications' && method === 'GET') { requireApproved_(user); return listNotifications_(user); }
   if (route === '/api/notifications/read' && method === 'POST') { requireApproved_(user); return markNotificationsRead_(data, user); }
   if (route === '/api/leaders' && method === 'GET') { requireAdmin_(user); return leaderOverview_(); }
@@ -1286,6 +1291,9 @@ function syncRosterSnapshotToD1_(source, forceFull) {
     CacheService.getScriptCache().removeAll(['instructor-directory:v2', 'members:do-not-promote:v1', 'members:do-not-promote:list:v1']);
     console.log('Roster D1 sync reading current Google Sheet snapshot; readOnly=' + forceFull + '.');
     const members = forceFull ? readRosterMembers_(true) : readRosterMembers_();
+    if (source === 'overwrite' && members.length === 0) {
+      throw new Error('Overwrite stopped because the Google Sheet returned no roster members. D1 was not changed.');
+    }
     const callsign_slots = availableCallsignInventory_();
     const available_callsigns = availableCallsigns_();
     const payload = { members, available_callsigns, callsign_slots };

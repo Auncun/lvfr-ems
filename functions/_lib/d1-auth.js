@@ -1037,6 +1037,12 @@ export async function handleD1(context) {
       const result=await syncMembersFromAppsScript(env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET),true);
       return json({...result,message:"Full roster sync completed from Google Sheets"});
     }
+    if(route==="/api/overwrite" && method==="POST") {
+      if(user.role!=="admin") throw Object.assign(new Error("Only Operation can overwrite the D1 roster."),{status:403});
+      const result=await gasCall(env,"/api/overwrite","POST",{},await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
+      if(!result||result.ok!==true) throw new Error("Apps Script returned an invalid overwrite result.");
+      return json(result);
+    }
     const instructorWrite=route.match(/^\/api\/member\/([^/]+)\/instructor$/);
     if(method==="POST" && (MEMBER_WRITE_ROUTES.has(route)||instructorWrite)) {
       const admin=["admin","commander"].includes(user.role), leader=admin||user.role==="leader";
