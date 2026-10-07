@@ -534,6 +534,7 @@ export async function handleD1(context) {
       const expected=String(env.LVFR_D1_WORKER_SECRET||"");
       if(!expected || request.headers.get("X-LVFR-Worker-Secret") !== expected) return json({detail:"Worker authentication failed."},403);
       if(!Array.isArray(data.members)) return json({detail:"Members payload is invalid."},400);
+      if(data.members.length===0) return json({detail:"Roster replacement stopped because the Google Sheet returned no members. D1 was not changed."},400);
       const result=await replaceMembers(db,data.members);
       if(data.callsign_slots||data.available_callsigns) await saveCallsignSlots(db,data.callsign_slots||data.available_callsigns);
       return json(result);
@@ -1039,8 +1040,9 @@ export async function handleD1(context) {
     }
     if(route==="/api/overwrite" && method==="POST") {
       if(user.role!=="admin") throw Object.assign(new Error("Only Operation can overwrite the D1 roster."),{status:403});
-      const result=await gasCall(env,"/api/overwrite","POST",{},await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
-      if(!result||result.ok!==true) throw new Error("Apps Script returned an invalid overwrite result.");
+      // Reuse the deployed Full Sync Apps Script route so Overwrite works
+      // without requiring a separate Apps Script deployment for this alias.
+      const result=await syncMembersFromAppsScript(env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET),true);
       return json(result);
     }
     const instructorWrite=route.match(/^\/api\/member\/([^/]+)\/instructor$/);

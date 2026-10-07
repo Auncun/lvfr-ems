@@ -16,7 +16,9 @@ export async function onRequest(context) {
     return handleD1(context);
   }
 
-  const route = incoming.pathname;
+  // Overwrite is Operation-only in the UI/API, while Apps Script already
+  // exposes the same complete roster replacement through its Full Sync route.
+  const route = incoming.pathname === "/api/overwrite" ? "/api/full-sync" : incoming.pathname;
   const authorization = request.headers.get("Authorization") || "";
   const sessionToken = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   let data = {};
