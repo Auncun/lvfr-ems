@@ -126,7 +126,15 @@ function startBackgroundMutation(url, options) {
     else if (path === "/api/demote") toast(`DEMOTED TO ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
     else if (path === "/api/change-callsign") toast(`Callsign changed to ${optimisticTarget}`);
     else if (path === "/api/activity") toast(`Activity changed to ${payload.activity}.`);
-    else if (/^\/api\/member\/[^/]+\/instructor$/.test(path)) toast("Updating instructor status...");
+    else if (/^\/api\/member\/[^/]+\/instructor$/.test(path)) {
+        const type = String(payload.instructor_type || "Instructor").toUpperCase();
+        const assigned = Boolean(payload.assigned);
+        const currentTypes = String(previous?.instructor_type || "").toUpperCase().split(/\s*\/\s*/).filter(Boolean);
+        const alreadyAssigned = currentTypes.includes(type);
+        toast(alreadyAssigned === assigned
+            ? `${type} Instructor already ${assigned ? "assigned" : "removed"}.`
+            : `${type} Instructor ${assigned ? "added" : "removed"}.`);
+    }
     else if (path === "/api/terminate") toast("Member terminated.");
     else if (path === "/api/note") toast("Member note updated.");
     else if (path === "/api/date") toast("Rank date updated.");
@@ -146,7 +154,6 @@ function startBackgroundMutation(url, options) {
             throw new Error("Your session expired. Please sign in again.");
         }
         if (!response.ok) throw new Error(result.detail || result.error || "Save failed.");
-        if (/^\/api\/member\/[^/]+\/instructor$/.test(path)) toast(result.message || (result.changed === false ? (payload.assigned ? "Already assigned." : "Already removed.") : `${payload.instructor_type} Instructor ${payload.assigned ? "added" : "removed"}.`));
         if (path === "/api/terminate" && result.sheet_cleaned === false) toast(`Member terminated, but Google Sheets training cleanup failed: ${result.sheet_cleanup_error || "run cleanup manually"}.`);
         if (path === "/api/training") toast(result.message || `${payload.training} ${result.changed ? (payload.remove ? "removed" : "added") : "already in that state"}.`);
         else if (path === "/api/exam") toast(result.message || `Supervisor Exam ${result.changed ? (payload.remove ? "removed" : "added") : "already in that state"}.`);

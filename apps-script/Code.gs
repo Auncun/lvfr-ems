@@ -2150,6 +2150,10 @@ function migrateLoiToD1() {
 // D1 is the write authority; this endpoint mirrors committed values to the
 // legacy Sheet so existing workflows and exports continue to see them.
 function mirrorTrainingHoursFromD1_(data) {
+  return withScriptLock_(() => mirrorTrainingHoursFromD1Locked_(data));
+}
+
+function mirrorTrainingHoursFromD1Locked_(data) {
   const callsign = String(data.callsign || '').trim().toUpperCase();
   if (!/^[A-Z]+-\d+$/.test(callsign)) throw new Error('Invalid Training Hours Callsign.');
   const member = watchMemberNameByCallsign_(callsign);
@@ -2199,6 +2203,12 @@ function mirrorTrainingHoursFromD1_(data) {
   sheet.getRange(row, 4).setValue(dateValue || new Date());
   sheet.getRange(row, 4).setNumberFormat('MM/dd/yyyy');
   sheet.getRange(row, 6).setValue(time);
+  SpreadsheetApp.flush();
+  const writtenName = String(sheet.getRange(row, 2).getDisplayValue() || '').trim();
+  const writtenTime = String(sheet.getRange(row, 6).getDisplayValue() || '').trim();
+  if (normalizeMemberName_(writtenName) !== normalizeMemberName_(member.name) || writtenTime !== time) {
+    throw new Error('Training Hours row ' + row + ' did not keep the added record. Check Sheet protection or validation.');
+  }
   return { ok: true, changed: true, row };
 }
 
