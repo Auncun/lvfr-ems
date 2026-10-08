@@ -57,9 +57,7 @@ function migrateTrainingHoursToD1() {
   }
   const imported = Number(result.imported || 0), skipped = Number(result.skipped || 0);
   console.log('Training Hours import result: source=' + records.length + ', imported=' + imported + ', skipped=' + skipped + '.');
-  if (skipped || unmatched.length) {
-    console.warn('Training Hours rows not matched to one current roster member (kept in D1 as-is, not synced): ' + unmatched.join('; '));
-  }
+  if (skipped || unmatched.length) console.warn('Training Hours rows not matched to one current roster member (excluded from D1 snapshot): ' + unmatched.join('; '));
   return result;
 }
 
@@ -71,7 +69,8 @@ function syncTrainingHoursSheetToD1_() {
 
 // One-time history import. It copies existing Sheets logs/notifications into D1;
 // it does not modify or clear any source Sheet.
-function migrateLogsAndNotificationsToD1() {
+function migrateLogsAndNotificationsToD1(reconcile) {
+  reconcile = reconcile === true;
   const properties = PropertiesService.getScriptProperties();
   const privateId = String(properties.getProperty('LVFR_PRIVATE_SPREADSHEET_ID') || '').trim();
   const workerUrl = String(properties.getProperty('LVFR_D1_SYNC_URL') || '').trim().replace(/\/$/, '');
@@ -84,10 +83,18 @@ function migrateLogsAndNotificationsToD1() {
     if (!sheet || sheet.getLastRow() < 2) return [];
     return sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getDisplayValues();
   };
-  const operational = [];
+  const operational = [], trainingHoursLog = [], usedKeys = new Set();
+  const uniqueKey = base => { let key = base, n = 1; while (usedKeys.has(key)) key = base + '#' + (++n); usedKeys.add(key); return key; };
   cellRows('PWA Activity Log').forEach(row => {
     if (!row[0] || !row[1]) return;
-    operational.push({ source_key: 'app:' + row[0], kind: row[1], log_date: row[2], callsign: row[3], member_name: row[4], action: row[5], details: row[6], changed_by: row[7], old_rank: row[8], new_rank: row[9], old_callsign: row[10], new_callsign: row[11] });
+    const kind = String(row[1]).toLowerCase();
+    if (kind === 'training_time') {
+      let details = {};
+      try { details = JSON.parse(row[6] || '{}'); } catch (ignored) {}
+      trainingHoursLog.push({ log_date: row[2], callsign: row[3], member_name: row[4], action: row[5], previous_time: details.previous_time || '', new_time: details.new_time || '', changed_by: row[7] });
+      return;
+    }
+    operational.push({ source_key: uniqueKey('app:' + row[0]), kind, log_date: row[2], callsign: row[3], member_name: row[4], action: row[5], details: row[6], changed_by: row[7], old_rank: row[8], new_rank: row[9], old_callsign: row[10], new_callsign: row[11] });
   });
   cellRows('Logs').forEach(row => {
     const event = String(row[1] || ''), lower = event.toLowerCase();
@@ -100,7 +107,7 @@ function migrateLogsAndNotificationsToD1() {
       : lower.includes('callsign') ? 'callsign'
       : lower.includes('promot') || lower.includes('demot') || lower.includes('rank') ? 'promotion' : '';
     if (!kind || !row[0]) return;
-    operational.push({ source_key: 'archive:' + row[0] + ':' + row[1], kind, log_date: row[0], callsign: row[3], member_name: row[2], action: event,
+    operational.push({ source_key: uniqueKey('archive:' + row[0] + ':' + row[1]), kind, log_date: row[0], callsign: row[3], member_name: row[2], action: event,
       details: row[8], changed_by: row[9], old_rank: row[6], new_rank: row[7], old_callsign: row[4], new_callsign: row[5] });
   });
   const accountAudit = cellRows('Account Audit').filter(row => row[0] && row[4]).map((row, index) => ({
@@ -117,13 +124,19 @@ function migrateLogsAndNotificationsToD1() {
   }));
   const notificationState = cellRows('Notification State').filter(row => row[0]).map(row => ({ key: row[0], value: row[1] }));
   const size = 200;
-  const batches = Math.max(1, Math.ceil(Math.max(operational.length, accountAudit.length, notifications.length) / size));
-  let totals = { operational_logs: 0, account_audit: 0, notifications: 0 };
+  const batches = Math.max(1, Math.ceil(Math.max(operational.length, accountAudit.length, notifications.length, trainingHoursLog.length) / size));
+  let totals = { operational_logs: 0, account_audit: 0, notifications: 0, training_hours_log: 0 };
   for (let i = 0; i < batches; i++) {
     const payload = {
       operational_logs: operational.slice(i * size, (i + 1) * size),
       account_audit: accountAudit.slice(i * size, (i + 1) * size),
       notifications: notifications.slice(i * size, (i + 1) * size),
+      training_hours_log: trainingHoursLog.slice(i * size, (i + 1) * size),
+      replace_operational_logs: reconcile && i === 0,
+      replace_account_audit: reconcile && i === 0,
+      replace_notifications: reconcile && i === 0,
+      replace_notification_state: reconcile && i === 0,
+      replace_training_hours_log: reconcile && i === 0,
       notification_reads: i === batches - 1 ? notificationReads : [],
       notification_state: i === 0 ? notificationState : []
     };
@@ -143,7 +156,8 @@ function migrateLogsAndNotificationsToD1() {
     totals.operational_logs += Number(result.operational_logs || 0);
     totals.account_audit += Number(result.account_audit || 0);
     totals.notifications += Number(result.notifications || 0);
+    totals.training_hours_log += Number(result.training_hours_log || 0);
   }
   console.log('D1 history import complete: ' + JSON.stringify(totals));
-  return { ok: true, ...totals, message: 'Existing logs and notifications copied to D1. The Sheets were not changed.' };
+  return { ok: true, ...totals, message: reconcile ? 'Logs and notifications reconciled from Sheets.' : 'Existing logs and notifications copied to D1. The Sheets were not changed.' };
 }

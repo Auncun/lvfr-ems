@@ -163,16 +163,22 @@ function dispatch_(route, method, params, data, user) {
     // Full Sync also restores the operational logs (termination, promotion, ...)
     // from the Sheet, so logs removed with "Delete this log from D1" come back.
     let logs;
-    try { logs = restoreOperationalLogsToD1_(); }
+    try { logs = migrateLogsAndNotificationsToD1(true); }
     catch (error) {
       throw new Error('Roster was synchronized, but restoring logs from Google Sheets failed: ' + (error && error.message ? error.message : error));
     }
+    let accounts;
+    try { accounts = syncAccountsSnapshotToD1_(); }
+    catch (error) { throw new Error('Roster and logs were synchronized, but Accounts import from Sheets failed: ' + (error && error.message ? error.message : error)); }
     let trainingHours, loi;
     try { trainingHours = syncTrainingHoursSheetToD1_(); }
     catch (error) { throw new Error('Roster was synchronized, but Training Hours import from Sheets failed: ' + (error && error.message ? error.message : error)); }
     try { loi = syncLoiSheetToD1_(); }
     catch (error) { throw new Error('Roster and Training Hours were synchronized, but LOI import from Sheets failed: ' + (error && error.message ? error.message : error)); }
-    return Object.assign({}, result, { logs_restored: logs.operational_logs, training_hours_synced: trainingHours.imported || 0, loi_synced: loi.imported || 0, message: 'Full sync completed from Sheets: ' + result.members + ' members, ' + (trainingHours.imported || 0) + ' Training Hours records, ' + logs.operational_logs + ' log entries, and ' + (loi.imported || 0) + ' LOI entries' });
+    const loiSkipped = Number(loi.skipped || 0);
+    const loiWarning = loiSkipped ? '; skipped ' + loiSkipped + ' LOI row(s) not linked to current roster: ' + (loi.unmatched || []).join('; ') : '';
+    const accountWarning = accounts.unmatched_sheet_accounts && accounts.unmatched_sheet_accounts.length ? '; ' + accounts.unmatched_sheet_accounts.length + ' Sheet account row(s) have no matching D1 account ID' : '';
+    return Object.assign({}, result, { logs_restored: logs.operational_logs, account_audit_synced: logs.account_audit, notifications_synced: logs.notifications, training_hours_log_synced: logs.training_hours_log, accounts_synced: accounts.updated, accounts_deleted: accounts.deleted, accounts_unmatched: accounts.unmatched_sheet_accounts, training_hours_synced: trainingHours.imported || 0, loi_synced: loi.imported || 0, loi_skipped: loiSkipped, loi_unmatched: loi.unmatched || [], message: 'Full sync completed from Sheets: ' + result.members + ' members, ' + accounts.updated + ' Accounts, ' + (trainingHours.imported || 0) + ' Training Hours records, ' + logs.operational_logs + ' operational logs, ' + (loi.imported || 0) + ' LOI entries' + accountWarning + loiWarning });
   }
   if (route === '/api/notifications' && method === 'GET') { requireApproved_(user); return listNotifications_(user); }
   if (route === '/api/notifications/read' && method === 'POST') { requireApproved_(user); return markNotificationsRead_(data, user); }
@@ -2183,6 +2189,35 @@ function migrateLoiToD1() {
 // legacy Sheet so existing workflows and exports continue to see them.
 function mirrorTrainingHoursFromD1_(data) {
   return withScriptLock_(() => mirrorTrainingHoursFromD1Locked_(data));
+}
+
+// Reconcile D1 account metadata and membership against the private Accounts
+// Sheet. Credentials remain in D1; legacy Apps Script password hashes are not
+// imported because they use a different authentication scheme.
+function syncAccountsSnapshotToD1_() {
+  const properties = PropertiesService.getScriptProperties();
+  const workerUrl = String(properties.getProperty('LVFR_D1_SYNC_URL') || '').trim().replace(/\/$/, '');
+  const workerSecret = String(properties.getProperty('LVFR_D1_WORKER_SECRET') || '');
+  if (!workerUrl || !workerSecret) throw new Error('Configure LVFR_D1_SYNC_URL and LVFR_D1_WORKER_SECRET in Script Properties.');
+  const sheet = accountsSheet_();
+  if (!sheet) throw new Error('Accounts sheet was not found; D1 account records were not changed.');
+  if (sheet.getLastRow() < 2) throw new Error('Accounts sheet has no account records; D1 account records were not changed.');
+  const accounts = sheet.getLastRow() > 1
+    ? sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(17, sheet.getLastColumn())).getDisplayValues()
+      .filter(row => String(row[0] || '').trim())
+      .map(row => ({ account_id: row[0], name: row[1], callsign: row[2], status: row[5], role: row[6] }))
+    : [];
+  if (!accounts.length) throw new Error('Accounts sheet contains no account IDs; D1 account records were not changed.');
+  const response = UrlFetchApp.fetch(workerUrl + '/internal/accounts/reconcile', {
+    method: 'post', contentType: 'application/json', headers: { 'X-LVFR-Worker-Secret': workerSecret },
+    payload: JSON.stringify({ accounts }), muteHttpExceptions: true
+  });
+  let result = null;
+  try { result = JSON.parse(response.getContentText()); } catch (ignored) {}
+  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300 || !result || result.ok !== true) {
+    throw new Error('Accounts Sheet-to-D1 sync failed: HTTP ' + response.getResponseCode() + ' ' + response.getContentText());
+  }
+  return result;
 }
 
 function mirrorTrainingHoursFromD1Locked_(data) {

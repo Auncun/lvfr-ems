@@ -636,8 +636,34 @@ export async function handleD1(context) {
         statements.push(db.prepare("DELETE FROM account_presence WHERE account_id=?").bind(id));
         statements.push(db.prepare("DELETE FROM accounts WHERE account_id=?").bind(id));
       }
-      if(statements.length) await db.batch(statements);
+      for(let i=0;i<statements.length;i+=50) await db.batch(statements.slice(i,i+50));
       return json({ok:true,deleted:statements.length/4});
+    }
+    if(route==="/internal/accounts/reconcile"&&method==="POST") {
+      const expected=String(env.LVFR_D1_WORKER_SECRET||"");
+      if(!expected||request.headers.get("X-LVFR-Worker-Secret")!==expected) return json({detail:"Worker authentication failed."},403);
+      if(!Array.isArray(data.accounts)) return json({detail:"Accounts snapshot is invalid."},400);
+      const rows=(await db.prepare("SELECT account_id,name,callsign,status,role FROM accounts").all()).results||[];
+      const incoming=new Map(data.accounts.filter(row=>row&&row.account_id).map(row=>[String(row.account_id).trim(),row]));
+      const statements=[],missing=[]; let updated=0,deleted=0;
+      for(const row of rows) {
+        const sheet=incoming.get(String(row.account_id));
+        if(!sheet) {
+          statements.push(db.prepare("DELETE FROM auth_sessions WHERE account_id=?").bind(row.account_id));
+          statements.push(db.prepare("DELETE FROM account_presence WHERE account_id=?").bind(row.account_id));
+          statements.push(db.prepare("DELETE FROM accounts WHERE account_id=?").bind(row.account_id)); deleted++; continue;
+        }
+        incoming.delete(String(row.account_id));
+        const name=String(sheet.name||"").trim(), callsign=String(sheet.callsign||"").trim().toUpperCase(), status=String(sheet.status||"").trim().toLowerCase(), role=String(sheet.role||"").trim().toLowerCase();
+        if(!name||!['pending','approved','deactivated','denied','removed'].includes(status)||!/^([a-z][a-z0-9_-]{1,31})$/.test(role)) return json({detail:"Accounts Sheet row is invalid for account "+row.account_id+"; D1 was not changed."},400);
+        if(!await db.prepare("SELECT role FROM role_permissions WHERE role=?").bind(role).first()&&role!=="admin") return json({detail:"Unknown account role in Sheet: "+role+"; D1 was not changed."},400);
+        statements.push(db.prepare("UPDATE accounts SET name=?,name_key=?,callsign=?,status=?,role=?,updated_at=? WHERE account_id=?").bind(name,nameKey(name),callsign,status,role,new Date().toISOString(),row.account_id));
+        if(['denied','removed','deactivated'].includes(status)) statements.push(db.prepare("DELETE FROM auth_sessions WHERE account_id=?").bind(row.account_id));
+        updated++;
+      }
+      for(let i=0;i<statements.length;i+=50) await db.batch(statements.slice(i,i+50));
+      missing.push(...incoming.keys());
+      return json({ok:true,updated,deleted,unmatched_sheet_accounts:missing});
     }
     if(route==="/internal/training-hours/import" && method==="POST") {
       const expected=String(env.LVFR_D1_WORKER_SECRET||"");
@@ -654,12 +680,10 @@ export async function handleD1(context) {
       const liveSourceRows=new Set(), statements=[]; let imported=0, skipped=0, unchanged=0;
       for(const record of data.records) {
         const sourceRow=Number(record.source_row)||null;
-        // A Sheet row that exists but cannot be matched right now is still "live":
-        // never let it be deleted as stale.
-        if(sourceRow) liveSourceRows.add(sourceRow);
         const callsign=String(record.callsign||"").trim().toUpperCase(), time=String(record.time||"").trim();
         const member=memberByCallsign.get(callsign);
         if(!callsign||!time||!member) { skipped++; continue; }
+        if(sourceRow) liveSourceRows.add(sourceRow);
         const trainingDate=String(record.date||"").trim()||today;
         let target=sourceRow?bySourceRow.get(sourceRow):null;
         if(sourceRow&&!target) {
@@ -673,7 +697,6 @@ export async function handleD1(context) {
         else statements.push(db.prepare("INSERT INTO training_hours(source_row,callsign,name,training_date,time,updated_at,updated_by) VALUES(?,?,?,?,?,?,?) ON CONFLICT(source_row) DO UPDATE SET callsign=excluded.callsign,name=excluded.name,training_date=excluded.training_date,time=excluded.time,updated_at=excluded.updated_at,updated_by=excluded.updated_by")
           .bind(sourceRow,member.callsign,member.name,trainingDate,time,timestamp,"Sheet sync"));
       }
-      if(data.reconcile===true && skipped>0) return json({detail:"Training Hours Sheet snapshot contains rows that could not be matched to a roster member; D1 was not changed.",skipped},400);
       if(data.reconcile===true) {
         for(const row of existingRows) {
           if(row.source_row===null||row.source_row===undefined||!liveSourceRows.has(Number(row.source_row))) statements.push(db.prepare("DELETE FROM training_hours WHERE id=?").bind(row.id));
@@ -698,8 +721,12 @@ export async function handleD1(context) {
       for(const raw of data.records) {
         const type=String(raw?.type||"").trim().toUpperCase();
         const name=String(raw?.name||"").trim().replace(/\s+/g," ");
+        // LOI coordinators sometimes append the roster-independent leave
+        // marker to a person's Sheet name. Match that annotation away, but
+        // keep the canonical roster name in D1.
+        const lookupName=name.replace(/\s*\((?:LOA|LEAVE OF ABSENCE)\)\s*$/i,"").trim();
         const callsign=String(raw?.callsign||"").trim().toUpperCase();
-        const member=(callsign&&byCallsign.get(callsign))||byName.get(nameKey(name));
+        const member=(callsign&&byCallsign.get(callsign))||byName.get(nameKey(lookupName));
         const sourceRow=Number(raw?.source_row)||null;
         if(sourceRow) seenSourceRows.add(`${type}:${sourceRow}`);
         if(!["HERT","FORT"].includes(type)||!name||!member) { skipped++; if(name) unmatched.push(`${type} row ${sourceRow||"?"}: ${name}`); continue; }
@@ -723,12 +750,14 @@ export async function handleD1(context) {
       for(const record of recordsByKey.values()) statements.push(db.prepare(`INSERT INTO loi_entries(type,callsign,name,test_percent,source_row,updated_at,updated_by)
         VALUES(?,?,?,?,?,?,?) ON CONFLICT(type,callsign) DO UPDATE SET name=excluded.name,test_percent=excluded.test_percent,source_row=excluded.source_row,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
         .bind(record.type,record.callsign,record.name,record.test_percent,record.source_row,timestamp,"Sheet sync"));
-      if(data.reconcile===true&&skipped>0) return json({detail:"LOI Sheet snapshot contains entries that could not be matched to the current roster; D1 was not changed.",skipped,unmatched},400);
+      // LOI rows are keyed by current roster callsign in D1. Keep importing
+      // valid rows when the legacy Sheet contains stale/non-roster names;
+      // reconcile removes D1 rows absent from the valid Sheet snapshot below.
       if(data.reconcile===true) {
         for(const row of existing) if(!recordsByKey.has(`${row.type}:${row.callsign}`)) statements.push(db.prepare("DELETE FROM loi_entries WHERE id=?").bind(row.id));
       }
       for(let i=0;i<statements.length;i+=50) await db.batch(statements.slice(i,i+50));
-      return json({ok:true,imported:recordsByKey.size,skipped,written:statements.length,unmatched});
+      return json({ok:true,imported:recordsByKey.size,skipped,unmatched,written:statements.length,reconciled:data.reconcile===true});
     }
     if(route==="/internal/logs/import" && method==="POST") {
       const expected=String(env.LVFR_D1_WORKER_SECRET||"");
@@ -739,10 +768,15 @@ export async function handleD1(context) {
       // rows are dropped. Ordinary imports keep INSERT OR IGNORE behaviour.
       if(data.replace_operational_logs===true) statements.push(db.prepare("DELETE FROM operational_logs"));
       if(data.replace_account_audit===true) statements.push(db.prepare("DELETE FROM account_audit"));
+      if(data.replace_notifications===true) { statements.push(db.prepare("DELETE FROM notification_reads")); statements.push(db.prepare("DELETE FROM notifications")); }
+      if(data.replace_notification_state===true) statements.push(db.prepare("DELETE FROM notification_state"));
+      if(data.replace_training_hours_log===true) statements.push(db.prepare("DELETE FROM training_hours_log"));
       for(const row of (Array.isArray(data.operational_logs)?data.operational_logs:[])) statements.push(db.prepare(`INSERT OR IGNORE INTO operational_logs(source_key,kind,log_date,callsign,member_name,action,details,changed_by,old_rank,new_rank,old_callsign,new_callsign)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).bind(String(row.source_key||""),String(row.kind||""),String(row.log_date||""),String(row.callsign||""),String(row.member_name||""),String(row.action||""),String(row.details||""),String(row.changed_by||""),String(row.old_rank||""),String(row.new_rank||""),String(row.old_callsign||""),String(row.new_callsign||"")));
       for(const row of (Array.isArray(data.account_audit)?data.account_audit:[])) statements.push(db.prepare("INSERT OR IGNORE INTO account_audit(source_key,created_at,account_id,name,callsign,action,actor_name) VALUES(?,?,?,?,?,?,?)")
         .bind(String(row.source_key||""),String(row.created_at||""),String(row.account_id||""),String(row.name||""),String(row.callsign||""),String(row.action||""),String(row.actor_name||"")));
+      for(const row of (Array.isArray(data.training_hours_log)?data.training_hours_log:[])) statements.push(db.prepare("INSERT INTO training_hours_log(log_date,callsign,member_name,action,previous_time,new_time,changed_by) VALUES(?,?,?,?,?,?,?)")
+        .bind(String(row.log_date||""),String(row.callsign||""),String(row.member_name||""),String(row.action||""),String(row.previous_time||""),String(row.new_time||""),String(row.changed_by||"")));
       for(const row of (Array.isArray(data.notifications)?data.notifications:[])) statements.push(db.prepare("INSERT OR IGNORE INTO notifications(kind,event_key,title,message,callsign,target_rank,created_at) VALUES(?,?,?,?,?,?,?)")
         .bind(String(row.kind||""),String(row.event_key||("legacy-sheet:"+String(row.id||""))),String(row.title||""),String(row.message||""),String(row.callsign||""),String(row.target_rank||""),String(row.created_at||new Date().toISOString())));
       for(let i=0;i<statements.length;i+=50) await db.batch(statements.slice(i,i+50));
