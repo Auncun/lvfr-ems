@@ -25,6 +25,8 @@ function canManageRoleProfiles() {
   return ['admin', 'commander'].includes(String(currentUser?.role || '').toLowerCase())
     || currentUser?.permissions?.operation_command_access === true;
 }
+function canManageRanks() { return currentUser?.role === 'admin' || currentUser?.permissions?.role_manage === true; }
+function canAccessPermissionPanel() { return canManageRoleProfiles() || canManageRanks(); }
 function canManageCommandAccounts() {
   return ['admin', 'commander'].includes(String(currentUser?.role || '').toLowerCase());
 }
@@ -49,13 +51,13 @@ function allAccounts() {
   ];
 }
 function configureOperationAccess() {
-  const allowed = canManageRoleProfiles(), accountManager = canManageCommandAccounts();
+  const allowed = canAccessPermissionPanel(), accountManager = canManageCommandAccounts();
   document.querySelector('#openFullCleaning')?.toggleAttribute('hidden', currentUser?.role !== 'admin');
   document.querySelector('[data-command-section="accounts"]')?.toggleAttribute('hidden', !accountManager);
   document.querySelector('[data-command-section="history"]')?.toggleAttribute('hidden', !accountManager);
   document.querySelector('[data-command-section="permissions"]')?.toggleAttribute('hidden', !allowed);
   document.querySelector('.permission-member-picker')?.toggleAttribute('hidden', currentUser?.role !== 'admin');
-  document.querySelector('.custom-role-tools')?.toggleAttribute('hidden', !allowed);
+  document.querySelector('.custom-role-tools')?.toggleAttribute('hidden', !canManageRanks());
   if (!accountManager) {
     commandSections.accounts.hidden = true;
     commandSections.history.hidden = true;
@@ -76,18 +78,18 @@ function accountActions(account) {
     <button type="button" class="danger" data-action="deny" data-id="${id}">Deny</button>`;
   if (account.status === 'deactivated') return `
     ${(!account.is_elevated || operation) ? `<button type="button" data-action="reactivate" data-id="${id}">Reactivate</button>` : ''}
-    ${operation && account.is_elevated ? `<button type="button" data-action="demote" data-id="${id}">${account.role === 'admin' ? 'Make Commander' : 'Demote to Leader'}</button>` : ''}
+    ${operation && account.is_elevated ? `<button type="button" data-action="demote" data-id="${id}">${account.role === 'admin' ? `Make ${esc(roleTitle('commander'))}` : `Demote to ${esc(roleTitle('leader'))}`}</button>` : ''}
     ${operation && account.role !== 'admin' ? `<button type="button" data-action="permissions" data-id="${id}">Permissions</button>` : ''}`;
   if (account.is_elevated && !operation) return '';
   const memberButton = account.role === 'member'
-    ? `<button type="button" data-action="leader" data-id="${id}">Make Leader</button>`
-    : account.role === 'leader' ? `<button type="button" data-action="member" data-id="${id}">Make Member</button>` : '';
+    ? `<button type="button" data-action="leader" data-id="${id}">Make ${esc(roleTitle('leader'))}</button>`
+    : account.role === 'leader' ? `<button type="button" data-action="member" data-id="${id}">Make ${esc(roleTitle('member'))}</button>` : '';
   const roleButton = operation
     ? account.role === 'admin'
-      ? `<button type="button" data-action="demote" data-id="${id}">Make Commander</button>`
+      ? `<button type="button" data-action="demote" data-id="${id}">Make ${esc(roleTitle('commander'))}</button>`
       : account.role === 'commander'
-      ? `<button type="button" data-action="promote" data-id="${id}">Make Operation</button><button type="button" data-action="demote" data-id="${id}">Demote to Leader</button>`
-      : `<button type="button" data-action="commander" data-id="${id}">Make Commander</button><button type="button" data-action="promote" data-id="${id}">Make Operation</button>`
+      ? `<button type="button" data-action="promote" data-id="${id}">Make Operation</button><button type="button" data-action="demote" data-id="${id}">Demote to ${esc(roleTitle('leader'))}</button>`
+      : `<button type="button" data-action="commander" data-id="${id}">Make ${esc(roleTitle('commander'))}</button><button type="button" data-action="promote" data-id="${id}">Make Operation</button>`
     : '';
   const permissionButton = operation ? `<button type="button" data-action="permissions" data-id="${id}">Permissions</button>` : '';
   const elevated = account.is_elevated;
@@ -114,7 +116,7 @@ function renderAccounts() {
   accountRows.innerHTML = rows.map(account => `
     <tr><td data-label="Account"><strong>${esc(account.display_name || account.name)}</strong>${account.approved_by ? `<br><small class="muted">Approved by ${esc(account.approved_by)}</small>` : ''}</td>
       <td data-label="Callsign">${esc(account.callsign || '—')}</td><td data-label="Status">${esc(account.status)}</td>
-      <td data-label="Role">${account.status === 'pending' ? '—' : account.role === 'admin' ? 'Operation' : account.role === 'commander' ? 'Commander' : account.role === 'leader' ? 'Leader' : 'Member'}</td>
+      <td data-label="Role">${account.status === 'pending' ? '—' : esc(roleTitle(account.role))}</td>
       <td data-label="Presence"><span class="presence-badge ${account.online ? 'online' : 'offline'}">${account.online ? 'Online' : 'Offline'}</span></td>
       <td data-label="Created">${esc(account.requested_at || '—')}</td><td data-label="Actions"><div class="admin-actions">${accountActions(account)}</div></td></tr>`).join('');
 }
@@ -196,11 +198,11 @@ async function loadAccounts(silent = false) {
   const cachedUser = window.lvfrCachedUser?.();
   currentUser = currentUser || cachedUser;
   configureOperationAccess();
-  if (currentUser && !canManageCommandAccounts() && canManageRoleProfiles()) {
+  if (currentUser && !canManageCommandAccounts() && canAccessPermissionPanel()) {
     setMessage('Operation Command access is limited to Access Permissions.');
     return;
   }
-  if (currentUser && !canManageRoleProfiles()) { location.replace('/portal'); return; }
+  if (currentUser && !canAccessPermissionPanel()) { location.replace('/portal'); return; }
   const cacheKey = `lvfr.admin.accounts.${cachedUser?.account_id || cachedUser?.id || 'current'}.v1`;
   let hadCached = false;
   try {
@@ -321,7 +323,8 @@ function applyOptimisticAccountAction(source, action) {
 const permissionGroups = [
   { name: 'Application access', items: [
     ['portal_access', 'EMS Operations', 'Open the EMS Operations application.'],
-    ['operation_command_access', 'Operation Command access', 'Open Access Permissions to manage role profiles. Does not grant account management.'],
+    ['operation_command_access', 'Operation Command access', 'Open Access Permissions to manage role permission profiles. Does not grant account management.'],
+    ['role_manage', 'Manage ranks', 'Add ranks and rename, reorder, or delete ranks below your own.'],
     ['watch_command_view', 'Watch Command: view', 'Open Watch Command logs and activity.'],
     ['watch_command_edit', 'Watch Command: edit', 'Create and update Watch Command records.'],
     ['watch_command_roster', 'Watch Command: roster lookup', 'Search member names and callsigns.'],
@@ -356,7 +359,7 @@ let permissionRoleOrder = [];
 let permissionEditorCapabilities = {};
 let editablePermissionKeys = [];
 let selectedPermissionRole = 'member';
-function roleTitle(role) { return ({member:'Member',leader:'Leader',commander:'Commander'})[role] || role.replace(/[_-]+/g,' ').replace(/\b\w/g, ch => ch.toUpperCase()); }
+function roleTitle(role) { const saved=permissionRoleOrder.find(item=>item.role===role)?.display_name; return saved || ({admin:'Operation',member:'Member',leader:'Leader',commander:'Commander'})[role] || role.replace(/[_-]+/g,' ').replace(/\b\w/g, ch => ch.toUpperCase()); }
 function permissionEntryMatches(entry, query, groupName) {
   if (!query) return true;
   if (Array.isArray(entry)) return `${entry[1]} ${entry[2]} ${groupName}`.toLocaleLowerCase().includes(query);
@@ -400,10 +403,11 @@ function renderRolePermissions() {
       return `<details class="permission-group" data-permission-group="${esc(group.name)}" ${query||openPermissionGroups.has(group.name)?'open':''}><summary>${esc(group.name)}</summary>${items.map(entry=>renderPermissionEntry(entry,rolePermissionProfiles[role],query,group.name)).join('')}</details>`;
     }).join('');
     const enabled = Object.values(rolePermissionProfiles[role] || {}).filter(Boolean).length;
-    const canManageRank = currentUser?.role==='admin' || permissionRoleOrder.findIndex(item=>item.role===role)+1 > 2;
     const orderIndex=permissionRoleOrder.findIndex(item=>item.role===role);
-    const rankTools=`<div class="admin-actions"><button type="button" data-rank-move="up" data-rank-role="${esc(role)}" ${!canManageRank||orderIndex<=1?'disabled':''}>Move up</button><button type="button" data-rank-move="down" data-rank-role="${esc(role)}" ${!canManageRank||orderIndex<1||orderIndex>=permissionRoleOrder.length-1?'disabled':''}>Move down</button>${!['member','leader','commander'].includes(role)?`<button type="button" class="danger" data-delete-role="${esc(role)}" ${!canManageRank?'disabled':''}>Delete rank</button>`:''}</div>`;
-    return `<article class="role-permission-card" data-permission-role="${role}"><header><div><span class="role-kicker">RANK ${permissionRoleOrder.findIndex(item=>item.role===role)+1} · ROLE PROFILE</span><h3>${roleLabel}</h3></div><span class="permission-count">${enabled} enabled</span></header>${rankTools}<div class="role-permission-groups">${groups || '<p class="muted">No permissions match your search.</p>'}</div><button type="button" class="primary" data-save-permissions="${role}">Save ${roleLabel} permissions</button></article>`;
+    const actorRank=currentUser?.role==='admin'?1:(permissionRoleOrder.findIndex(item=>item.role===String(currentUser?.role||''))+1||2);
+    const canManageRank=canManageRanks()&&orderIndex+1>actorRank;
+    const rankTools=`<div class="admin-actions"><label>Rank name <input type="text" maxlength="32" data-rank-name="${esc(role)}" value="${esc(roleLabel)}" ${!canManageRank?'disabled':''}></label><button type="button" data-rename-rank="${esc(role)}" ${!canManageRank?'disabled':''}>Save name</button><button type="button" data-rank-move="up" data-rank-role="${esc(role)}" ${!canManageRank||orderIndex<=1?'disabled':''}>Move up</button><button type="button" data-rank-move="down" data-rank-role="${esc(role)}" ${!canManageRank||orderIndex<1||orderIndex>=permissionRoleOrder.length-1?'disabled':''}>Move down</button>${!['member','leader','commander'].includes(role)?`<button type="button" class="danger" data-delete-role="${esc(role)}" ${!canManageRank?'disabled':''}>Delete rank</button>`:''}</div>`;
+    return `<article class="role-permission-card" data-permission-role="${role}"><header><div><span class="role-kicker">RANK ${orderIndex+1} · ROLE PROFILE</span><h3>${roleLabel}</h3></div><span class="permission-count">${enabled} enabled</span></header>${rankTools}<div class="role-permission-groups">${canManageRoleProfiles()?(groups || '<p class="muted">No permissions match your search.</p>'):'<p class="muted">You can manage rank names and order. Permission profile editing requires Operation Command access.</p>'}</div>${canManageRoleProfiles()?`<button type="button" class="primary" data-save-permissions="${role}">Save ${roleLabel} permissions</button>`:''}</article>`;
   }).join('');
   panel.querySelectorAll('[data-indeterminate="true"]').forEach(input => { input.indeterminate = true; });
 }
@@ -463,6 +467,15 @@ document.querySelector('#rolePermissionsPanel').addEventListener('click', async 
     move.disabled=true;
     try{const result=await api('/api/role-permissions/order',{method:'POST',body:JSON.stringify({role:move.dataset.rankRole,direction:move.dataset.rankMove})});permissionRoleOrder=result.order||permissionRoleOrder;renderRolePermissions();}
     catch(error){document.querySelector('#permissionStatus').textContent=`Could not reorder rank: ${error.message}`;document.querySelector('#permissionStatus').className='permission-status error';}
+    return;
+  }
+  const rename=event.target.closest('[data-rename-rank]');
+  if(rename){
+    const role=rename.dataset.renameRank,input=document.querySelector(`[data-rank-name="${CSS.escape(role)}"]`),name=input?.value.trim();
+    if(!name)return;
+    rename.disabled=true;
+    try{const result=await api('/api/role-permissions/name',{method:'POST',body:JSON.stringify({role,display_name:name})});const item=permissionRoleOrder.find(entry=>entry.role===role);if(item)item.display_name=result.display_name;renderRolePermissions();document.querySelector('#permissionStatus').textContent=`Rank renamed to ${name}.`;document.querySelector('#permissionStatus').className='permission-status success';}
+    catch(error){document.querySelector('#permissionStatus').textContent=`Could not rename rank: ${error.message}`;document.querySelector('#permissionStatus').className='permission-status error';rename.disabled=false;}
     return;
   }
   const remove=event.target.closest('[data-delete-role]');
@@ -530,7 +543,7 @@ document.querySelector('#permissionMemberResults')?.addEventListener('click', ev
 let individualPermissionTarget = null;
 let individualPermissionState = null;
 let individualPermissionMode = 'role';
-function individualRoleLabel(role) { return role === 'leader' ? 'Leader' : role === 'commander' ? 'Commander' : role === 'admin' ? 'Operation' : 'Member'; }
+function individualRoleLabel(role) { return roleTitle(role); }
 function renderIndividualPermissions() {
   const panel = document.querySelector('#individualPermissionsList');
   if (!panel || !individualPermissionState) return;
@@ -687,8 +700,8 @@ const commandSections = {
   history: document.querySelector('#commandHistorySection'),
 };
 function showCommandSection(name, updateHash = false) {
-  if (!canManageCommandAccounts() && !canManageRoleProfiles()) return;
-  if (name === 'permissions' && !canManageRoleProfiles()) {
+  if (!canManageCommandAccounts() && !canAccessPermissionPanel()) return;
+  if (name === 'permissions' && !canAccessPermissionPanel()) {
     if (!canManageCommandAccounts()) return;
     name = 'accounts';
   }

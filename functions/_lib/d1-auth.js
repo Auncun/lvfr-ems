@@ -3,7 +3,7 @@ const json = (body, status = 200, headers = {}) => Response.json(body, { status,
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 const LOG_VIEW_PERMISSIONS = ["promotion_log_view","callsign_log_view","termination_log_view","training_log_view","training_hours_log_view","loi_log_view","exam_log_view","note_log_view","activity_log_view","instructor_log_view"];
 const TRAINING_VIEW_PERMISSIONS = ["hert_certified_view","hert_instructor_view","hert_loi_view","fort_training_view","fort_instructor_view","fort_loi_view"];
-const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
+const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
 const DEFAULT_ROLE_PERMISSIONS = {
   member: { portal_access:false,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:false,eligible_view:false,promotion_access:false,profile_view:false,inactive_view:false,logs_view:false,training_view:false,training_fort_manage:false,training_hert_manage:false,training_hours_view:false,training_hours_manage:false,loi_manage:false,statistics_view:false,notes_manage:false,promotion_manage:false,callsign_manage:false,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:false,sync_manage:false },
   leader: { portal_access:true,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,promotion_access:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,loi_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true },
@@ -486,6 +486,9 @@ function requireRoleProfileManager(actor) {
   if(actor.role!=="admin"&&actor.role!=="commander"&&actor.permissions?.operation_command_access!==true)
     throw Object.assign(new Error("Operation Command access is required."),{status:403});
 }
+function requireRankManager(actor) {
+  if(actor.role!=="admin"&&actor.permissions?.role_manage!==true) throw Object.assign(new Error("Rank management permission is required."),{status:403});
+}
 async function leaders(db, actor) {
   const rows = await db.prepare("SELECT account_id,name,callsign,status,role,permissions_override_json,created_at,activated_at,approved_by,admin_changed_at,admin_changed_by FROM accounts WHERE status NOT IN ('removed','denied') ORDER BY created_at DESC").all();
   const audit = await db.prepare("SELECT id,created_at,account_id,name,callsign,action,actor_name,actor_name AS by FROM account_audit ORDER BY id DESC LIMIT 200").all();
@@ -617,6 +620,23 @@ export async function handleD1(context) {
       await db.prepare("UPDATE accounts SET name=?,name_key=?,callsign=?,status=?,role=?,updated_at=? WHERE account_id=?").bind(String(account.name).trim(),nameKey(account.name),String(account.callsign).trim().toUpperCase(),status,role,timestamp,id).run();
       await db.prepare("DELETE FROM auth_sessions WHERE account_id=? AND ? IN ('denied','removed','deactivated')").bind(id,status).run();
       return json({ok:true,account_id:id});
+    }
+    if(route==="/internal/accounts/delete"&&method==="POST") {
+      const expected=String(env.LVFR_D1_WORKER_SECRET||"");
+      if(!expected||request.headers.get("X-LVFR-Worker-Secret")!==expected) return json({detail:"Worker authentication failed."},403);
+      if(!Array.isArray(data.account_ids)||data.account_ids.length>100) return json({detail:"Account deletion payload is invalid."},400);
+      const ids=[...new Set(data.account_ids.map(value=>String(value||"").trim()).filter(Boolean))];
+      const statements=[],now=new Date().toISOString();
+      for(const id of ids) {
+        const account=await db.prepare("SELECT account_id,name,callsign FROM accounts WHERE account_id=?").bind(id).first();
+        if(!account) continue;
+        statements.push(db.prepare("INSERT INTO account_audit(created_at,account_id,name,callsign,action,actor_name) VALUES(?,?,?,?,?,?)").bind(now,id,account.name,account.callsign,"Deleted from Accounts Sheet","Google Sheets"));
+        statements.push(db.prepare("DELETE FROM auth_sessions WHERE account_id=?").bind(id));
+        statements.push(db.prepare("DELETE FROM account_presence WHERE account_id=?").bind(id));
+        statements.push(db.prepare("DELETE FROM accounts WHERE account_id=?").bind(id));
+      }
+      if(statements.length) await db.batch(statements);
+      return json({ok:true,deleted:statements.length/4});
     }
     if(route==="/internal/training-hours/import" && method==="POST") {
       const expected=String(env.LVFR_D1_WORKER_SECRET||"");
@@ -785,8 +805,8 @@ export async function handleD1(context) {
     }
     if(route==="/api/role-permissions"&&method==="GET") {
       const actor=session.account;
-      requireRoleProfileManager(actor);
-      const rows=(await db.prepare("SELECT role,sort_order FROM role_permissions ORDER BY sort_order,role").all()).results||[];
+      if(actor.role!=="admin"&&actor.role!=="commander"&&actor.permissions?.operation_command_access!==true&&actor.permissions?.role_manage!==true) throw Object.assign(new Error("Access Panel permission is required."),{status:403});
+      const rows=(await db.prepare("SELECT role,sort_order,display_name FROM role_permissions ORDER BY sort_order,role").all()).results||[];
       const roles=new Set(["member","leader","commander",...rows.map(row=>String(row.role||"").toLowerCase())]);
       const profiles={}, effective=await accountPermissions(db,actor);
       const visibleKeys=actor.role==="admin"?ROLE_PERMISSION_KEYS:ROLE_PERMISSION_KEYS.filter(key=>effective[key]===true);
@@ -794,16 +814,16 @@ export async function handleD1(context) {
         const profile=await rolePermissions(db,role);
         profiles[role]=Object.fromEntries(visibleKeys.map(key=>[key,Boolean(profile[key])]));
       }
-      const order=[{role:"admin",sort_order:1},...rows.filter(row=>row.role!=="admin").map(row=>({role:String(row.role).toLowerCase(),sort_order:Number(row.sort_order)||100}))];
-      for(const [role,sort_order] of [["commander",2],["leader",3],["member",4]]) if(!order.some(row=>row.role===role)) order.push({role,sort_order});
+      const order=[{role:"admin",sort_order:1,display_name:"Operation"},...rows.filter(row=>row.role!=="admin").map(row=>({role:String(row.role).toLowerCase(),sort_order:Number(row.sort_order)||100,display_name:String(row.display_name||"")}))];
+      for(const [role,sort_order,display_name] of [["commander",2,"Commander"],["leader",3,"Leader"],["member",4,"Member"]]) if(!order.some(row=>row.role===role)) order.push({role,sort_order,display_name});
       order.sort((a,b)=>a.sort_order-b.sort_order||a.role.localeCompare(b.role));
       return json({profiles,keys:visibleKeys,actor_permissions:Object.fromEntries(visibleKeys.map(key=>[key,true])),order});
     }
     if(route==="/api/role-permissions/order"&&method==="POST") {
-      const actor=session.account; requireRoleProfileManager(actor);
-      const order=(await db.prepare("SELECT role,sort_order FROM role_permissions ORDER BY sort_order,role").all()).results||[];
+      const actor=session.account; requireRankManager(actor);
+      const order=(await db.prepare("SELECT role,sort_order,display_name FROM role_permissions ORDER BY sort_order,role").all()).results||[];
       const canonical=[{role:"admin",sort_order:1},...order.filter(row=>row.role!=="admin")];
-      for(const [role,sort_order] of [["commander",2],["leader",3],["member",4]]) if(!canonical.some(row=>row.role===role)) canonical.push({role,sort_order});
+      for(const [role,sort_order,display_name] of [["commander",2,"Commander"],["leader",3,"Leader"],["member",4,"Member"]]) if(!canonical.some(row=>row.role===role)) canonical.push({role,sort_order,display_name});
       canonical.sort((a,b)=>Number(a.sort_order)-Number(b.sort_order)||a.role.localeCompare(b.role));
       const index=canonical.findIndex(row=>row.role===String(data.role||""));
       const other=index+(data.direction==="up"?-1:1), actorRank=actor.role==="admin"?1:Number(canonical.find(row=>row.role===actor.role)?.sort_order)||2;
@@ -813,9 +833,20 @@ export async function handleD1(context) {
       await db.batch(statements);
       return json({ok:true,order:canonical});
     }
+    if(route==="/api/role-permissions/name"&&method==="POST") {
+      const actor=session.account; requireRankManager(actor);
+      const role=String(data.role||"").toLowerCase(),name=String(data.display_name||"").trim().replace(/\s+/g," ");
+      const target=await db.prepare("SELECT sort_order FROM role_permissions WHERE role=?").bind(role).first();
+      const actorRank=actor.role==="admin"?1:Number((await db.prepare("SELECT sort_order FROM role_permissions WHERE role=?").bind(actor.role).first())?.sort_order)||2;
+      if(!target||Number(target.sort_order)<=actorRank) throw Object.assign(new Error("You can only rename ranks below your own."),{status:403});
+      if(name.length<2||name.length>32) throw Object.assign(new Error("Rank name must be 2–32 characters."),{status:400});
+      await db.prepare("UPDATE role_permissions SET display_name=? WHERE role=?").bind(name,role).run();
+      await appendAudit(db,{account_id:"role:"+role,name:role,callsign:""},"Renamed rank to "+name,actor.name);
+      return json({ok:true,role,display_name:name});
+    }
     const roleDelete=route.match(/^\/api\/role-permissions\/([^/]+)$/);
     if(roleDelete&&method==="DELETE") {
-      const actor=session.account; requireRoleProfileManager(actor); const role=decodeURIComponent(roleDelete[1]);
+      const actor=session.account; requireRankManager(actor); const role=decodeURIComponent(roleDelete[1]);
       const rank=actor.role==="admin"?1:Number((await db.prepare("SELECT sort_order FROM role_permissions WHERE role=?").bind(actor.role).first())?.sort_order)||2;
       const target=await db.prepare("SELECT sort_order FROM role_permissions WHERE role=?").bind(role).first();
       if(!target||["admin","commander","leader","member"].includes(role)) throw Object.assign(new Error("Only custom roles can be deleted."),{status:400});
@@ -828,7 +859,8 @@ export async function handleD1(context) {
     }
     if(route==="/api/role-permissions"&&method==="POST") {
       const actor=session.account, role=String(data.role||"").toLowerCase();
-      requireRoleProfileManager(actor);
+      const existingRole=await db.prepare("SELECT role FROM role_permissions WHERE role=?").bind(role).first();
+      if(existingRole) requireRoleProfileManager(actor); else requireRankManager(actor);
       if(!/^[a-z][a-z0-9_-]{1,31}$/.test(role)||role==="admin") throw Object.assign(new Error("Choose a valid role name."),{status:400});
       if(role===actor.role) throw Object.assign(new Error("You cannot edit the permission profile for your own role."),{status:403});
       const incoming={...(data.permissions&&typeof data.permissions==="object"?data.permissions:{})};

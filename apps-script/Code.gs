@@ -1184,6 +1184,7 @@ function installRosterD1SyncTriggers() {
   const desired = ids.filter((id, index) => ids.indexOf(id) === index)
     .map(id => ({ handler: 'syncRosterToD1OnEdit_', spreadsheetId: id, event: 'edit' }));
   desired.push({ handler: 'syncRosterToD1OnChange_', spreadsheetId: requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'), event: 'change' });
+  desired.push({ handler: 'syncAccountsToD1OnChange_', spreadsheetId: requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'), event: 'change' });
   const existing = ScriptApp.getProjectTriggers();
   desired.forEach(item => {
     const matches = existing.filter(trigger => trigger.getHandlerFunction() === item.handler && trigger.getTriggerSourceId() === item.spreadsheetId);
@@ -1192,6 +1193,7 @@ function installRosterD1SyncTriggers() {
     const builder = ScriptApp.newTrigger(item.handler).forSpreadsheet(item.spreadsheetId);
     (item.event === 'edit' ? builder.onEdit() : builder.onChange()).create();
   });
+  if (!PropertiesService.getScriptProperties().getProperty('LVFR_D1_ACCOUNTS_SHEET_IDS')) saveAccountsSheetIds_();
   return diagnoseRosterD1Sync();
 }
 
@@ -1202,7 +1204,7 @@ function diagnoseRosterD1Sync() {
   const privateId = String(properties.getProperty('LVFR_PRIVATE_SPREADSHEET_ID') || '');
   const triggers = ScriptApp.getProjectTriggers().map(trigger => ({
     handler: trigger.getHandlerFunction(), source_id: trigger.getTriggerSourceId()
-  })).filter(trigger => ['syncRosterToD1OnEdit_', 'syncRosterToD1OnChange_'].includes(trigger.handler));
+  })).filter(trigger => ['syncRosterToD1OnEdit_', 'syncRosterToD1OnChange_', 'syncAccountsToD1OnChange_'].includes(trigger.handler));
   const result = {
     roster_spreadsheet_configured: Boolean(rosterId), private_spreadsheet_configured: Boolean(privateId),
     d1_url_configured: Boolean(properties.getProperty('LVFR_D1_SYNC_URL')),
@@ -2838,7 +2840,52 @@ function installAccountsD1SyncTrigger() {
     trigger.getHandlerFunction() === 'syncAccountsToD1OnEdit_' && trigger.getTriggerSourceId() === spreadsheetId
   );
   if (!installed) ScriptApp.newTrigger('syncAccountsToD1OnEdit_').forSpreadsheet(spreadsheetId).onEdit().create();
+  const changeInstalled = ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === 'syncAccountsToD1OnChange_' && trigger.getTriggerSourceId() === spreadsheetId);
+  if (!changeInstalled) ScriptApp.newTrigger('syncAccountsToD1OnChange_').forSpreadsheet(spreadsheetId).onChange().create();
+  saveAccountsSheetIds_();
   return { ok: true, installed: true };
+}
+
+function accountsSheetIds_() {
+  const sheet = accountsSheet_();
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  return [...new Set(sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getDisplayValues().map(row => String(row[0] || '').trim()).filter(Boolean))].sort();
+}
+
+function saveAccountsSheetIds_() {
+  PropertiesService.getScriptProperties().setProperty('LVFR_D1_ACCOUNTS_SHEET_IDS', JSON.stringify(accountsSheetIds_()));
+}
+
+function syncAccountsToD1OnChange_(event) {
+  if (!event || !event.source || String(event.changeType || '').toUpperCase() !== 'REMOVE_ROW') return;
+  const active = event.source.getActiveSheet();
+  if (!active || active.getName() !== LVFR.accountsTab || event.source.getId() !== requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')) return;
+  withScriptLock_(() => {
+    const properties = PropertiesService.getScriptProperties(), key = 'LVFR_D1_ACCOUNTS_SHEET_IDS';
+    const previous = properties.getProperty(key);
+    const current = accountsSheetIds_();
+    if (!previous) { saveAccountsSheetIds_(); return; }
+    let oldIds;
+    try { oldIds = JSON.parse(previous); } catch (error) { saveAccountsSheetIds_(); return; }
+    const currentSet = new Set(current), removed = (Array.isArray(oldIds) ? oldIds : []).filter(id => !currentSet.has(id));
+    if (removed.length) deleteAccountsFromD1_(removed);
+    properties.setProperty(key, JSON.stringify(current));
+  }, 30000);
+}
+
+function deleteAccountsFromD1_(accountIds) {
+  const properties = PropertiesService.getScriptProperties();
+  const base = String(properties.getProperty('LVFR_D1_SYNC_URL') || '').trim().replace(/\/$/, '');
+  const secret = String(properties.getProperty('LVFR_D1_WORKER_SECRET') || '');
+  if (!base || !secret) throw new Error('Configure LVFR_D1_SYNC_URL and LVFR_D1_WORKER_SECRET in Script Properties.');
+  const response = UrlFetchApp.fetch(base + '/internal/accounts/delete', {
+    method: 'post', contentType: 'application/json', headers: { 'X-LVFR-Worker-Secret': secret },
+    payload: JSON.stringify({ account_ids: accountIds }), muteHttpExceptions: true
+  });
+  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) throw new Error('Accounts row deletion sync failed: HTTP ' + response.getResponseCode() + ' ' + response.getContentText());
+  accountIds.forEach(id => CacheService.getScriptCache().remove(accountCacheKey_(id)));
+  invalidateAccountRowsCache_();
+  CacheService.getScriptCache().removeAll(['leader-overview:v1', 'leader-overview:v2']);
 }
 
 function syncAccountsToD1OnEdit_(event) {
@@ -2854,6 +2901,7 @@ function syncAccountsToD1OnEdit_(event) {
     payload: JSON.stringify({ account }), muteHttpExceptions: true
   });
   if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) throw new Error('Accounts to D1 sync failed: HTTP ' + response.getResponseCode() + ' ' + response.getContentText());
+  saveAccountsSheetIds_();
   invalidateAccountRowsCache_();
   CacheService.getScriptCache().removeAll(['leader-overview:v1', 'leader-overview:v2']);
 }
@@ -2866,6 +2914,14 @@ function mirrorAccountFromD1_(account) {
   if (!sheet) sheet = spreadsheet.insertSheet(LVFR.accountsTab);
   const { rows } = accountRows_(spreadsheet);
   const index = rows.findIndex(row => String(row[0] || '') === id);
+  if (String(account.status || '').toLowerCase() === 'removed') {
+    if (index >= 0) sheet.deleteRow(index + 2);
+    SpreadsheetApp.flush();
+    invalidateAccountRowsCache_();
+    CacheService.getScriptCache().removeAll(['leader-overview:v1', 'leader-overview:v2', accountCacheKey_(id)]);
+    saveAccountsSheetIds_();
+    return { ok: true, action: index >= 0 ? 'deleted' : 'already_absent' };
+  }
   const rowNumber = index < 0 ? Math.max(2, sheet.getLastRow() + 1) : index + 2;
   const existing = index < 0 ? Array(17).fill('') : rows[index].slice(0, 17);
   existing[0] = id;
@@ -2880,6 +2936,7 @@ function mirrorAccountFromD1_(account) {
   if (account.admin_changed_by) existing[11] = String(account.admin_changed_by);
   sheet.getRange(rowNumber, 1, 1, 17).setValues([existing]);
   SpreadsheetApp.flush();
+  saveAccountsSheetIds_();
   invalidateAccountRowsCache_();
   CacheService.getScriptCache().removeAll(['leader-overview:v1', 'leader-overview:v2']);
   return { ok: true, action: index < 0 ? 'inserted' : 'updated' };
