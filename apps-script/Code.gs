@@ -2161,31 +2161,7 @@ function migrateLoiToD1() {
 // D1 is the write authority; this endpoint mirrors committed values to the
 // legacy Sheet so existing workflows and exports continue to see them.
 function mirrorTrainingHoursFromD1_(data) {
-  return withScriptLock_(() => {
-    const result = mirrorTrainingHoursFromD1Locked_(data);
-    const mirrorId = String(data.mirror_id || '').trim();
-    const logRecord = data.log_record;
-    if (mirrorId && logRecord && typeof logRecord === 'object') {
-      const cache = CacheService.getScriptCache();
-      const logKey = trainingHoursMirrorCacheKey_(mirrorId, 'log');
-      if (!cache.get(logKey)) {
-        try {
-          appendAppLog_(logRecord);
-          cache.put(logKey, '1', 21600);
-        } catch (error) {
-          console.error('Training Hours row was mirrored, but its log could not be written: ' + error);
-        }
-      }
-    }
-    return result;
-  });
-}
-
-function trainingHoursMirrorCacheKey_(mirrorId, suffix) {
-  const digest = Utilities.base64EncodeWebSafe(Utilities.computeDigest(
-    Utilities.DigestAlgorithm.SHA_256, String(mirrorId || '') + ':' + String(suffix || 'row')
-  )).replace(/=+$/, '');
-  return 'training-hours-mirror:v1:' + digest;
+  return withScriptLock_(() => mirrorTrainingHoursFromD1Locked_(data));
 }
 
 function mirrorTrainingHoursFromD1Locked_(data) {
@@ -2195,11 +2171,6 @@ function mirrorTrainingHoursFromD1Locked_(data) {
   if (!member) throw new Error('Training Hours member was not found on the roster.');
   const sheet = trainingHoursSheet_();
   const action = String(data.action || '').trim().toLowerCase();
-  const mirrorId = String(data.mirror_id || '').trim();
-  const rowCache = CacheService.getScriptCache();
-  const rowCacheKey = mirrorId ? trainingHoursMirrorCacheKey_(mirrorId, 'row') : '';
-  const cachedRow = rowCacheKey ? Number(rowCache.get(rowCacheKey) || 0) : 0;
-  if (cachedRow >= 2) return { ok: true, changed: false, row: cachedRow, idempotent_retry: true };
   const sourceRow = Number(data.source_row) || 0;
   let row = sourceRow;
   if (row && (row < 2 || row > sheet.getMaxRows())) throw new Error('Invalid Training Hours sheet row.');
@@ -2226,8 +2197,6 @@ function mirrorTrainingHoursFromD1Locked_(data) {
     }
     if (!row) throw new Error('Training Hours Sheet row was not found for removal.');
     sheet.getRange(row, 2).clearContent(); sheet.getRange(row, 4).clearContent(); sheet.getRange(row, 6).clearContent();
-    SpreadsheetApp.flush();
-    if (rowCacheKey) rowCache.put(rowCacheKey, String(row), 21600);
     return { ok: true, changed: true, row };
   }
   if (!['add', 'time'].includes(action)) throw new Error('Invalid Training Hours mirror action.');
@@ -2272,7 +2241,6 @@ function mirrorTrainingHoursFromD1Locked_(data) {
   if (normalizeMemberName_(writtenName) !== normalizeMemberName_(member.name) || writtenTime !== time) {
     throw new Error('Training Hours row ' + row + ' did not keep the added record (name="' + writtenName + '", time="' + writtenTime + '", expected time="' + time + '"). Check Sheet protection or validation.');
   }
-  if (rowCacheKey) rowCache.put(rowCacheKey, String(row), 21600);
   return { ok: true, changed: true, row };
 }
 
