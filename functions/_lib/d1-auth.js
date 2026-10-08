@@ -158,7 +158,18 @@ async function gasCall(env, route, method, data = {}, token = "", params = {}) {
   if (!payload.ok) throw new Error(payload.error || "Apps Script request failed.");
   return payload.data;
 }
-async function rosterIdentity(env, name) {
+async function rosterIdentity(env, name, db = null) {
+  // Fast path: the roster is already mirrored in D1, so look the name up there
+  // instead of waiting for a round trip to Apps Script and Google Sheets.
+  // Only an unambiguous single match is trusted; anything else falls back to Apps Script.
+  if (db) {
+    try {
+      const key = nameKey(name);
+      const { results } = await db.prepare("SELECT name,callsign FROM members WHERE lower(trim(name))=? LIMIT 2").bind(key).all();
+      const matches = (results || []).filter(row => nameKey(row.name) === key && row.callsign);
+      if (matches.length === 1) return { name: matches[0].name, callsign: matches[0].callsign };
+    } catch (error) { console.error("D1 roster lookup failed, falling back to Apps Script: " + error); }
+  }
   const member = await gasCall(env, "/auth/roster-lookup", "POST", { name });
   if (!member || !member.name || !member.callsign) throw new Error("Name was not found on the LVFR roster.");
   return member;
@@ -418,7 +429,7 @@ async function login(db, data) {
 async function signup(db, env, data) {
   const setup = await db.prepare("SELECT value FROM account_migration_state WHERE migration_key='initial_commander_created'").first();
   if (!setup) throw Object.assign(new Error("New registration is temporarily closed until the first Operation account is set up."), { status: 503 });
-  const identity = await rosterIdentity(env, data.name);
+  const identity = await rosterIdentity(env, data.name, db);
   const password = String(data.password || "");
   if (!/^[A-Za-z0-9]{4,20}$/.test(password)) throw new Error("Password must be 4–20 letters or numbers.");
   const salt = b64url(crypto.getRandomValues(new Uint8Array(16))), id = crypto.randomUUID(), now = new Date().toISOString();
