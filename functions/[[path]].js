@@ -40,21 +40,29 @@ export async function proxyToAppsScript(context, route, incoming, sessionToken, 
   }
 
   const params = Object.fromEntries(incoming.searchParams.entries());
-  const upstreamRequest = new Request(target.toString(), {
+  const fetchGasResponse = (requestData) => fetch(new Request(target.toString(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ route, method: request.method, params, sessionToken, data,
+    body: JSON.stringify({ route, method: request.method, params, sessionToken, data: requestData,
       workerSecret: env.LVFR_D1_WORKER_SECRET || "" }),
-    // Apps Script ContentService returns its body from a one-time
-    // script.googleusercontent.com URL. Let Fetch follow the redirect as part
-    // of the original request lifecycle; manually replaying it as a GET can
-    // lose redirect semantics or produce a stale /macros/echo response.
+    // ContentService returns its body from a short lived googleusercontent URL.
     redirect: "follow",
-  });
+  }));
 
   let upstream;
   try {
-    upstream = await fetch(upstreamRequest);
+    upstream = await fetchGasResponse(data);
+    // Google occasionally returns 404 for the one-time ContentService URL even
+    // though the /exec POST completed. Retry this mirror once through /exec;
+    // Apps Script recognizes this retry marker and returns the row it already
+    // wrote instead of adding a duplicate training session.
+    let finalUrl = "";
+    try { finalUrl = new URL(upstream.url).origin + new URL(upstream.url).pathname; } catch {}
+    if (route === "/internal/training-hours/mirror" && upstream.status === 404 &&
+        finalUrl.startsWith("https://script.googleusercontent.com/macros/echo") && data?.action === "add") {
+      try { await upstream.body?.cancel(); } catch {}
+      upstream = await fetchGasResponse({ ...data, idempotent_retry: true });
+    }
   } catch (error) {
     console.error('Apps Script request failed before receiving a response:', error);
     return Response.json({

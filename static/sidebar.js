@@ -39,7 +39,7 @@
       ]
     },
     {
-      href: '/watch-command', title: 'Watch Command', items: [
+      href: '/watch-command', title: 'Watch Command', permission: 'watch_command_view', items: [
         { label: 'New Watch Log', anchor: '#watchForm' },
         { label: 'Current Active Status', anchor: '#activePresenceHeading' },
         { label: 'Initial Roll Call', anchor: '#initialRollcallHeading' },
@@ -84,7 +84,7 @@
     </div>`;
   };
   const groupMarkup = (page, index) => `
-    <section class="sidebar-page-group" data-sidebar-group ${page.admin ? 'data-admin-group="true"' : ''}>
+    <section class="sidebar-page-group" data-sidebar-group ${page.admin ? 'data-admin-group="true"' : ''}${page.permission ? ` data-required-permission="${page.permission}"` : ''}>
       <div class="sidebar-page-head">
         <a class="sidebar-page-link" href="${page.href}" ${currentPath === page.href ? 'aria-current="page"' : ''}>${esc(page.title)}</a>
         <button type="button" class="sidebar-expand" aria-label="Show ${esc(page.title)} menus" title="Show menus" aria-expanded="false" aria-controls="sidebarItems${index}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
@@ -114,7 +114,7 @@
     bottomNav = document.createElement('nav');
     bottomNav.className = 'bottom-app-nav';
     bottomNav.setAttribute('aria-label', 'Applications');
-    bottomNav.innerHTML = pages.map(page => `<a href="${page.href}"${currentPath === page.href ? ' aria-current="page"' : ''}${page.admin ? ' data-admin-app="true"' : ''}><span aria-hidden="true">${page.href === '/' ? '⌂' : page.href === '/watch-command' ? '◷' : '⚙'}</span><small>${page.href === '/' ? 'EMS' : page.href === '/watch-command' ? 'Watch' : 'Command'}</small></a>`).join('');
+    bottomNav.innerHTML = pages.map(page => `<a href="${page.href}"${currentPath === page.href ? ' aria-current="page"' : ''}${page.admin ? ' data-admin-app="true"' : ''}${page.permission ? ` data-required-permission="${page.permission}"` : ''}><span aria-hidden="true">${page.href === '/' ? '⌂' : page.href === '/watch-command' ? '◷' : '⚙'}</span><small>${page.href === '/' ? 'EMS' : page.href === '/watch-command' ? 'Watch' : 'Command'}</small></a>`).join('');
     document.body.append(bottomNav);
   }
 
@@ -212,7 +212,9 @@
       return anyVisible;
     };
     sidebar.querySelectorAll('[data-sidebar-group]').forEach(group => {
-      const accessAllowed = !group.dataset.adminGroup || adminAllowed;
+      const requiredPermission = group.dataset.requiredPermission;
+      const accessAllowed = (!group.dataset.adminGroup || adminAllowed)
+        && (!requiredPermission || user?.permissions?.[requiredPermission] === true || String(user?.role || '').toLowerCase() === 'admin');
       const pageLink = group.querySelector('.sidebar-page-link');
       const pageMatch = pageLink.textContent.toLocaleLowerCase().includes(query);
       const itemsContainer = group.querySelector('.sidebar-items');
@@ -234,7 +236,7 @@
     const user = window.lvfrCachedUser?.();
     const role = String(user?.role || '').toLowerCase();
     if (['#doNotPromoteTab', '#terminationLogTab', '#instructorLogTab', '#leadersTab'].includes(selector)) return !!user?.is_admin;
-    if (selector === '#inactiveTab') return !!(user?.is_admin || user?.is_command);
+    if (selector === '#inactiveTab') return !!(user?.is_admin || user?.permissions?.inactive_view === true);
     if (selector === '#statisticsTab') return !!(user?.is_admin || user?.is_command || ['leader', 'supervisor', 'command', 'commander'].includes(role));
     return true;
   }
@@ -334,6 +336,9 @@
     const user = window.lvfrCachedUser?.();
     const adminLink = bottomNav?.querySelector('[data-admin-app]');
     if (adminLink) adminLink.hidden = currentPath !== '/administration' && !user?.is_admin && user?.permissions?.operation_command_access !== true;
+    bottomNav?.querySelectorAll('[data-required-permission]').forEach(link => {
+      link.hidden = String(user?.role || '').toLowerCase() !== 'admin' && user?.permissions?.[link.dataset.requiredPermission] !== true;
+    });
     sidebar.querySelector('input').dispatchEvent(new Event('input'));
     refreshActiveNavigation();
   };

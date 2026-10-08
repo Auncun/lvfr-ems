@@ -667,7 +667,9 @@ async function openNotification(id) {
     await markNotificationsRead([id]);
 
     if (["eligible", "inactive"].includes(item.kind) && item.callsign) {
-        await profile(item.callsign, true);
+        if (currentUserHasPermission("profile_view")) await profile(item.callsign, true);
+        else if (item.kind === "eligible" && (currentUserHasPermission("eligible_view") || currentUserHasPermission("promotion_access"))) document.querySelector('.tab[data-tab="eligible"]')?.click();
+        else if (item.kind === "inactive" && currentUserHasPermission("inactive_view")) $("#inactiveTab")?.click();
     } else if (item.kind === "request" && currentUserIsAdmin) {
         $("#leadersTab")?.click();
         document.querySelector('.leader-view-tab[data-leader-view="pending"]')?.click();
@@ -3314,7 +3316,7 @@ async function profile(
                 <div class="actions">
 
 
-                    ${currentUserHasPermission("profile_view") ? `<button
+                    ${["activity_manage","training_fort_manage","training_hert_manage","exam_manage","instructor_manage","notes_manage","rank_date_manage","rank_manage","callsign_manage","promotion_manage","do_not_promote_manage","termination_manage"].some(currentUserHasPermission) ? `<button
                         type="button"
                         data-action="open-manage"
                         data-callsign="${esc(m.callsign)}"
@@ -5267,7 +5269,7 @@ function applyAccountUser(user) {
     const doNotPromoteTab = $("#doNotPromoteTab");
     if (doNotPromoteTab) doNotPromoteTab.style.display = user.is_admin ? "" : "none";
     const inactiveTab = $("#inactiveTab");
-    if (inactiveTab) inactiveTab.style.display = (user.is_admin || user.is_command) ? "" : "none";
+    if (inactiveTab) inactiveTab.style.display = currentUserHasPermission("inactive_view") ? "" : "none";
     const logViewPermissions = {promotion:"promotion_log_view",callsign:"callsign_log_view",termination:"termination_log_view",training:"training_log_view",training_time:"training_hours_log_view",loi:"loi_log_view",exam:"exam_log_view",note:"note_log_view",activity:"activity_log_view",instructor:"instructor_log_view"};
     document.querySelectorAll("#membersLog .log-tab[data-log]").forEach(button => { button.style.display = currentUserHasPermission(logViewPermissions[button.dataset.log]) ? "" : "none"; });
     const anyLogView = Object.values(logViewPermissions).some(key => currentUserHasPermission(key));
@@ -5436,6 +5438,15 @@ async function loadAccount() {
         const firstLog=[...document.querySelectorAll("#membersLog .log-tab[data-log]")].find(item=>getComputedStyle(item).display!=="none");
         if (firstLog) tasks.push(loadMembersLog(firstLog.dataset.log));
         await Promise.all(tasks);
+        const params = new URLSearchParams(location.search);
+        const notificationCallsign = String(params.get("notification_callsign") || "").trim().toUpperCase();
+        const notificationKind = String(params.get("notification_kind") || "").trim().toLowerCase();
+        if (notificationCallsign && ["eligible","inactive"].includes(notificationKind)) {
+            history.replaceState(null, "", location.pathname);
+            if (currentUserHasPermission("profile_view")) await profile(notificationCallsign, true);
+            else if (notificationKind === "eligible" && (currentUserHasPermission("eligible_view") || currentUserHasPermission("promotion_access"))) document.querySelector('.tab[data-tab="eligible"]')?.click();
+            else if (notificationKind === "inactive" && currentUserHasPermission("inactive_view")) $("#inactiveTab")?.click();
+        }
         if (currentUserHasPermission("sync_view")) void syncStatus();
     } catch (e) {
         toast(e.message);

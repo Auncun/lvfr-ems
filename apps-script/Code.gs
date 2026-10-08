@@ -2202,6 +2202,22 @@ function mirrorTrainingHoursFromD1Locked_(data) {
   if (!['add', 'time'].includes(action)) throw new Error('Invalid Training Hours mirror action.');
   const time = String(data.time || '').trim();
   if (!time) throw new Error('Training Hours time is required.');
+  if (action === 'add' && data.idempotent_retry === true) {
+    const date = String(data.date || '').trim();
+    const dateKey = value => {
+      const match = String(value || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      return match ? match[3] + '-' + String(match[1]).padStart(2, '0') + '-' + String(match[2]).padStart(2, '0') : String(value || '').trim();
+    };
+    const count = Math.max(0, sheet.getLastRow() - 1);
+    const block = count ? sheet.getRange(2, 2, count, 5).getDisplayValues() : [];
+    const matches = [];
+    block.forEach((values, index) => {
+      if (normalizeMemberName_(values[0]) === normalizeMemberName_(member.name) &&
+          dateKey(values[2]) === dateKey(date) && String(values[4] || '').trim() === time) matches.push(index + 2);
+    });
+    if (matches.length === 1) return { ok: true, changed: false, row: matches[0], idempotent_retry: true };
+    if (matches.length > 1) throw new Error('Training Hours retry matched multiple identical Sheet rows; no duplicate was added. Refresh the D1 row mapping before retrying.');
+  }
   if (!row) {
     // Use a row only when Name (B), Date (D) and Time (F) are ALL empty, so a
     // half-cleared row or one that still holds a stray value is never reused.
