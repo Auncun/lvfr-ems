@@ -167,7 +167,12 @@ function dispatch_(route, method, params, data, user) {
     catch (error) {
       throw new Error('Roster was synchronized, but restoring logs from Google Sheets failed: ' + (error && error.message ? error.message : error));
     }
-    return Object.assign({}, result, { logs_restored: logs.operational_logs, message: 'Full sync completed: ' + result.members + ' members and ' + logs.operational_logs + ' log entries restored from Google Sheets' });
+    let trainingHours, loi;
+    try { trainingHours = syncTrainingHoursSheetToD1_(); }
+    catch (error) { throw new Error('Roster was synchronized, but Training Hours import from Sheets failed: ' + (error && error.message ? error.message : error)); }
+    try { loi = syncLoiSheetToD1_(); }
+    catch (error) { throw new Error('Roster and Training Hours were synchronized, but LOI import from Sheets failed: ' + (error && error.message ? error.message : error)); }
+    return Object.assign({}, result, { logs_restored: logs.operational_logs, training_hours_synced: trainingHours.imported || 0, loi_synced: loi.imported || 0, message: 'Full sync completed from Sheets: ' + result.members + ' members, ' + (trainingHours.imported || 0) + ' Training Hours records, ' + logs.operational_logs + ' log entries, and ' + (loi.imported || 0) + ' LOI entries' });
   }
   if (route === '/api/notifications' && method === 'GET') { requireApproved_(user); return listNotifications_(user); }
   if (route === '/api/notifications/read' && method === 'POST') { requireApproved_(user); return markNotificationsRead_(data, user); }
@@ -1193,6 +1198,9 @@ function installRosterD1SyncTriggers() {
     const builder = ScriptApp.newTrigger(item.handler).forSpreadsheet(item.spreadsheetId);
     (item.event === 'edit' ? builder.onEdit() : builder.onChange()).create();
   });
+  if (!existing.some(trigger => trigger.getHandlerFunction() === 'syncSheetSnapshotsFallback_')) {
+    ScriptApp.newTrigger('syncSheetSnapshotsFallback_').timeBased().everyMinutes(5).create();
+  }
   if (!PropertiesService.getScriptProperties().getProperty('LVFR_D1_ACCOUNTS_SHEET_IDS')) saveAccountsSheetIds_();
   return diagnoseRosterD1Sync();
 }
@@ -1204,15 +1212,28 @@ function diagnoseRosterD1Sync() {
   const privateId = String(properties.getProperty('LVFR_PRIVATE_SPREADSHEET_ID') || '');
   const triggers = ScriptApp.getProjectTriggers().map(trigger => ({
     handler: trigger.getHandlerFunction(), source_id: trigger.getTriggerSourceId()
-  })).filter(trigger => ['syncRosterToD1OnEdit_', 'syncRosterToD1OnChange_', 'syncAccountsToD1OnChange_'].includes(trigger.handler));
+  })).filter(trigger => ['syncRosterToD1OnEdit_', 'syncRosterToD1OnChange_', 'syncAccountsToD1OnChange_', 'syncSheetSnapshotsFallback_'].includes(trigger.handler));
+  const expected = [];
+  if (rosterId) expected.push({ handler: 'syncRosterToD1OnEdit_', source_id: rosterId }, { handler: 'syncRosterToD1OnChange_', source_id: rosterId });
+  if (privateId) expected.push({ handler: 'syncRosterToD1OnEdit_', source_id: privateId }, { handler: 'syncAccountsToD1OnChange_', source_id: privateId });
+  const missing_triggers = expected.filter(item => !triggers.some(trigger => trigger.handler === item.handler && trigger.source_id === item.source_id));
   const result = {
     roster_spreadsheet_configured: Boolean(rosterId), private_spreadsheet_configured: Boolean(privateId),
     d1_url_configured: Boolean(properties.getProperty('LVFR_D1_SYNC_URL')),
     worker_secret_configured: Boolean(properties.getProperty('LVFR_D1_WORKER_SECRET')),
-    triggers
+    fallback_trigger_installed: triggers.some(trigger => trigger.handler === 'syncSheetSnapshotsFallback_'),
+    triggers, missing_triggers
   };
   console.log('Roster D1 sync diagnostic: ' + JSON.stringify(result));
   return result;
+}
+
+// Recovery path for missed/failed edit and format events. The roster
+// fingerprint prevents unchanged snapshots from being posted to D1.
+function syncSheetSnapshotsFallback_() {
+  syncRosterSnapshotToD1_('trigger:fallback', false);
+  syncTrainingHoursSheetToD1_();
+  syncLoiSheetToD1_();
 }
 
 // Run once if Training Hours edits in the roster spreadsheet are not reaching D1.
@@ -2874,8 +2895,10 @@ function saveAccountsSheetIds_() {
 
 function syncAccountsToD1OnChange_(event) {
   if (!event || !event.source || String(event.changeType || '').toUpperCase() !== 'REMOVE_ROW') return;
-  const active = event.source.getActiveSheet();
-  if (!active || active.getName() !== LVFR.accountsTab || event.source.getId() !== requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')) return;
+  // onChange does not reliably identify the changed sheet through
+  // getActiveSheet(); compare the saved Accounts IDs on every row removal in
+  // the private spreadsheet instead of silently missing deletions.
+  if (event.source.getId() !== requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID')) return;
   withScriptLock_(() => {
     const properties = PropertiesService.getScriptProperties(), key = 'LVFR_D1_ACCOUNTS_SHEET_IDS';
     const previous = properties.getProperty(key);
@@ -2910,13 +2933,21 @@ function syncAccountsToD1OnEdit_(event) {
   const base = String(properties.getProperty('LVFR_D1_SYNC_URL') || '').trim().replace(/\/$/, '');
   const secret = String(properties.getProperty('LVFR_D1_WORKER_SECRET') || '');
   if (!base || !secret) throw new Error('Configure LVFR_D1_SYNC_URL and LVFR_D1_WORKER_SECRET in Script Properties.');
-  const sheet = event.range.getSheet(), row = sheet.getRange(event.range.getRow(), 1, 1, Math.max(17, sheet.getLastColumn())).getDisplayValues()[0];
-  const account = { account_id: row[0], name: row[1], callsign: row[2], status: row[5], role: row[6] };
-  const response = UrlFetchApp.fetch(base + '/internal/accounts/sync', {
-    method: 'post', contentType: 'application/json', headers: { 'X-LVFR-Worker-Secret': secret },
-    payload: JSON.stringify({ account }), muteHttpExceptions: true
+  const sheet = event.range.getSheet();
+  const firstRow = Math.max(2, event.range.getRow());
+  const lastRow = event.range.getRow() + event.range.getNumRows() - 1;
+  const rows = sheet.getRange(firstRow, 1, lastRow - firstRow + 1, Math.max(17, sheet.getLastColumn())).getDisplayValues();
+  rows.forEach((row, offset) => {
+    if (!String(row[0] || '').trim()) return;
+    const account = { account_id: row[0], name: row[1], callsign: row[2], status: row[5], role: row[6] };
+    const response = UrlFetchApp.fetch(base + '/internal/accounts/sync', {
+      method: 'post', contentType: 'application/json', headers: { 'X-LVFR-Worker-Secret': secret },
+      payload: JSON.stringify({ account }), muteHttpExceptions: true
+    });
+    if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
+      throw new Error('Accounts row ' + (firstRow + offset) + ' to D1 sync failed: HTTP ' + response.getResponseCode() + ' ' + response.getContentText());
+    }
   });
-  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) throw new Error('Accounts to D1 sync failed: HTTP ' + response.getResponseCode() + ' ' + response.getContentText());
   saveAccountsSheetIds_();
   invalidateAccountRowsCache_();
   CacheService.getScriptCache().removeAll(['leader-overview:v1', 'leader-overview:v2']);

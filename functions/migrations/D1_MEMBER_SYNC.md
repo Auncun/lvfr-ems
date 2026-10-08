@@ -1,9 +1,8 @@
 # Member reads and synchronization
 
-D1 is the live roster read store. Site roster mutations commit to D1 before
-returning; Cloudflare sends the matching Apps Script write as a background
-task. The UI keeps its immediate optimistic display and only reads D1 again on
-the user's next page refresh. D1 does not fetch roster data from Sheets during
+D1 is the live roster read store. Site roster mutations commit to D1, then
+Cloudflare waits for the matching Apps Script write and reports a mirror error
+if Sheets cannot be updated. D1 does not fetch roster data from Sheets during
 ordinary reads or site mutations. **Sync now** replaces D1 members and empty
 Callsign slots from a fresh Sheets snapshot. Manual Sheet edits post the latest
 members and Callsign slots to D1 through the installed Apps Script triggers.
@@ -23,7 +22,7 @@ members and Callsign slots to D1 through the installed Apps Script triggers.
    and set `LVFR_D1_WORKER_SECRET` to the same secret used by the Worker.
 4. After updating `apps-script/Code.gs`, deploy the latest Apps Script web app,
    then run `installRosterD1SyncTriggers`
-   again in the Apps Script editor and grant its requested permissions. It
+   in the Apps Script editor and grant its requested permissions. It
    installs edit triggers for roster/private sheet value edits and a change
    trigger for formatting changes in the roster spreadsheet. The formatting
    trigger is needed because activity, training, exam, and instructor status
@@ -41,8 +40,9 @@ members and Callsign slots to D1 through the installed Apps Script triggers.
    (for example, M-02 immediately after M-01). The base `members` table itself
    has no guaranteed row order.
 
-Website changes write D1 first and Sheet in the background; they do not trigger
-a Sheet read or a D1 replacement. **Sync now** compares the current Sheet
+Website changes write D1 first and wait for the Sheet mirror; a failed mirror
+is returned as an error that says the D1 change was saved but the Sheet write
+failed. They do not trigger a Sheet read or a D1 replacement. **Sync now** compares the current Sheet
 snapshot with D1 and writes only added, changed, or removed roster rows and
 Callsign slots. An unchanged snapshot is skipped by the Apps Script fingerprint.
 Direct Google Sheets edits use the installed edit and format triggers to update

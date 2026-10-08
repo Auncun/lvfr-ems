@@ -673,9 +673,10 @@ export async function handleD1(context) {
         else statements.push(db.prepare("INSERT INTO training_hours(source_row,callsign,name,training_date,time,updated_at,updated_by) VALUES(?,?,?,?,?,?,?) ON CONFLICT(source_row) DO UPDATE SET callsign=excluded.callsign,name=excluded.name,training_date=excluded.training_date,time=excluded.time,updated_at=excluded.updated_at,updated_by=excluded.updated_by")
           .bind(sourceRow,member.callsign,member.name,trainingDate,time,timestamp,"Sheet sync"));
       }
+      if(data.reconcile===true && skipped>0) return json({detail:"Training Hours Sheet snapshot contains rows that could not be matched to a roster member; D1 was not changed.",skipped},400);
       if(data.reconcile===true) {
         for(const row of existingRows) {
-          if(row.source_row!==null&&row.source_row!==undefined&&!liveSourceRows.has(Number(row.source_row))) statements.push(db.prepare("DELETE FROM training_hours WHERE id=?").bind(row.id));
+          if(row.source_row===null||row.source_row===undefined||!liveSourceRows.has(Number(row.source_row))) statements.push(db.prepare("DELETE FROM training_hours WHERE id=?").bind(row.id));
         }
       }
       for(let index=0;index<statements.length;index+=50) await db.batch(statements.slice(index,index+50));
@@ -722,11 +723,9 @@ export async function handleD1(context) {
       for(const record of recordsByKey.values()) statements.push(db.prepare(`INSERT INTO loi_entries(type,callsign,name,test_percent,source_row,updated_at,updated_by)
         VALUES(?,?,?,?,?,?,?) ON CONFLICT(type,callsign) DO UPDATE SET name=excluded.name,test_percent=excluded.test_percent,source_row=excluded.source_row,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
         .bind(record.type,record.callsign,record.name,record.test_percent,record.source_row,timestamp,"Sheet sync"));
-      if(data.reconcile===true&&skipped===0) {
-        for(const row of existing) if(row.source_row!==null&&row.source_row!==undefined&&
-          !seenSourceRows.has(`${row.type}:${Number(row.source_row)}`)&&!recordsByKey.has(`${row.type}:${row.callsign}`)) {
-          statements.push(db.prepare("DELETE FROM loi_entries WHERE id=?").bind(row.id));
-        }
+      if(data.reconcile===true&&skipped>0) return json({detail:"LOI Sheet snapshot contains entries that could not be matched to the current roster; D1 was not changed.",skipped,unmatched},400);
+      if(data.reconcile===true) {
+        for(const row of existing) if(!recordsByKey.has(`${row.type}:${row.callsign}`)) statements.push(db.prepare("DELETE FROM loi_entries WHERE id=?").bind(row.id));
       }
       for(let i=0;i<statements.length;i+=50) await db.batch(statements.slice(i,i+50));
       return json({ok:true,imported:recordsByKey.size,skipped,written:statements.length,unmatched});
@@ -739,6 +738,7 @@ export async function handleD1(context) {
       // the source of truth, so logs deleted from D1 come back and stale D1-only
       // rows are dropped. Ordinary imports keep INSERT OR IGNORE behaviour.
       if(data.replace_operational_logs===true) statements.push(db.prepare("DELETE FROM operational_logs"));
+      if(data.replace_account_audit===true) statements.push(db.prepare("DELETE FROM account_audit"));
       for(const row of (Array.isArray(data.operational_logs)?data.operational_logs:[])) statements.push(db.prepare(`INSERT OR IGNORE INTO operational_logs(source_key,kind,log_date,callsign,member_name,action,details,changed_by,old_rank,new_rank,old_callsign,new_callsign)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).bind(String(row.source_key||""),String(row.kind||""),String(row.log_date||""),String(row.callsign||""),String(row.member_name||""),String(row.action||""),String(row.details||""),String(row.changed_by||""),String(row.old_rank||""),String(row.new_rank||""),String(row.old_callsign||""),String(row.new_callsign||"")));
       for(const row of (Array.isArray(data.account_audit)?data.account_audit:[])) statements.push(db.prepare("INSERT OR IGNORE INTO account_audit(source_key,created_at,account_id,name,callsign,action,actor_name) VALUES(?,?,?,?,?,?,?)")
@@ -1189,10 +1189,11 @@ export async function handleD1(context) {
     }
     if(route==="/api/full-sync" && method==="POST") {
       const result=await syncMembersFromAppsScript(env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET),true);
-      return json({...result,message:"Full roster sync completed from Google Sheets"});
+      return json({...result,message:String(result.message||"Full sync completed from Google Sheets")});
     }
     const instructorWrite=route.match(/^\/api\/member\/([^/]+)\/instructor$/);
     if(method==="POST" && (MEMBER_WRITE_ROUTES.has(route)||instructorWrite)) {
+      if(!env.LVFR_D1_AUTH_BRIDGE_SECRET) return json({detail:"D1 to Sheets mirroring is not configured: set the LVFR_D1_AUTH_BRIDGE_SECRET Worker secret and the matching Apps Script property."},503);
       const admin=["admin","commander"].includes(user.role), leader=admin||user.role==="leader";
       if(instructorWrite&&!admin&&!user.permissions.instructor_manage) throw Object.assign(new Error("This account is not authorized to manage instructor status."),{status:403});
       if(route==="/api/training"&&!admin) {
@@ -1236,8 +1237,13 @@ export async function handleD1(context) {
       } else if(result.changed!==false || isHertTraining) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
         const { proxyToAppsScript } = await import("../[[path]].js");
-        const bg=(async()=>{ try { const response=await proxyToAppsScript(context,route,url,assertion,mutationData); if(!response.ok) console.error("Background Sheet write failed after D1 commit:",await response.text()); } catch(error) { console.error("Background Sheet write failed after D1 commit:",error); } })();
-        context.waitUntil(bg);
+        try {
+          const response=await proxyToAppsScript(context,route,url,assertion,mutationData);
+          if(!response.ok) return json({detail:"D1 was updated, but Google Sheets could not be updated: "+String(await response.text()).slice(0,500)},502);
+        } catch(error) {
+          console.error("Google Sheets write failed after D1 commit:",error);
+          return json({detail:"D1 was updated, but Google Sheets could not be updated: "+String(error?.message||error).slice(0,400)},502);
+        }
       }
       return json(result);
     }
@@ -1253,25 +1259,37 @@ export async function handleD1(context) {
     if (route==="/api/leaders/audit" && method==="GET") { await requireAdmin(db,token); const r=await db.prepare("SELECT id,created_at,account_id,name,callsign,action,actor_name,actor_name AS by FROM account_audit ORDER BY id DESC LIMIT 200").all(); return json(r.results||[]); }
     const action=route.match(/^\/api\/leaders\/([^/]+)\/(allow|deny|admin|commander|demote|member|leader|deactivate|reactivate)$/);
     if(action && method==="POST") {
+      if(!env.LVFR_D1_AUTH_BRIDGE_SECRET) return json({detail:"Account Sheet mirroring is not configured: set LVFR_D1_AUTH_BRIDGE_SECRET in the Worker and Apps Script."},503);
       const admin=action[2]==="admin"||action[2]==="commander"?await requireOperation(db,token):await requireAdmin(db,token), target=await db.prepare("SELECT account_id,name,callsign,role FROM accounts WHERE account_id=?").bind(decodeURIComponent(action[1])).first();
       if(admin.role==="commander"&&target&&["admin","commander"].includes(target.role)) throw Object.assign(new Error("Only Operation can manage Operation or Commander accounts."),{status:403});
       const result=await accountAction(db,decodeURIComponent(action[1]),action[2],admin);
-      if(env.LVFR_D1_AUTH_BRIDGE_SECRET) { context.waitUntil((async()=>{try{const {proxyToAppsScript}=await import("../[[path]].js");const mirror=await proxyToAppsScript(context,"/internal/accounts/mirror",url,"",result.sheet_account);if(!mirror.ok)console.error("Account Sheet mirror failed:",await mirror.text());}catch(error){console.error("Account Sheet mirror failed:",error);}})()); }
+      if(env.LVFR_D1_AUTH_BRIDGE_SECRET) {
+        const {proxyToAppsScript}=await import("../[[path]].js");
+        const mirror=await proxyToAppsScript(context,"/internal/accounts/mirror",url,"",result.sheet_account);
+        if(!mirror.ok) return json({detail:"D1 account change was saved, but the Accounts Sheet could not be updated: "+String(await mirror.text()).slice(0,500)},502);
+      }
       if(target&&env.LVFR_D1_AUTH_BRIDGE_SECRET) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET), {proxyToAppsScript}=await import("../[[path]].js");
-        context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,assertion,{kind:"account_audit",account_id:target.account_id,name:target.name,callsign:target.callsign,action:action[2],actor_name:admin.name});if(!mirror.ok)console.error("Account Audit Sheet mirror failed:",await mirror.text());}catch(error){console.error("Account Audit Sheet mirror failed:",error);}})());
+        const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,assertion,{kind:"account_audit",account_id:target.account_id,name:target.name,callsign:target.callsign,action:action[2],actor_name:admin.name});
+        if(!mirror.ok) console.error("Account change audit Sheet mirror failed:",await mirror.text());
       }
       return json(result);
     }
     const deletion=route.match(/^\/api\/leaders\/([^/]+)$/);
     if(deletion && method==="DELETE") {
+      if(!env.LVFR_D1_AUTH_BRIDGE_SECRET) return json({detail:"Account Sheet mirroring is not configured: set LVFR_D1_AUTH_BRIDGE_SECRET in the Worker and Apps Script."},503);
       const admin=await requireAdmin(db,token), id=decodeURIComponent(deletion[1]);
       const target=await db.prepare("SELECT account_id,name,callsign FROM accounts WHERE account_id=?").bind(id).first();
       const result=await accountAction(db,id,"delete",admin);
-      if(env.LVFR_D1_AUTH_BRIDGE_SECRET) { context.waitUntil((async()=>{try{const {proxyToAppsScript}=await import("../[[path]].js");const mirror=await proxyToAppsScript(context,"/internal/accounts/mirror",url,"",result.sheet_account);if(!mirror.ok)console.error("Account Sheet mirror failed:",await mirror.text());}catch(error){console.error("Account Sheet mirror failed:",error);}})()); }
+      if(env.LVFR_D1_AUTH_BRIDGE_SECRET) {
+        const {proxyToAppsScript}=await import("../[[path]].js");
+        const mirror=await proxyToAppsScript(context,"/internal/accounts/mirror",url,"",result.sheet_account);
+        if(!mirror.ok) return json({detail:"D1 account deletion was saved, but the Accounts Sheet could not be updated: "+String(await mirror.text()).slice(0,500)},502);
+      }
       if(target&&env.LVFR_D1_AUTH_BRIDGE_SECRET) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET), {proxyToAppsScript}=await import("../[[path]].js");
-        context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,assertion,{kind:"account_audit",account_id:target.account_id,name:target.name,callsign:target.callsign,action:"delete",actor_name:admin.name});if(!mirror.ok)console.error("Account Audit Sheet mirror failed:",await mirror.text());}catch(error){console.error("Account Audit Sheet mirror failed:",error);}})());
+        const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,assertion,{kind:"account_audit",account_id:target.account_id,name:target.name,callsign:target.callsign,action:"delete",actor_name:admin.name});
+        if(!mirror.ok) console.error("Account deletion audit Sheet mirror failed:",await mirror.text());
       }
       return json(result);
     }
