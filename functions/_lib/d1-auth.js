@@ -519,6 +519,7 @@ async function accountAction(db, id, action, actor) {
   await db.batch([
     db.prepare("INSERT INTO account_audit(created_at,account_id,name,callsign,action,actor_name) VALUES(?,?,?,?,?,?)").bind(now,id,target.name,target.callsign,action,actor.name),
     ...(["deny","delete","deactivate"].includes(action) ? [db.prepare("DELETE FROM auth_sessions WHERE account_id=?").bind(id)] : []),
+    ...(action==="delete" ? [db.prepare("DELETE FROM account_presence WHERE account_id=?").bind(id)] : []),
     ...(action==="delete" ? [db.prepare("DELETE FROM accounts WHERE account_id=?").bind(id)] : [db.prepare("UPDATE accounts SET status=?,role=?,permissions_override_json=?,activated_at=?,approved_by=?,admin_changed_at=?,admin_changed_by=?,updated_at=? WHERE account_id=?").bind(status,role,role!==target.role?"{}":target.permissions_override_json||"{}",activated,approvedBy,changedAt,changedBy,now,id)])
   ]);
   return { ok:true, status:"saving", sheet_account:{account_id:id,name:target.name,callsign:target.callsign,status:action==="delete"?"removed":status,role,created_at:target.created_at} };
