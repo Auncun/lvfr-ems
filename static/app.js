@@ -1489,9 +1489,9 @@ document.addEventListener("click", async event => {
     void (async () => {
         let failure = null;
         try {
-            const result = await api("/api/training-hours", { method: "POST", body: JSON.stringify(data) });
-            if (result.sheet_synced === false) throw new Error(`D1 saved the record, but Sheet1 sync failed: ${result.sheet_sync_error || "unknown Apps Script error"}`);
-            if (result.sheet_synced !== true && !result.row) throw new Error("The deployed API did not confirm the Sheet1 update. Deploy the latest Cloudflare Worker and Apps Script versions.");
+            // D1 has committed once this returns. The Sheet mirror continues in
+            // the background on the server, so the UI does not wait for it.
+            await api("/api/training-hours", { method: "POST", body: JSON.stringify(data) });
         } catch (error) {
             failure = error;
         } finally {
