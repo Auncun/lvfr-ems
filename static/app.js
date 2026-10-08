@@ -5439,9 +5439,13 @@ async function loadAccount() {
         if (firstLog) tasks.push(loadMembersLog(firstLog.dataset.log));
         await Promise.all(tasks);
         const params = new URLSearchParams(location.search);
+        const notificationId = Number(params.get("notification_id") || 0);
         const notificationCallsign = String(params.get("notification_callsign") || "").trim().toUpperCase();
         const notificationKind = String(params.get("notification_kind") || "").trim().toLowerCase();
-        if (notificationCallsign && ["eligible","inactive"].includes(notificationKind)) {
+        if (notificationId > 0) {
+            history.replaceState(null, "", location.pathname);
+            await openNotification(notificationId);
+        } else if (notificationCallsign && ["eligible","inactive"].includes(notificationKind)) {
             history.replaceState(null, "", location.pathname);
             if (currentUserHasPermission("profile_view")) await profile(notificationCallsign, true);
             else if (notificationKind === "eligible" && (currentUserHasPermission("eligible_view") || currentUserHasPermission("promotion_access"))) document.querySelector('.tab[data-tab="eligible"]')?.click();

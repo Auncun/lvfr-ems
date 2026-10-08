@@ -684,6 +684,11 @@ document.querySelector('#notificationList').addEventListener('click', async even
     document.querySelectorAll('.admin-tabs button').forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.status === 'pending')));
     renderAccounts();
     document.querySelector('#accountsHeading').scrollIntoView({ behavior: 'smooth' });
+  } else if (item.callsign) {
+    const target = new URL('/', location.origin);
+    target.searchParams.set('notification_id', String(item.id));
+    location.assign(target.toString());
+    return;
   }
   document.querySelector('#notificationPanel').hidden = true;
   notificationButton.setAttribute('aria-expanded', 'false');

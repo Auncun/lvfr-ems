@@ -44,8 +44,9 @@ function renderPortalNotifications(items = []) {
         location.assign('/administration');
         return;
       }
-      try { sessionStorage.setItem('lvfr.portal.pending-notification', String(item.id)); } catch {}
-      location.assign('/');
+      const target = new URL('/', location.origin);
+      if (item.callsign) target.searchParams.set('notification_id', String(item.id));
+      location.assign(target.toString());
     });
   });
 }

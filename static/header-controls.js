@@ -121,10 +121,9 @@
       button.addEventListener('click', async () => {
         await fetch('/api/notifications/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [Number(item.id)] }) }).catch(() => {});
         if (item.kind === 'request') location.assign('/administration');
-        else if (['eligible', 'inactive'].includes(item.kind) && item.callsign) {
+        else if (item.callsign) {
           const target = new URL('/', location.origin);
-          target.searchParams.set('notification_kind', item.kind);
-          target.searchParams.set('notification_callsign', item.callsign);
+          target.searchParams.set('notification_id', String(item.id));
           location.assign(target.toString());
         } else location.assign('/');
       });
