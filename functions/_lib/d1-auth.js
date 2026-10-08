@@ -1085,15 +1085,9 @@ export async function handleD1(context) {
       const bridgeAssertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
       const {proxyToAppsScript}=await import("../[[path]].js");
       const sheetLog={kind:"training_time",log_date:timestamp,callsign:member.callsign,member_name:member.name,action:logAction,details:JSON.stringify({previous_time:previousTime,new_time:newTime}),changed_by:user.name};
-      context.waitUntil((async()=>{
-        try {
-          const logMirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,bridgeAssertion,sheetLog);
-          if(!logMirror.ok) console.error("Training Hours log Sheet mirror failed:",(await logMirror.text()).slice(0,500));
-        } catch(error) { console.error("Training Hours log Sheet mirror failed:",error); }
-      })());
       let sheetSynced=true,sheetSyncError="";
       try {
-        const sheetMirror=await proxyToAppsScript(context,"/internal/training-hours/mirror",url,bridgeAssertion,{action,callsign:member.callsign,id:savedId,source_row:existing?.source_row,time:newTime,previous_time:previousTime,date:action==="add"?trainingDate:existing.training_date});
+        const sheetMirror=await proxyToAppsScript(context,"/internal/training-hours/mirror",url,bridgeAssertion,{action,callsign:member.callsign,id:savedId,source_row:existing?.source_row,time:newTime,previous_time:previousTime,date:action==="add"?trainingDate:existing.training_date,mirror_id:String(savedId)+":"+timestamp,log_record:sheetLog});
         const mirrorResult=await sheetMirror.json().catch(()=>({}));
         if(!sheetMirror.ok||mirrorResult.ok!==true) {
           const responseDetail=mirrorResult.detail||mirrorResult.error||JSON.stringify(mirrorResult);

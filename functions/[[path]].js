@@ -53,13 +53,13 @@ export async function proxyToAppsScript(context, route, incoming, sessionToken, 
   try {
     upstream = await fetchGasResponse(data);
     // Google occasionally returns 404 for the one-time ContentService URL even
-    // though the /exec POST completed. Retry this mirror once through /exec;
-    // Apps Script recognizes this retry marker and returns the row it already
-    // wrote instead of adding a duplicate training session.
+    // though the /exec POST completed. Retry a mirror once through /exec;
+    // Apps Script deduplicates by mirror_id for add, edit, and remove actions.
     let finalUrl = "";
     try { finalUrl = new URL(upstream.url).origin + new URL(upstream.url).pathname; } catch {}
     if (route === "/internal/training-hours/mirror" && upstream.status === 404 &&
-        finalUrl.startsWith("https://script.googleusercontent.com/macros/echo") && data?.action === "add") {
+        finalUrl.startsWith("https://script.googleusercontent.com/macros/echo") &&
+        ["add", "time", "remove"].includes(String(data?.action || "").toLowerCase()) && data?.mirror_id) {
       try { await upstream.body?.cancel(); } catch {}
       upstream = await fetchGasResponse({ ...data, idempotent_retry: true });
     }
