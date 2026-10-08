@@ -25,8 +25,8 @@ function canManageRoleProfiles() {
   return ['admin', 'commander'].includes(String(currentUser?.role || '').toLowerCase())
     || currentUser?.permissions?.operation_command_access === true;
 }
-function canManageRanks() { return currentUser?.role === 'admin' || currentUser?.permissions?.role_manage === true; }
-function canAccessPermissionPanel() { return canManageRoleProfiles() || canManageRanks(); }
+function canManageRanks(permission) { return currentUser?.role === 'admin' || currentUser?.permissions?.role_manage === true || currentUser?.permissions?.[permission] === true; }
+function canAccessPermissionPanel() { return canManageRoleProfiles() || ['rank_add','rank_rename','rank_delete','rank_reorder'].some(canManageRanks); }
 function canManageCommandAccounts() {
   return ['admin', 'commander'].includes(String(currentUser?.role || '').toLowerCase());
 }
@@ -57,7 +57,7 @@ function configureOperationAccess() {
   document.querySelector('[data-command-section="history"]')?.toggleAttribute('hidden', !accountManager);
   document.querySelector('[data-command-section="permissions"]')?.toggleAttribute('hidden', !allowed);
   document.querySelector('.permission-member-picker')?.toggleAttribute('hidden', currentUser?.role !== 'admin');
-  document.querySelector('.custom-role-tools')?.toggleAttribute('hidden', !canManageRanks());
+  document.querySelector('.custom-role-tools')?.toggleAttribute('hidden', !canManageRanks('rank_add'));
   if (!accountManager) {
     commandSections.accounts.hidden = true;
     commandSections.history.hidden = true;
@@ -324,7 +324,10 @@ const permissionGroups = [
   { name: 'Application access', items: [
     ['portal_access', 'EMS Operations', 'Open the EMS Operations application.'],
     ['operation_command_access', 'Operation Command access', 'Open Access Permissions to manage role permission profiles. Does not grant account management.'],
-    ['role_manage', 'Manage ranks', 'Add ranks and rename, reorder, or delete ranks below your own.'],
+    ['rank_add', 'Add ranks', 'Create additional rank profiles.'],
+    ['rank_rename', 'Rename ranks', 'Change the names of ranks below your own.'],
+    ['rank_delete', 'Delete ranks', 'Delete custom ranks below your own when no accounts use them.'],
+    ['rank_reorder', 'Reorder ranks', 'Change the order of ranks below your own.'],
     ['watch_command_view', 'Watch Command: view', 'Open Watch Command logs and activity.'],
     ['watch_command_edit', 'Watch Command: edit', 'Create and update Watch Command records.'],
     ['watch_command_roster', 'Watch Command: roster lookup', 'Search member names and callsigns.'],
@@ -405,9 +408,9 @@ function renderRolePermissions() {
     const enabled = Object.values(rolePermissionProfiles[role] || {}).filter(Boolean).length;
     const orderIndex=permissionRoleOrder.findIndex(item=>item.role===role);
     const actorRank=currentUser?.role==='admin'?1:(permissionRoleOrder.findIndex(item=>item.role===String(currentUser?.role||''))+1||2);
-    const canManageRank=canManageRanks()&&orderIndex+1>actorRank;
-    const rankTools=`<div class="admin-actions"><label>Rank name <input type="text" maxlength="32" data-rank-name="${esc(role)}" value="${esc(roleLabel)}" ${!canManageRank?'disabled':''}></label><button type="button" data-rename-rank="${esc(role)}" ${!canManageRank?'disabled':''}>Save name</button><button type="button" data-rank-move="up" data-rank-role="${esc(role)}" ${!canManageRank||orderIndex<=1?'disabled':''}>Move up</button><button type="button" data-rank-move="down" data-rank-role="${esc(role)}" ${!canManageRank||orderIndex<1||orderIndex>=permissionRoleOrder.length-1?'disabled':''}>Move down</button>${!['member','leader','commander'].includes(role)?`<button type="button" class="danger" data-delete-role="${esc(role)}" ${!canManageRank?'disabled':''}>Delete rank</button>`:''}</div>`;
-    return `<article class="role-permission-card" data-permission-role="${role}"><header><div><span class="role-kicker">RANK ${orderIndex+1} · ROLE PROFILE</span><h3>${roleLabel}</h3></div><span class="permission-count">${enabled} enabled</span></header>${rankTools}<div class="role-permission-groups">${canManageRoleProfiles()?(groups || '<p class="muted">No permissions match your search.</p>'):'<p class="muted">You can manage rank names and order. Permission profile editing requires Operation Command access.</p>'}</div>${canManageRoleProfiles()?`<button type="button" class="primary" data-save-permissions="${role}">Save ${roleLabel} permissions</button>`:''}</article>`;
+    const belowActor=orderIndex+1>actorRank;
+    const rankTools=`<div class="admin-actions"><label>Rank name <input type="text" maxlength="32" data-rank-name="${esc(role)}" value="${esc(roleLabel)}" ${!canManageRanks('rank_rename')||!belowActor?'disabled':''}></label><button type="button" data-rename-rank="${esc(role)}" ${!canManageRanks('rank_rename')||!belowActor?'disabled':''}>Save name</button><button type="button" data-rank-move="up" data-rank-role="${esc(role)}" ${!canManageRanks('rank_reorder')||!belowActor||orderIndex<=1?'disabled':''}>Move up</button><button type="button" data-rank-move="down" data-rank-role="${esc(role)}" ${!canManageRanks('rank_reorder')||!belowActor||orderIndex<1||orderIndex>=permissionRoleOrder.length-1?'disabled':''}>Move down</button>${!['member','leader','commander'].includes(role)?`<button type="button" class="danger" data-delete-role="${esc(role)}" ${!canManageRanks('rank_delete')||!belowActor?'disabled':''}>Delete rank</button>`:''}</div>`;
+    return `<article class="role-permission-card" data-permission-role="${role}"><header><div><span class="role-kicker">RANK ${orderIndex+1} · ROLE PROFILE</span><h3>${roleLabel}</h3></div><span class="permission-count">${enabled} enabled</span></header>${rankTools}<div class="role-permission-groups">${canManageRoleProfiles()?(groups || '<p class="muted">No permissions match your search.</p>'):'<p class="muted">Rank actions are available according to your individual rank permissions. Editing permission profiles requires Operation Command access.</p>'}</div>${canManageRoleProfiles()?`<button type="button" class="primary" data-save-permissions="${role}">Save ${roleLabel} permissions</button>`:''}</article>`;
   }).join('');
   panel.querySelectorAll('[data-indeterminate="true"]').forEach(input => { input.indeterminate = true; });
 }
