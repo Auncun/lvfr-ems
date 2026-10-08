@@ -50,7 +50,7 @@ function doPost(e) {
       if (!member) throw new Error('Name was not found on the LVFR roster.');
       return output_({ ok: true, data: member });
     }
-    if (route === '/internal/logs/mirror' && String(input.method || '') === 'POST') {
+    if (route === '/internal/logs/mirror' && ['POST', 'DELETE'].includes(String(input.method || ''))) {
       const expected = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
       if (!expected || !input.workerSecret || !constantTimeEquals_(String(input.workerSecret), expected)) throw new Error('Log mirror authentication failed.');
       const record = input.data || {};
@@ -62,6 +62,11 @@ function doPost(e) {
         appendAppLog_(record);
       }
       return output_({ ok: true, data: { ok: true } });
+    }
+    if (route === '/internal/accounts/mirror' && ['POST', 'DELETE'].includes(String(input.method || ''))) {
+      const expected = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
+      if (!expected || !input.workerSecret || !constantTimeEquals_(String(input.workerSecret), expected)) throw new Error('Account mirror authentication failed.');
+      return output_({ ok: true, data: mirrorAccountFromD1_(input.data || {}) });
     }
     if (route === '/internal/logs/clear' && String(input.method || '') === 'POST') {
       const expected = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
@@ -1247,6 +1252,10 @@ function syncRosterToD1OnEdit_(event) {
     console.log('Roster D1 trigger started: onEdit; spreadsheet=' + event.source.getId() + '; sheet=' + name + '; range=' + event.range.getA1Notation());
     const rosterId = requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID');
     const privateId = requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID');
+    if (event.source.getId() === privateId && name === LVFR.accountsTab) {
+      syncAccountsToD1OnEdit_(event);
+      return;
+    }
     if (event.source.getId() === rosterId && ['Sheet1', 'Training Hours', 'Sheet2'].includes(name)) {
       if (event.range.getRow() < 2) return;
       syncTrainingHoursSheetToD1_();
@@ -2820,4 +2829,58 @@ function clearLogsFromSheets_(input) {
   });
   if (result && result.ok && result.items.includes('notifications')) clearNotificationSheets_();
   return result;
+}
+
+// Run once from the Apps Script editor to send manual Accounts tab edits to D1.
+function installAccountsD1SyncTrigger() {
+  const spreadsheetId = requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID');
+  const installed = ScriptApp.getProjectTriggers().some(trigger =>
+    trigger.getHandlerFunction() === 'syncAccountsToD1OnEdit_' && trigger.getTriggerSourceId() === spreadsheetId
+  );
+  if (!installed) ScriptApp.newTrigger('syncAccountsToD1OnEdit_').forSpreadsheet(spreadsheetId).onEdit().create();
+  return { ok: true, installed: true };
+}
+
+function syncAccountsToD1OnEdit_(event) {
+  if (!event || !event.range || event.range.getSheet().getName() !== LVFR.accountsTab || event.range.getRow() < 2) return;
+  const properties = PropertiesService.getScriptProperties();
+  const base = String(properties.getProperty('LVFR_D1_SYNC_URL') || '').trim().replace(/\/$/, '');
+  const secret = String(properties.getProperty('LVFR_D1_WORKER_SECRET') || '');
+  if (!base || !secret) throw new Error('Configure LVFR_D1_SYNC_URL and LVFR_D1_WORKER_SECRET in Script Properties.');
+  const sheet = event.range.getSheet(), row = sheet.getRange(event.range.getRow(), 1, 1, Math.max(17, sheet.getLastColumn())).getDisplayValues()[0];
+  const account = { account_id: row[0], name: row[1], callsign: row[2], status: row[5], role: row[6] };
+  const response = UrlFetchApp.fetch(base + '/internal/accounts/sync', {
+    method: 'post', contentType: 'application/json', headers: { 'X-LVFR-Worker-Secret': secret },
+    payload: JSON.stringify({ account }), muteHttpExceptions: true
+  });
+  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) throw new Error('Accounts to D1 sync failed: HTTP ' + response.getResponseCode() + ' ' + response.getContentText());
+  invalidateAccountRowsCache_();
+  CacheService.getScriptCache().removeAll(['leader-overview:v1', 'leader-overview:v2']);
+}
+
+function mirrorAccountFromD1_(account) {
+  const id = String(account.account_id || '').trim();
+  if (!id) throw new Error('Account ID is required.');
+  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+  let sheet = accountsSheet_(spreadsheet);
+  if (!sheet) sheet = spreadsheet.insertSheet(LVFR.accountsTab);
+  const { rows } = accountRows_(spreadsheet);
+  const index = rows.findIndex(row => String(row[0] || '') === id);
+  const rowNumber = index < 0 ? Math.max(2, sheet.getLastRow() + 1) : index + 2;
+  const existing = index < 0 ? Array(17).fill('') : rows[index].slice(0, 17);
+  existing[0] = id;
+  existing[1] = String(account.name || existing[1] || '');
+  existing[2] = String(account.callsign || existing[2] || '');
+  existing[5] = String(account.status || existing[5] || 'pending');
+  existing[6] = String(account.role || existing[6] || 'member');
+  existing[7] = String(account.created_at || existing[7] || new Date().toISOString());
+  if (account.activated_at) existing[8] = String(account.activated_at);
+  if (account.approved_by) existing[9] = String(account.approved_by);
+  if (account.admin_changed_at) existing[10] = String(account.admin_changed_at);
+  if (account.admin_changed_by) existing[11] = String(account.admin_changed_by);
+  sheet.getRange(rowNumber, 1, 1, 17).setValues([existing]);
+  SpreadsheetApp.flush();
+  invalidateAccountRowsCache_();
+  CacheService.getScriptCache().removeAll(['leader-overview:v1', 'leader-overview:v2']);
+  return { ok: true, action: index < 0 ? 'inserted' : 'updated' };
 }

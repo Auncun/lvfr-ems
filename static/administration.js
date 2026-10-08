@@ -352,6 +352,7 @@ const permissionGroups = [
   ] },
 ];
 let rolePermissionProfiles = {};
+let permissionRoleOrder = [];
 let permissionEditorCapabilities = {};
 let editablePermissionKeys = [];
 let selectedPermissionRole = 'member';
@@ -385,10 +386,12 @@ function renderRolePermissions() {
   openPermissionGroups = new Set([...panel.querySelectorAll('details.permission-group[open]')].map(item=>item.dataset.permissionGroup).filter(Boolean));
   openPermissionSubLists = new Set([...panel.querySelectorAll('details.permission-sublist[open]')].map(item=>item.dataset.permissionSublist).filter(Boolean));
   const query = document.querySelector('#permissionSearch').value.trim().toLocaleLowerCase();
-  const roleOrder = {member:0,leader:1,commander:2};
-  const roles = Object.keys(rolePermissionProfiles).filter(role => role !== 'admin' && role !== String(currentUser?.role || '').toLowerCase()).sort((a,b) => (roleOrder[a] ?? 3) - (roleOrder[b] ?? 3) || a.localeCompare(b));
+  const roles = Object.keys(rolePermissionProfiles).filter(role => role !== 'admin' && role !== String(currentUser?.role || '').toLowerCase()).sort((a,b) => {
+    const ai=permissionRoleOrder.findIndex(item=>item.role===a), bi=permissionRoleOrder.findIndex(item=>item.role===b);
+    return (ai<0?999:ai)-(bi<0?999:bi) || a.localeCompare(b);
+  });
   if (!roles.includes(selectedPermissionRole)) selectedPermissionRole = roles[0] || '';
-  document.querySelector('#permissionRoleNav').innerHTML = roles.map(role => `<button type="button" data-select-permission-role="${esc(role)}" aria-current="${role===selectedPermissionRole}">${esc(roleTitle(role))}</button>`).join('');
+  document.querySelector('#permissionRoleNav').innerHTML = roles.map(role => `<button type="button" data-select-permission-role="${esc(role)}" aria-current="${role===selectedPermissionRole}">${esc(roleTitle(role))} · ${permissionRoleOrder.findIndex(item=>item.role===role)+1}</button>`).join('');
   panel.innerHTML = roles.filter(role => role === selectedPermissionRole).map(role => {
     const roleLabel = roleTitle(role);
     const groups = permissionGroups.map(group => {
@@ -397,7 +400,10 @@ function renderRolePermissions() {
       return `<details class="permission-group" data-permission-group="${esc(group.name)}" ${query||openPermissionGroups.has(group.name)?'open':''}><summary>${esc(group.name)}</summary>${items.map(entry=>renderPermissionEntry(entry,rolePermissionProfiles[role],query,group.name)).join('')}</details>`;
     }).join('');
     const enabled = Object.values(rolePermissionProfiles[role] || {}).filter(Boolean).length;
-    return `<article class="role-permission-card" data-permission-role="${role}"><header><div><span class="role-kicker">ROLE PROFILE</span><h3>${roleLabel}</h3></div><span class="permission-count">${enabled} enabled</span></header><div class="role-permission-groups">${groups || '<p class="muted">No permissions match your search.</p>'}</div><button type="button" class="primary" data-save-permissions="${role}">Save ${roleLabel} permissions</button></article>`;
+    const canManageRank = currentUser?.role==='admin' || permissionRoleOrder.findIndex(item=>item.role===role)+1 > 2;
+    const orderIndex=permissionRoleOrder.findIndex(item=>item.role===role);
+    const rankTools=`<div class="admin-actions"><button type="button" data-rank-move="up" data-rank-role="${esc(role)}" ${!canManageRank||orderIndex<=1?'disabled':''}>Move up</button><button type="button" data-rank-move="down" data-rank-role="${esc(role)}" ${!canManageRank||orderIndex<1||orderIndex>=permissionRoleOrder.length-1?'disabled':''}>Move down</button>${!['member','leader','commander'].includes(role)?`<button type="button" class="danger" data-delete-role="${esc(role)}" ${!canManageRank?'disabled':''}>Delete rank</button>`:''}</div>`;
+    return `<article class="role-permission-card" data-permission-role="${role}"><header><div><span class="role-kicker">RANK ${permissionRoleOrder.findIndex(item=>item.role===role)+1} · ROLE PROFILE</span><h3>${roleLabel}</h3></div><span class="permission-count">${enabled} enabled</span></header>${rankTools}<div class="role-permission-groups">${groups || '<p class="muted">No permissions match your search.</p>'}</div><button type="button" class="primary" data-save-permissions="${role}">Save ${roleLabel} permissions</button></article>`;
   }).join('');
   panel.querySelectorAll('[data-indeterminate="true"]').forEach(input => { input.indeterminate = true; });
 }
@@ -406,6 +412,7 @@ async function loadRolePermissions() {
   try {
     const result = await api('/api/role-permissions');
     rolePermissionProfiles = result.profiles || {};
+    permissionRoleOrder = result.order || [];
     permissionEditorCapabilities = result.actor_permissions || {};
     editablePermissionKeys = Array.isArray(result.keys) ? result.keys : Object.keys(permissionEditorCapabilities).filter(key => permissionEditorCapabilities[key] === true);
     renderRolePermissions();
@@ -451,6 +458,22 @@ document.querySelector('#rolePermissionsPanel').addEventListener('change', event
   if(parentEntry) renderRolePermissions();
 });
 document.querySelector('#rolePermissionsPanel').addEventListener('click', async event => {
+  const move=event.target.closest('[data-rank-move]');
+  if(move){
+    move.disabled=true;
+    try{const result=await api('/api/role-permissions/order',{method:'POST',body:JSON.stringify({role:move.dataset.rankRole,direction:move.dataset.rankMove})});permissionRoleOrder=result.order||permissionRoleOrder;renderRolePermissions();}
+    catch(error){document.querySelector('#permissionStatus').textContent=`Could not reorder rank: ${error.message}`;document.querySelector('#permissionStatus').className='permission-status error';}
+    return;
+  }
+  const remove=event.target.closest('[data-delete-role]');
+  if(remove){
+    const role=remove.dataset.deleteRole;
+    if(!window.confirm(`Delete the ${roleTitle(role)} rank? It must have no assigned accounts.`)) return;
+    remove.disabled=true;
+    try{await api(`/api/role-permissions/${encodeURIComponent(role)}`,{method:'DELETE'});delete rolePermissionProfiles[role];permissionRoleOrder=permissionRoleOrder.filter(item=>item.role!==role);selectedPermissionRole='';renderRolePermissions();document.querySelector('#permissionStatus').textContent=`${roleTitle(role)} deleted.`;document.querySelector('#permissionStatus').className='permission-status success';}
+    catch(error){document.querySelector('#permissionStatus').textContent=`Could not delete rank: ${error.message}`;document.querySelector('#permissionStatus').className='permission-status error';remove.disabled=false;}
+    return;
+  }
   const button = event.target.closest('[data-save-permissions]');
   if (!button) return;
   const role = button.dataset.savePermissions, status = document.querySelector('#permissionStatus');
@@ -463,6 +486,7 @@ document.querySelector('#rolePermissionsPanel').addEventListener('click', async 
       throw new Error('The saved permissions could not be verified. Reload and try again.');
     }
     rolePermissionProfiles = persisted.profiles || rolePermissionProfiles;
+    permissionRoleOrder = persisted.order || permissionRoleOrder;
     permissionEditorCapabilities = persisted.actor_permissions || permissionEditorCapabilities;
     editablePermissionKeys = Array.isArray(persisted.keys) ? persisted.keys : editablePermissionKeys;
     renderRolePermissions();
@@ -480,6 +504,8 @@ document.querySelector('#createPermissionRole')?.addEventListener('click', async
   try {
     await api('/api/role-permissions', {method:'POST',body:JSON.stringify({role,permissions:empty})});
     rolePermissionProfiles[role] = empty;
+    permissionRoleOrder.push({role,sort_order:Math.max(4,...permissionRoleOrder.map(item=>Number(item.sort_order)||0))+1});
+    permissionRoleOrder.sort((a,b)=>a.sort_order-b.sort_order||a.role.localeCompare(b.role));
     selectedPermissionRole = role;
     input.value = '';
     renderRolePermissions();

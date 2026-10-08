@@ -444,7 +444,7 @@ async function signup(db, env, data) {
     if (/unique|constraint/i.test(String(error))) throw new Error("An account is already linked to this member name. Contact a Commander.");
     throw error;
   }
-  return { ok: true, status: "pending", request_id: id, callsign: identity.callsign };
+  return { ok: true, status: "pending", request_id: id, callsign: identity.callsign, sheet_account:{account_id:id,name:identity.name,callsign:identity.callsign,status:"pending",role:"member",created_at:now} };
 }
 async function bootstrapCommander(db, env, request, data) {
   const configured = String(env.LVFR_D1_BOOTSTRAP_SECRET || "");
@@ -514,11 +514,11 @@ async function accountAction(db, id, action, actor) {
     default: throw new Error("Unknown account action.");
   }
   await db.batch([
-    db.prepare("UPDATE accounts SET status=?,role=?,permissions_override_json=?,activated_at=?,approved_by=?,admin_changed_at=?,admin_changed_by=?,updated_at=? WHERE account_id=?").bind(status,role,role!==target.role?"{}":target.permissions_override_json||"{}",activated,approvedBy,changedAt,changedBy,now,id),
     db.prepare("INSERT INTO account_audit(created_at,account_id,name,callsign,action,actor_name) VALUES(?,?,?,?,?,?)").bind(now,id,target.name,target.callsign,action,actor.name),
-    ...(["deny","delete","deactivate"].includes(action) ? [db.prepare("DELETE FROM auth_sessions WHERE account_id=?").bind(id)] : [])
+    ...(["deny","delete","deactivate"].includes(action) ? [db.prepare("DELETE FROM auth_sessions WHERE account_id=?").bind(id)] : []),
+    ...(action==="delete" ? [db.prepare("DELETE FROM accounts WHERE account_id=?").bind(id)] : [db.prepare("UPDATE accounts SET status=?,role=?,permissions_override_json=?,activated_at=?,approved_by=?,admin_changed_at=?,admin_changed_by=?,updated_at=? WHERE account_id=?").bind(status,role,role!==target.role?"{}":target.permissions_override_json||"{}",activated,approvedBy,changedAt,changedBy,now,id)])
   ]);
-  return { ok:true, status:"saving" };
+  return { ok:true, status:"saving", sheet_account:{account_id:id,name:target.name,callsign:target.callsign,status:action==="delete"?"removed":status,role,created_at:target.created_at} };
 }
 function isCommandRank(user) {
   return ["admin","commander"].includes(String(user.role||"").toLowerCase()) || /^(E|C|DIV|B|CHIEF|COM)-/i.test(String(user.callsign||""));
@@ -604,6 +604,19 @@ export async function handleD1(context) {
       const result=await replaceMembers(db,data.members);
       if(data.callsign_slots||data.available_callsigns) await saveCallsignSlots(db,data.callsign_slots||data.available_callsigns);
       return json(result);
+    }
+    if(route==="/internal/accounts/sync"&&method==="POST") {
+      const expected=String(env.LVFR_D1_WORKER_SECRET||"");
+      if(!expected||request.headers.get("X-LVFR-Worker-Secret")!==expected) return json({detail:"Worker authentication failed."},403);
+      const account=data.account||{},id=String(account.account_id||"").trim(),status=String(account.status||"").toLowerCase(),role=String(account.role||"").toLowerCase();
+      if(!id||!account.name||!account.callsign||!['pending','approved','deactivated','denied','removed'].includes(status)||!/^([a-z][a-z0-9_-]{1,31})$/.test(role)) return json({detail:"Account update is invalid."},400);
+      const existing=await db.prepare("SELECT account_id FROM accounts WHERE account_id=?").bind(id).first();
+      const profile=await db.prepare("SELECT role FROM role_permissions WHERE role=?").bind(role).first();
+      if(!existing||(!profile&&role!=="admin")) return json({detail:"Account or role was not found."},404);
+      const timestamp=new Date().toISOString();
+      await db.prepare("UPDATE accounts SET name=?,name_key=?,callsign=?,status=?,role=?,updated_at=? WHERE account_id=?").bind(String(account.name).trim(),nameKey(account.name),String(account.callsign).trim().toUpperCase(),status,role,timestamp,id).run();
+      await db.prepare("DELETE FROM auth_sessions WHERE account_id=? AND ? IN ('denied','removed','deactivated')").bind(id,status).run();
+      return json({ok:true,account_id:id});
     }
     if(route==="/internal/training-hours/import" && method==="POST") {
       const expected=String(env.LVFR_D1_WORKER_SECRET||"");
@@ -723,7 +736,13 @@ export async function handleD1(context) {
     }
     const session=await accountForRequest(db,request), token=session.token, authRoute=route.startsWith("/auth/");
     if (route==="/api/health" && method==="GET") return json({ok:true,backend:"Cloudflare D1",auth_store:"D1"});
-    if (route==="/auth/signup" && method==="POST") return json(await signup(db,env,data));
+    if (route==="/auth/signup" && method==="POST") {
+      const result=await signup(db,env,data);
+      const sheetAccount=result.sheet_account;
+      if(env.LVFR_D1_AUTH_BRIDGE_SECRET) context.waitUntil((async()=>{try{const {proxyToAppsScript}=await import("../[[path]].js");const mirror=await proxyToAppsScript(context,"/internal/accounts/mirror",url,"",sheetAccount);if(!mirror.ok)console.error("Account Sheet mirror failed:",await mirror.text());}catch(error){console.error("Account Sheet mirror failed:",error);}})());
+      delete result.sheet_account;
+      return json(result);
+    }
     if (route==="/auth/login" && method==="POST") {
       const result = await login(db,data);
       return json({ token:result.token, user:result.user },200,{ "Set-Cookie":`lvfr_d1_session=${encodeURIComponent(result.token)}; Path=/; Max-Age=${result.max_age}; HttpOnly; Secure; SameSite=Lax` });
@@ -767,7 +786,7 @@ export async function handleD1(context) {
     if(route==="/api/role-permissions"&&method==="GET") {
       const actor=session.account;
       requireRoleProfileManager(actor);
-      const rows=(await db.prepare("SELECT role FROM role_permissions ORDER BY role").all()).results||[];
+      const rows=(await db.prepare("SELECT role,sort_order FROM role_permissions ORDER BY sort_order,role").all()).results||[];
       const roles=new Set(["member","leader","commander",...rows.map(row=>String(row.role||"").toLowerCase())]);
       const profiles={}, effective=await accountPermissions(db,actor);
       const visibleKeys=actor.role==="admin"?ROLE_PERMISSION_KEYS:ROLE_PERMISSION_KEYS.filter(key=>effective[key]===true);
@@ -775,7 +794,37 @@ export async function handleD1(context) {
         const profile=await rolePermissions(db,role);
         profiles[role]=Object.fromEntries(visibleKeys.map(key=>[key,Boolean(profile[key])]));
       }
-      return json({profiles,keys:visibleKeys,actor_permissions:Object.fromEntries(visibleKeys.map(key=>[key,true]))});
+      const order=[{role:"admin",sort_order:1},...rows.filter(row=>row.role!=="admin").map(row=>({role:String(row.role).toLowerCase(),sort_order:Number(row.sort_order)||100}))];
+      for(const [role,sort_order] of [["commander",2],["leader",3],["member",4]]) if(!order.some(row=>row.role===role)) order.push({role,sort_order});
+      order.sort((a,b)=>a.sort_order-b.sort_order||a.role.localeCompare(b.role));
+      return json({profiles,keys:visibleKeys,actor_permissions:Object.fromEntries(visibleKeys.map(key=>[key,true])),order});
+    }
+    if(route==="/api/role-permissions/order"&&method==="POST") {
+      const actor=session.account; requireRoleProfileManager(actor);
+      const order=(await db.prepare("SELECT role,sort_order FROM role_permissions ORDER BY sort_order,role").all()).results||[];
+      const canonical=[{role:"admin",sort_order:1},...order.filter(row=>row.role!=="admin")];
+      for(const [role,sort_order] of [["commander",2],["leader",3],["member",4]]) if(!canonical.some(row=>row.role===role)) canonical.push({role,sort_order});
+      canonical.sort((a,b)=>Number(a.sort_order)-Number(b.sort_order)||a.role.localeCompare(b.role));
+      const index=canonical.findIndex(row=>row.role===String(data.role||""));
+      const other=index+(data.direction==="up"?-1:1), actorRank=actor.role==="admin"?1:Number(canonical.find(row=>row.role===actor.role)?.sort_order)||2;
+      if(index<1||other<1||other>=canonical.length||Number(canonical[index].sort_order)<=actorRank||Number(canonical[other].sort_order)<=actorRank) throw Object.assign(new Error("You cannot reorder your rank or a higher rank."),{status:403});
+      [canonical[index],canonical[other]]=[canonical[other],canonical[index]];
+      const statements=canonical.filter(row=>row.role!=="admin").map((row,i)=>db.prepare("UPDATE role_permissions SET sort_order=? WHERE role=?").bind(i+2,row.role));
+      await db.batch(statements);
+      return json({ok:true,order:canonical});
+    }
+    const roleDelete=route.match(/^\/api\/role-permissions\/([^/]+)$/);
+    if(roleDelete&&method==="DELETE") {
+      const actor=session.account; requireRoleProfileManager(actor); const role=decodeURIComponent(roleDelete[1]);
+      const rank=actor.role==="admin"?1:Number((await db.prepare("SELECT sort_order FROM role_permissions WHERE role=?").bind(actor.role).first())?.sort_order)||2;
+      const target=await db.prepare("SELECT sort_order FROM role_permissions WHERE role=?").bind(role).first();
+      if(!target||["admin","commander","leader","member"].includes(role)) throw Object.assign(new Error("Only custom roles can be deleted."),{status:400});
+      if(Number(target.sort_order)<=rank) throw Object.assign(new Error("You cannot delete your rank or a higher rank."),{status:403});
+      const assigned=await db.prepare("SELECT COUNT(*) AS count FROM accounts WHERE role=?").bind(role).first();
+      if(Number(assigned?.count)>0) throw Object.assign(new Error("Move all accounts out of this role before deleting it."),{status:409});
+      await db.prepare("DELETE FROM role_permissions WHERE role=?").bind(role).run();
+      await appendAudit(db,{account_id:"role:"+role,name:role,callsign:""},"Deleted role",actor.name);
+      return json({ok:true,role});
     }
     if(route==="/api/role-permissions"&&method==="POST") {
       const actor=session.account, role=String(data.role||"").toLowerCase();
@@ -1177,6 +1226,7 @@ export async function handleD1(context) {
       const admin=action[2]==="admin"||action[2]==="commander"?await requireOperation(db,token):await requireAdmin(db,token), target=await db.prepare("SELECT account_id,name,callsign,role FROM accounts WHERE account_id=?").bind(decodeURIComponent(action[1])).first();
       if(admin.role==="commander"&&target&&["admin","commander"].includes(target.role)) throw Object.assign(new Error("Only Operation can manage Operation or Commander accounts."),{status:403});
       const result=await accountAction(db,decodeURIComponent(action[1]),action[2],admin);
+      if(env.LVFR_D1_AUTH_BRIDGE_SECRET) { context.waitUntil((async()=>{try{const {proxyToAppsScript}=await import("../[[path]].js");const mirror=await proxyToAppsScript(context,"/internal/accounts/mirror",url,"",result.sheet_account);if(!mirror.ok)console.error("Account Sheet mirror failed:",await mirror.text());}catch(error){console.error("Account Sheet mirror failed:",error);}})()); }
       if(target&&env.LVFR_D1_AUTH_BRIDGE_SECRET) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET), {proxyToAppsScript}=await import("../[[path]].js");
         context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,assertion,{kind:"account_audit",account_id:target.account_id,name:target.name,callsign:target.callsign,action:action[2],actor_name:admin.name});if(!mirror.ok)console.error("Account Audit Sheet mirror failed:",await mirror.text());}catch(error){console.error("Account Audit Sheet mirror failed:",error);}})());
@@ -1188,6 +1238,7 @@ export async function handleD1(context) {
       const admin=await requireAdmin(db,token), id=decodeURIComponent(deletion[1]);
       const target=await db.prepare("SELECT account_id,name,callsign FROM accounts WHERE account_id=?").bind(id).first();
       const result=await accountAction(db,id,"delete",admin);
+      if(env.LVFR_D1_AUTH_BRIDGE_SECRET) { context.waitUntil((async()=>{try{const {proxyToAppsScript}=await import("../[[path]].js");const mirror=await proxyToAppsScript(context,"/internal/accounts/mirror",url,"",result.sheet_account);if(!mirror.ok)console.error("Account Sheet mirror failed:",await mirror.text());}catch(error){console.error("Account Sheet mirror failed:",error);}})()); }
       if(target&&env.LVFR_D1_AUTH_BRIDGE_SECRET) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET), {proxyToAppsScript}=await import("../[[path]].js");
         context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,assertion,{kind:"account_audit",account_id:target.account_id,name:target.name,callsign:target.callsign,action:"delete",actor_name:admin.name});if(!mirror.ok)console.error("Account Audit Sheet mirror failed:",await mirror.text());}catch(error){console.error("Account Audit Sheet mirror failed:",error);}})());
