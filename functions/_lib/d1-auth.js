@@ -1119,43 +1119,47 @@ export async function handleD1(context) {
       const bridgeAssertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
       const {proxyToAppsScript}=await import("../[[path]].js");
       const sheetLog={kind:"training_time",log_date:timestamp,callsign:member.callsign,member_name:member.name,action:logAction,details:JSON.stringify({previous_time:previousTime,new_time:newTime}),changed_by:user.name};
-      let sheetSynced=true,sheetSyncError="";
-      try {
-        const sheetMirror=await proxyToAppsScript(context,"/internal/training-hours/mirror",url,bridgeAssertion,{action,callsign:member.callsign,id:savedId,source_row:existing?.source_row,time:newTime,previous_time:previousTime,date:action==="add"?trainingDate:existing.training_date,mirror_id:String(savedId)+":"+timestamp,log_record:sheetLog});
-        const mirrorResult=await sheetMirror.json().catch(()=>({}));
-        if(!sheetMirror.ok||mirrorResult.ok!==true) {
-          const responseDetail=mirrorResult.detail||mirrorResult.error||JSON.stringify(mirrorResult);
-          throw new Error("Apps Script Sheet1 mirror was not confirmed (HTTP "+sheetMirror.status+"): "+String(responseDetail||"empty response").slice(0,400));
-        }
-        if(mirrorResult.row&&!existing?.source_row) {
-          const sheetRow=Number(mirrorResult.row);
-          // A Sheet-to-D1 import can claim this row between the Apps Script
-          // write and this acknowledgement. Only attach the row if no other
-          // D1 record owns it; otherwise collapse an identical import-created
-          // duplicate into that already-mapped record.
-          await db.prepare("UPDATE training_hours SET source_row=? WHERE id=? AND source_row IS NULL AND NOT EXISTS (SELECT 1 FROM training_hours WHERE source_row=? AND id<>?)")
-            .bind(sheetRow,savedId,sheetRow,savedId).run();
-          const saved=await db.prepare("SELECT id,source_row,callsign,training_date,time FROM training_hours WHERE id=?").bind(savedId).first();
-          if(saved&&Number(saved.source_row)===sheetRow) {
-            // The web-created record retained ownership of the Sheet row.
-          } else {
-            const imported=await db.prepare("SELECT id,callsign,training_date,time FROM training_hours WHERE source_row=?").bind(sheetRow).first();
-            if(!imported||imported.callsign!==member.callsign||imported.training_date!==trainingDate||imported.time!==time) {
-              throw new Error("The Training Hours Sheet row was claimed by a different D1 record; refresh the row mapping before retrying.");
+      const mirrorPayload={action,callsign:member.callsign,id:savedId,source_row:existing?.source_row,time:newTime,previous_time:previousTime,date:action==="add"?trainingDate:existing.training_date,mirror_id:String(savedId)+":"+timestamp,log_record:sheetLog};
+      const sheetAlreadyLinked=Boolean(existing?.source_row);
+      // The website answers as soon as D1 has committed. The Sheet mirror runs
+      // after the response; a transient Apps Script failure is retried, and the
+      // mirror_id guarantees a retry never writes the Sheet row twice.
+      const mirrorTask=(async()=>{
+        let lastError=null;
+        for(let attempt=1;attempt<=3;attempt++){
+          try {
+            const sheetMirror=await proxyToAppsScript(context,"/internal/training-hours/mirror",url,bridgeAssertion,mirrorPayload);
+            const mirrorResult=await sheetMirror.json().catch(()=>({}));
+            if(!sheetMirror.ok||mirrorResult.ok!==true) {
+              const responseDetail=mirrorResult.detail||mirrorResult.error||JSON.stringify(mirrorResult);
+              throw new Error("Apps Script Sheet1 mirror was not confirmed (HTTP "+sheetMirror.status+"): "+String(responseDetail||"empty response").slice(0,400));
             }
-            // The import found the just-created Sheet entry and attached its
-            // source_row first. Keep that canonical row and remove the
-            // unlinked placeholder created by this request.
-            await db.prepare("DELETE FROM training_hours WHERE id=? AND source_row IS NULL").bind(savedId).run();
-            savedId=Number(imported.id)||savedId;
+            if(mirrorResult.row&&!sheetAlreadyLinked) {
+              const sheetRow=Number(mirrorResult.row);
+              // A Sheet-to-D1 import can claim this row between the Apps Script
+              // write and this acknowledgement. Attach it only if no other D1
+              // record owns it; otherwise collapse the placeholder into that record.
+              await db.prepare("UPDATE training_hours SET source_row=? WHERE id=? AND source_row IS NULL AND NOT EXISTS (SELECT 1 FROM training_hours WHERE source_row=? AND id<>?)")
+                .bind(sheetRow,savedId,sheetRow,savedId).run();
+              const saved=await db.prepare("SELECT id,source_row,callsign,training_date,time FROM training_hours WHERE id=?").bind(savedId).first();
+              if(!(saved&&Number(saved.source_row)===sheetRow)) {
+                const imported=await db.prepare("SELECT id,callsign,training_date,time FROM training_hours WHERE source_row=?").bind(sheetRow).first();
+                if(!imported||imported.callsign!==member.callsign||imported.training_date!==trainingDate||imported.time!==time) {
+                  throw new Error("The Training Hours Sheet row was claimed by a different D1 record; refresh the row mapping.");
+                }
+                await db.prepare("DELETE FROM training_hours WHERE id=? AND source_row IS NULL").bind(savedId).run();
+              }
+            }
+            return;
+          } catch(error) {
+            lastError=error;
+            if(attempt<3) await new Promise(resolve=>setTimeout(resolve,1000*attempt));
           }
         }
-      } catch(error) {
-        sheetSynced=false;
-        sheetSyncError=String(error?.message||error).slice(0,500);
-        console.error("Training Hours Sheet mirror failed:",sheetSyncError);
-      }
-      return json({ok:true,changed:true,id:savedId,message:"Training Hours record updated.",sheet_synced:sheetSynced,sheet_sync_error:sheetSyncError});
+        console.error("Training Hours Sheet mirror failed after retries:",String(lastError?.message||lastError).slice(0,500));
+      })();
+      context.waitUntil(mirrorTask);
+      return json({ok:true,changed:true,id:savedId,message:"Training Hours record updated."});
     }
     if(route==="/api/members" && method==="GET") {
       return json(await readMembers(db,url.searchParams.get("search")||"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET)));

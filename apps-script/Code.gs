@@ -9,7 +9,7 @@
  */
 
 const LVFR = Object.freeze({
-  apiVersion: '2026-10-08-training-hours-add-fix',
+  apiVersion: '2026-10-08-training-hours-background-mirror',
   rosterTab: 'Ranks🎖️',
   accountsTab: 'Accounts',
   watchTab: 'Watch Command Logs',
@@ -2187,8 +2187,23 @@ function migrateLoiToD1() {
 
 // D1 is the write authority; this endpoint mirrors committed values to the
 // legacy Sheet so existing workflows and exports continue to see them.
+// Each D1 mirror carries a mirror_id. Its result is cached for six hours, so a
+// retry after a lost response (for example the transient echo 404) replays the
+// saved result instead of writing the Sheet row again.
 function mirrorTrainingHoursFromD1_(data) {
-  return withScriptLock_(() => mirrorTrainingHoursFromD1Locked_(data));
+  return withScriptLock_(() => {
+    const cache = CacheService.getScriptCache();
+    const cacheKey = data.mirror_id ? 'th-mirror:' + String(data.mirror_id).slice(0, 180) : '';
+    if (cacheKey) {
+      const cached = cache.get(cacheKey);
+      if (cached) { try { return JSON.parse(cached); } catch (ignored) {} }
+    }
+    const result = mirrorTrainingHoursFromD1Locked_(data);
+    if (cacheKey) cache.put(cacheKey, JSON.stringify(result), 21600);
+    // The activity log is secondary: it must never turn a written row into a retry.
+    if (data.log_record) { try { appendAppLog_(data.log_record); } catch (error) { console.error('Training Hours activity log mirror failed:', error); } }
+    return result;
+  });
 }
 
 // Reconcile D1 account metadata and membership against the private Accounts

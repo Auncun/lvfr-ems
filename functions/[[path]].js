@@ -57,9 +57,13 @@ export async function proxyToAppsScript(context, route, incoming, sessionToken, 
     // idempotent retry marker prevents duplicate Sheet rows.
     let finalUrl = "";
     try { finalUrl = new URL(upstream.url).origin + new URL(upstream.url).pathname; } catch {}
+    // Any Training Hours mirror (add, time change, or remove) carries a stable
+    // mirror_id, and Apps Script replays its stored result for a repeated id, so
+    // retrying the transient echo 404 cannot write the Sheet twice.
     if (route === "/internal/training-hours/mirror" && upstream.status === 404 &&
-        finalUrl.startsWith("https://script.googleusercontent.com/macros/echo") && data?.action === "add") {
+        finalUrl.startsWith("https://script.googleusercontent.com/macros/echo") && data?.mirror_id) {
       try { await upstream.body?.cancel(); } catch {}
+      await new Promise(resolve => setTimeout(resolve, 750));
       upstream = await fetchGasResponse({ ...data, idempotent_retry: true });
     }
   } catch (error) {
