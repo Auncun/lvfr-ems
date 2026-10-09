@@ -20,11 +20,14 @@
         <dt>Supervisor exam</dt><dd id="accountSettingsExam"></dd>
       </dl>
       <div class="account-notifications-section">
+        <button type="button" class="primary" id="accountToggleNotifications" aria-expanded="false">Notification settings</button>
+        <div id="accountNotificationBody" hidden>
         <h3>Notifications</h3>
         <p class="muted">Choose the notifications you want to receive. You only see the types your role allows.</p>
         <div id="accountNotificationOptions" class="account-notification-options"><p class="muted">Loading…</p></div>
         <button type="button" class="primary" id="accountSaveNotifications">Save notification settings</button>
         <p id="accountNotificationMessage" role="status" aria-live="polite"></p>
+        </div>
       </div>
       <div class="account-password-section">
         <button type="button" class="primary" id="accountTogglePassword">Change password</button>
@@ -79,6 +82,12 @@
       list.innerHTML = `<p class="muted">${error.message}</p>`;
     }
   }
+  field('accountToggleNotifications').addEventListener('click', () => {
+    const body = field('accountNotificationBody');
+    body.hidden = !body.hidden;
+    field('accountToggleNotifications').setAttribute('aria-expanded', String(!body.hidden));
+    if (!body.hidden) void loadNotificationOptions();
+  });
   field('accountSaveNotifications').addEventListener('click', async () => {
     const button = field('accountSaveNotifications');
     const message = field('accountNotificationMessage');
@@ -103,7 +112,6 @@
     if (accountMenu) accountMenu.hidden = true;
     accountMenuButton?.setAttribute('aria-expanded', 'false');
     dialog.classList.remove('hidden');
-    void loadNotificationOptions();
     const user = window.lvfrCachedUser?.();
     const accountId = user?.account_id || user?.id || '';
     if (!accountProfile && accountId) {

@@ -29,7 +29,9 @@
           { label: 'Notes Log', tab: 'membersLog', log: 'note' },
           { label: 'Activity Log', tab: 'membersLog', log: 'activity' },
           { label: 'Instructor Log', tab: 'membersLog', log: 'instructor', availability: '#instructorLogTab' },
-          { label: 'Do Not Promote Log', tab: 'membersLog', log: 'do_not_promote', availability: '#doNotPromoteLogTab' }
+          { label: 'Do Not Promote Log', tab: 'membersLog', log: 'do_not_promote', availability: '#doNotPromoteLogTab' },
+          { label: 'LOI Log', tab: 'membersLog', log: 'loi', availability: '#loiLogTab' },
+          { label: 'Training Time Log', tab: 'membersLog', log: 'training_time', availability: '#trainingTimeLogTab' }
         ] },
         { label: 'Statistics', tab: 'statistics', availability: '#statisticsTab' },
         { label: 'Supervisors', tab: 'leaders', availability: '#leadersTab', children: [
