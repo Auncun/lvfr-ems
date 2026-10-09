@@ -27,6 +27,19 @@ function canManageRoleProfiles() {
   return ['admin', 'commander'].includes(String(currentUser?.role || '').toLowerCase())
     || currentUser?.permissions?.operation_command_access === true;
 }
+// Position of a role for the page (RANK 1 is the top). Unknown roles are left to the server to decide.
+function roleOrderForPage(role) {
+  return permissionRoleOrder.find(item => item.role === String(role || '').toLowerCase())?.sort_order;
+}
+function canEditRole(role) {
+  if (currentUser?.role === 'admin') return true;
+  const mine = roleOrderForPage(currentUser?.role), theirs = roleOrderForPage(role);
+  if (mine == null || theirs == null) return true;
+  return theirs > mine;
+}
+function canClearAccountAudit() {
+  return currentUser?.role === 'admin' || currentUser?.permissions?.logs_delete_d1 === true;
+}
 function canManageRanks(permission) { return currentUser?.role === 'admin' || currentUser?.permissions?.role_manage === true || currentUser?.permissions?.operation_command_access === true || currentUser?.permissions?.[permission] === true; }
 function canAccessPermissionPanel() { return canManageRoleProfiles() || ['rank_add','rank_rename','rank_delete','rank_reorder'].some(canManageRanks); }
 function canManageCommandAccounts() {
@@ -77,6 +90,7 @@ function configureOperationAccess() {
   document.querySelector('[data-command-section="history"]')?.toggleAttribute('hidden', !accountManager);
   document.querySelector('[data-command-section="permissions"]')?.toggleAttribute('hidden', !allowed);
   document.querySelector('.permission-member-picker')?.toggleAttribute('hidden', !canManageRoleProfiles());
+  document.querySelector('#clearAccountAuditBtn')?.toggleAttribute('hidden', !canClearAccountAudit());
   document.querySelector('.custom-role-tools')?.toggleAttribute('hidden', !canManageRanks('rank_add'));
   if (!accountManager) {
     commandSections.accounts.hidden = true;
@@ -774,7 +788,7 @@ function renderRolePermissions() {
     const actorRank=currentUser?.role==='admin'?1:(permissionRoleOrder.findIndex(item=>item.role===String(currentUser?.role||''))+1||2);
     const belowActor=orderIndex+1>actorRank;
     const rankTools=`<div class="admin-actions"><label>Rank name <input type="text" maxlength="32" data-rank-name="${esc(role)}" value="${esc(roleLabel)}" ${!canManageRanks('rank_rename')||!belowActor?'disabled':''}></label><button type="button" data-rename-rank="${esc(role)}" ${!canManageRanks('rank_rename')||!belowActor?'disabled':''}>Save name</button><button type="button" data-rank-move="up" data-rank-role="${esc(role)}" ${!canManageRanks('rank_reorder')||!belowActor||orderIndex<=1?'disabled':''}>Move up</button><button type="button" data-rank-move="down" data-rank-role="${esc(role)}" ${!canManageRanks('rank_reorder')||!belowActor||orderIndex<1||orderIndex>=permissionRoleOrder.length-1?'disabled':''}>Move down</button>${!['member','leader','commander'].includes(role)?`<button type="button" class="danger" data-delete-role="${esc(role)}" ${!canManageRanks('rank_delete')||!belowActor?'disabled':''}>Delete rank</button>`:''}</div>`;
-    return `<article class="role-permission-card" data-permission-role="${role}"><header><div><span class="role-kicker">RANK ${orderIndex+1} · ROLE PROFILE</span><h3>${roleLabel}</h3></div><span class="permission-count">${enabled} enabled</span></header>${rankTools}${canManageRoleProfiles()?roleTabBar(role):''}<div class="role-tabbed" data-role-tabs="${esc(role)}" data-active-tab="${roleActiveTab[role]||'pages'}"><div class="role-permission-groups">${canManageRoleProfiles()?(groups || '<p class="muted">No permissions match your search.</p>'):'<p class="muted">Rank actions are available according to your individual rank permissions. Editing permission profiles requires Operation Command access.</p>'}</div>${canManageRoleProfiles()?scopeEditor(role):''}${canManageRoleProfiles()?previewEditor(role):''}</div>${canManageRoleProfiles()?roleWarningsHtml(role):''}${canManageRoleProfiles()?`<button type="button" class="role-undo" data-undo-permissions="${esc(role)}">Undo unsaved changes</button>`:''}${canManageRoleProfiles()?`<button type="button" class="primary" data-save-permissions="${role}">Save ${roleLabel} permissions</button>`:''}</article>`;
+    return `<article class="role-permission-card" data-permission-role="${role}"${canEditRole(role)?'':' inert'}><header><div><span class="role-kicker">RANK ${orderIndex+1} · ROLE PROFILE</span><h3>${roleLabel}</h3></div><span class="permission-count">${enabled} enabled</span></header>${canEditRole(role)?'':'<p class="muted role-readonly">Read only: this role has your rank or higher.</p>'}${rankTools}${canManageRoleProfiles()?roleTabBar(role):''}<div class="role-tabbed" data-role-tabs="${esc(role)}" data-active-tab="${roleActiveTab[role]||'pages'}"><div class="role-permission-groups">${canManageRoleProfiles()?(groups || '<p class="muted">No permissions match your search.</p>'):'<p class="muted">Rank actions are available according to your individual rank permissions. Editing permission profiles requires Operation Command access.</p>'}</div>${canManageRoleProfiles()?scopeEditor(role):''}${canManageRoleProfiles()?previewEditor(role):''}</div>${canManageRoleProfiles()?roleWarningsHtml(role):''}${canManageRoleProfiles()?`<button type="button" class="role-undo" data-undo-permissions="${esc(role)}">Undo unsaved changes</button>`:''}${canManageRoleProfiles()?`<button type="button" class="primary" data-save-permissions="${role}">Save ${roleLabel} permissions</button>`:''}</article>`;
   }).join('');
   panel.querySelectorAll('[data-indeterminate="true"]').forEach(input => { input.indeterminate = true; });
 }
@@ -991,6 +1005,11 @@ async function openIndividualPermissions(account) {
   document.querySelector('#individualPermissionsTitle').textContent = `Permissions: ${account.display_name || account.name}`;
   dialog.hidden = false;
   dialog.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (!canEditRole(account.role)) {
+    individualPermissionState = null;
+    status.textContent = 'You cannot change permissions of an account with your rank or higher.';
+    return;
+  }
   if (account.role === 'admin') {
     individualPermissionState = null;
     status.textContent = 'Admin accounts keep full access and cannot be customized.';

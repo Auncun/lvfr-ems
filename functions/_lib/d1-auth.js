@@ -584,6 +584,21 @@ async function requireOperation(db, token) {
   if (account.role !== "admin") throw Object.assign(new Error("Only Operation can manage access permissions and elevated roles."), { status: 403 });
   return account;
 }
+// Position of a role in the hierarchy (RANK 1 is the top). Admin is always 1.
+const DEFAULT_ROLE_ORDER={admin:1,commander:2,leader:3,member:4};
+async function roleOrderOf(db,role){
+  const r=String(role||"").toLowerCase();
+  if(r==="admin") return 1;
+  const row=await db.prepare("SELECT sort_order FROM role_permissions WHERE role=?").bind(r).first();
+  if(row&&row.sort_order!=null) return Number(row.sort_order);
+  return DEFAULT_ROLE_ORDER[r]??100;
+}
+// A non-admin may change only roles strictly below their own rank.
+async function assertOutranks(db,actor,targetRole){
+  if(String(actor.role||"").toLowerCase()==="admin") return;
+  const mine=await roleOrderOf(db,actor.role), theirs=await roleOrderOf(db,targetRole);
+  if(theirs<=mine) throw Object.assign(new Error("You cannot change permissions of a role with your rank or higher."),{status:403});
+}
 function requireRoleProfileManager(actor) {
   if(actor.role!=="admin"&&actor.role!=="commander"&&actor.permissions?.operation_command_access!==true)
     throw Object.assign(new Error("Operation Command access is required."),{status:403});
@@ -961,6 +976,7 @@ export async function handleD1(context) {
       const id=decodeURIComponent(individualPermissionRoute[1]);
       const target=await db.prepare("SELECT account_id,name,role,permissions_override_json FROM accounts WHERE account_id=?").bind(id).first();
       if(!target||target.role==="admin") throw Object.assign(new Error("That account's permissions cannot be changed."),{status:404});
+      if(actorRights) await assertOutranks(db,actor,target.role);
       const defaults=await rolePermissions(db,target.role);
       if(method==="GET") return json({account_id:id,role:target.role,defaults,overrides:expandLegacyPermissionOverrides(parsePermissionOverrides(target.permissions_override_json))});
       const currentOverrides=expandLegacyPermissionOverrides(parsePermissionOverrides(target.permissions_override_json));
@@ -1092,6 +1108,7 @@ export async function handleD1(context) {
       const actor=session.account, role=String(data.role||"").toLowerCase();
       const existingRole=await db.prepare("SELECT role FROM role_permissions WHERE role=?").bind(role).first();
       if(existingRole) requireRoleProfileManager(actor); else requireRankPermission(actor,"rank_add");
+      if(existingRole) await assertOutranks(db,actor,role);
       if(!/^[a-z][a-z0-9_-]{1,31}$/.test(role)||role==="admin") throw Object.assign(new Error("Choose a valid role name."),{status:400});
       if(role===actor.role) throw Object.assign(new Error("You cannot edit the permission profile for your own role."),{status:403});
       const incoming={...(data.permissions&&typeof data.permissions==="object"?data.permissions:{})};
@@ -1257,7 +1274,9 @@ export async function handleD1(context) {
       })));
     }
     if(route==="/api/leaders/audit/clear" && method==="POST") {
-      await requireAdmin(db,token);
+      const auditActor=await accountForToken(db,token);
+      if(!auditActor||auditActor.status!=="approved") throw Object.assign(new Error("Sign in again."),{status:401});
+      if(auditActor.role!=="admin"&&(await accountPermissions(db,auditActor)).logs_delete_d1!==true) throw Object.assign(new Error("You need the Delete logs from D1 permission."),{status:403});
       await db.prepare("DELETE FROM account_audit").run();
       return json({ok:true});
     }
