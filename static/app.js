@@ -1290,12 +1290,15 @@ let fortPassPending = null;
 function openFortPassDialog(button) {
     const cached = memberCache.get(String(button.dataset.loiCallsign || "").trim().toUpperCase()) || {};
     const owned = { "Basic Firefighting": Boolean(Number(cached.has_basic_firefighting)), "Advanced Firefighting": Boolean(Number(cached.has_advanced_firefighting)) };
+    const details = { "Basic Firefighting": "Basic FORT", "Advanced Firefighting": "Advanced FORT" };
     fortPassPending = button;
-    $("#fortPassTitle").textContent = `Passed FORT LOI: ${button.dataset.loiName}`;
-    $("#fortPassOptions").innerHTML = Object.keys(owned).map(training => `<label class="training-action-choice"><span>${loiTrainingLabels[training]}${owned[training] ? " <em>(already has)</em>" : ""}</span><input type="checkbox" value="${training}" ${owned[training] ? "checked disabled" : ""}></label>`).join("");
+    $("#fortPassTitle").textContent = "Passed FORT LOI";
+    $("#fortPassMember").textContent = button.dataset.loiName || "";
+    $("#fortPassOptions").innerHTML = Object.keys(owned).map(training => `<label class="fort-pass-option${owned[training] ? " is-owned" : ""}"><input type="checkbox" value="${training}" ${owned[training] ? "checked disabled" : ""}><span class="fort-pass-option-text"><strong>${details[training]}</strong><small>${training}</small></span>${owned[training] ? '<em class="fort-pass-owned">Already held</em>' : ""}</label>`).join("");
     $("#fortPassDialog")?.classList.remove("hidden");
 }
 $("#closeFortPass")?.addEventListener("click", () => { fortPassPending = null; $("#fortPassDialog")?.classList.add("hidden"); });
+$("#cancelFortPass")?.addEventListener("click", () => { fortPassPending = null; $("#fortPassDialog")?.classList.add("hidden"); });
 $("#fortPassDialog")?.addEventListener("click", event => { if (event.target.id === "fortPassDialog") { fortPassPending = null; event.currentTarget.classList.add("hidden"); } });
 $("#fortPassSave")?.addEventListener("click", () => {
     const button = fortPassPending;

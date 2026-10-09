@@ -2088,7 +2088,7 @@ function mutateLoiSheet_(data) {
       }
       const row = config.startRow + offset;
       if (type === 'FORT') writePercent(row, percent);
-      config.sheet.getRange(row, config.nameColumn).setValue(name);
+      config.sheet.getRange(row, config.nameColumn).setValue(name).setHorizontalAlignment('left');
       SpreadsheetApp.flush();
       const written = String(config.sheet.getRange(row, config.nameColumn).getDisplayValue() || '').trim();
       if (sheetNameKey_(written) !== sheetNameKey_(name)) throw new Error(config.sheet.getName() + ' row ' + row + ' did not keep the name. Check protection, data validation or formulas on that cell.');
