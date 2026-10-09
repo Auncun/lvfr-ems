@@ -915,6 +915,8 @@ export async function handleD1(context) {
       return json({ok:true,operational_logs:(data.operational_logs||[]).length,account_audit:(data.account_audit||[]).length,notifications:(data.notifications||[]).length});
     }
     const session=await accountForRequest(db,request), token=session.token, authRoute=route.startsWith("/auth/");
+    // Every permission check on the server reads account.permissions, so load the real values once per request.
+    if(session.account) session.account.permissions=await accountPermissions(db,session.account);
     if (route==="/api/health" && method==="GET") return json({ok:true,backend:"Cloudflare D1",auth_store:"D1"});
     if (route==="/auth/signup" && method==="POST") {
       const result=await signup(db,env,data);

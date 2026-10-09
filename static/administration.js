@@ -76,7 +76,7 @@ function configureOperationAccess() {
   document.querySelector('[data-command-section="accounts"]')?.toggleAttribute('hidden', !accountManager);
   document.querySelector('[data-command-section="history"]')?.toggleAttribute('hidden', !accountManager);
   document.querySelector('[data-command-section="permissions"]')?.toggleAttribute('hidden', !allowed);
-  document.querySelector('.permission-member-picker')?.toggleAttribute('hidden', currentUser?.role !== 'admin');
+  document.querySelector('.permission-member-picker')?.toggleAttribute('hidden', !canManageRoleProfiles());
   document.querySelector('.custom-role-tools')?.toggleAttribute('hidden', !canManageRanks('rank_add'));
   if (!accountManager) {
     commandSections.accounts.hidden = true;
