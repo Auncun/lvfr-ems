@@ -1048,11 +1048,13 @@ export async function handleD1(context) {
       const action=String(data.action||"").toLowerCase(), type=String(data.type||"").toUpperCase();
       if(!["add","passed","failed"].includes(action)||!["HERT","FORT"].includes(type)) throw new Error("Choose a valid LOI action and type.");
       const callsign=String(data.callsign||"").trim().toUpperCase();
-      const member=await db.prepare("SELECT callsign,name FROM members WHERE upper(callsign)=upper(?)").bind(callsign).first();
+      const member=await db.prepare("SELECT callsign,name,has_hert,has_basic_firefighting,has_advanced_firefighting FROM members WHERE upper(callsign)=upper(?)").bind(callsign).first();
       if(!member) throw new Error("Choose a current roster member.");
       const rawPercent=data.test_percent;
       const percent=rawPercent==null||String(rawPercent).trim()===""?null:Number(rawPercent);
       if(action==="add"&&type==="FORT"&&(!Number.isFinite(percent)||percent<0||percent>100)) throw new Error("FORT LOI % on test must be a number from 0 to 100.");
+      if(action==="add"&&type==="HERT"&&Number(member.has_hert)) throw new Error("Already HERT certified");
+      if(action==="add"&&type==="FORT"&&Number(member.has_basic_firefighting)&&Number(member.has_advanced_firefighting)) throw new Error("Already FORT certified");
       // Validate the passed training before the LOI row is removed, so a bad request changes nothing.
       let passedTrainings=[];
       if(action==="passed"&&type==="HERT") passedTrainings=["Hert"];

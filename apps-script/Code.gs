@@ -896,20 +896,21 @@ function instructorDirectory_(spreadsheet) {
   }
   spreadsheet = spreadsheet || SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
   const byName = new Map();
-  const addSheet = (title, nameColumn, statusColumn, dateColumn, type) => {
+  const addSheet = (title, nameColumn, statusColumn, dateColumn, type, altStatusColumn) => {
     const sheet = spreadsheet.getSheetByName(title);
     if (!sheet || sheet.getLastRow() < 2) return;
     const last = Math.min(sheet.getLastRow(), certZoneLastRow_(sheet), 1000);
     if (last < 2) return;
     const start = Math.min(nameColumn, dateColumn || nameColumn);
-    const end = Math.max(nameColumn, statusColumn, dateColumn || nameColumn);
+    const end = Math.max(nameColumn, statusColumn, dateColumn || nameColumn, altStatusColumn || nameColumn);
     const values = sheet.getRange(2, start, last - 1, end - start + 1).getDisplayValues();
     const colors = sheet.getRange(2, start, last - 1, end - start + 1).getBackgrounds();
     values.forEach((row, index) => {
       if (title === 'HERT Certified' && index + 2 === 3) return;
       const name = String(row[nameColumn - start] || '').trim();
       const color = colors[index][statusColumn - start];
-      if (!name || !isGreen_(color)) return;
+      const marked = isGreen_(color) || (altStatusColumn && isFortInstructorMarked_(colors[index][altStatusColumn - start]));
+      if (!name || !marked) return;
       const date = dateColumn ? String(row[dateColumn - start] || '') : '';
       const key = name.toLowerCase();
       const old = byName.get(key);
@@ -917,10 +918,15 @@ function instructorDirectory_(spreadsheet) {
     });
   };
   addSheet('HERT Certified', 2, 6, null, 'HERT');
-  addSheet('FIREFIGHTER CERT', 1, 2, 4, 'FORT');
+  addSheet('FIREFIGHTER CERT', 1, 2, 4, 'FORT', 3);
   const result = Array.from(byName.values());
   try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (ignored) {}
   return result;
+}
+
+// FORT instructors are marked with a blue status cell in column C.
+function isFortInstructorMarked_(color) {
+  return String(color || '').toLowerCase() === '#4a86e8';
 }
 
 function isGreen_(color) {
@@ -1731,7 +1737,7 @@ function editNote_(data, user) {
     if (!next) throw new Error('This member has no note to delete.');
     next = '';
   } else throw new Error('Invalid note action.');
-  rosterSheet_().getRange(member.row, 11).setValue(next);
+  rosterSheet_().getRange(member.row, 11).setValue(next).setHorizontalAlignment('left');
   appendAppLog_({ kind: 'note', callsign: member.callsign, member_name: member.name, action: action.toUpperCase(), details: next || 'Deleted', changed_by: actorName_(user) });
   return { ok: true, note: next };
 }
@@ -2056,9 +2062,8 @@ function mutateLoiSheet_(data) {
     const count = Math.max(0, config.sheet.getMaxRows() - config.startRow + 1);
     const names = count ? config.sheet.getRange(config.startRow, config.nameColumn, count, 1).getDisplayValues() : [];
     const writePercent = (row, percent) => {
-      const cell = config.sheet.getRange(row, config.percentColumn);
-      // A percent-formatted cell stores 85% as 0.85; writing 85 there would show 8500%.
-      cell.setValue(/%/.test(String(cell.getNumberFormat() || '')) ? Math.round(percent * 100) / 10000 : percent);
+      // Store 33 as 0.33 with a % format so the cell shows 33%.
+      config.sheet.getRange(row, config.percentColumn).setNumberFormat('0%').setValue(Math.round(percent * 100) / 10000);
     };
     if (action === 'add') {
       let percent = NaN;
@@ -2447,7 +2452,7 @@ function changeInstructor_(callsign, data, user) {
   const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
   const title = type === 'HERT' ? 'HERT Certified' : 'FIREFIGHTER CERT';
   const nameColumn = type === 'HERT' ? 2 : 1;
-  const statusColumn = type === 'HERT' ? 6 : 2;
+  const statusColumn = type === 'HERT' ? 6 : 3;
   const sheet = spreadsheet.getSheetByName(title);
   if (!sheet) throw new Error(title + ' sheet was not found.');
   const matchingRows = findNamedSheetRows_(sheet, nameColumn, member.name, type === 'HERT' ? [3] : []);
@@ -2461,7 +2466,9 @@ function changeInstructor_(callsign, data, user) {
       matchingRows.forEach(currentRow => {
         sheet.getRange(currentRow, 1).clearContent();
         sheet.getRange(currentRow, 2).clearContent().setBackground('#ffffff');
+        sheet.getRange(currentRow, 3).setBackground('#ffffff');
         sheet.getRange(currentRow, 4).clearContent();
+        sheet.getRange(currentRow, 5).clearContent();
       });
       SpreadsheetApp.flush();
     }
@@ -2473,9 +2480,16 @@ function changeInstructor_(callsign, data, user) {
   const row = matchingRows[0] || findOrCreateNamedSheetRow_(sheet, nameColumn, member.name, true, type === 'HERT' ? [3] : []);
   if (String(sheet.getRange(row, nameColumn).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, nameColumn).setValue(member.name);
   const cell = sheet.getRange(row, statusColumn);
-  const current = isGreen_(cell.getBackground());
+  // FORT: column B green AND column C blue must both be present.
+  const current = type === 'FORT'
+    ? isGreen_(sheet.getRange(row, 2).getBackground()) && isFortInstructorMarked_(sheet.getRange(row, 3).getBackground())
+    : isGreen_(cell.getBackground());
+  if (type === 'FORT') sheet.getRange(row, 5).setNumberFormat('0%').setValue(1);
   if (!current) {
-    cell.setBackground('#00ff00');
+    if (type === 'FORT') {
+      sheet.getRange(row, 2).setBackground('#00ff00');
+      sheet.getRange(row, 3).setBackground('#4a86e8');
+    } else cell.setBackground('#00ff00');
     CacheService.getScriptCache().remove('instructor-directory:v2');
     if (type === 'FORT') sheet.getRange(row, 4).setValue(new Date());
     appendAppLog_({ kind: 'instructor', callsign: member.callsign, member_name: member.name, action: type + ' Instructor Assigned', details: type, changed_by: actorName_(user) });

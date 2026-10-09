@@ -1352,7 +1352,7 @@ async function saveLoiChange(button, action, extra = {}) {
     } catch (error) {
         loiLists[key] = before;
         renderLoiLists();
-        toast(`LOI update failed: ${error.message}`);
+        toast(error.message);
     } finally {
         loiSaves = Math.max(0, loiSaves - 1);
         button.disabled = false;
