@@ -3,11 +3,11 @@ const json = (body, status = 200, headers = {}) => Response.json(body, { status,
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 const LOG_VIEW_PERMISSIONS = ["promotion_log_view","callsign_log_view","termination_log_view","training_log_view","training_hours_log_view","loi_log_view","exam_log_view","note_log_view","activity_log_view","instructor_log_view"];
 const TRAINING_VIEW_PERMISSIONS = ["hert_certified_view","hert_instructor_view","hert_loi_view","fort_training_view","fort_instructor_view","fort_loi_view"];
-const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
+const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
 const DEFAULT_ROLE_PERMISSIONS = {
   member: { portal_access:false,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:false,eligible_view:false,promotion_access:false,profile_view:false,inactive_view:false,logs_view:false,training_view:false,training_fort_manage:false,training_hert_manage:false,training_hours_view:false,training_hours_manage:false,loi_manage:false,statistics_view:false,notes_manage:false,promotion_manage:false,callsign_manage:false,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:false,sync_manage:false },
   leader: { portal_access:true,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,promotion_access:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,loi_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true },
-  commander: Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,!['logs_delete_d1','logs_clean_full'].includes(key)]))
+  commander: Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,!['logs_delete_d1','logs_clean_full','notifications_clear_all'].includes(key)]))
 };
 async function rolePermissions(db, role) {
   const normalized=String(role||"").toLowerCase();
@@ -68,7 +68,7 @@ function permissionForRequest(route, method, data={}) {
   if(route==="/api/sync-status"&&method==="GET") return "sync_view";
   if(route==="/api/sync"&&method==="POST") return "sync_manage";
   if(route==="/api/full-sync"&&method==="POST") return "full_sync_manage";
-  if(route==="/api/notifications/clear"&&method==="POST") return "sync_manage";
+  if(route==="/api/notifications/clear"&&method==="POST") return "notifications_clear_all";
   if(route==="/api/do-not-promote"&&method==="GET") return "do_not_promote_view";
   if(route==="/api/do-not-promote"&&method==="POST") return "do_not_promote_manage";
   if(route==="/api/member/instructor"||/^\/api\/member\/[^/]+\/instructor$/.test(route)) return "instructor_manage";
@@ -787,7 +787,7 @@ export async function handleD1(context) {
       // rows are dropped. Ordinary imports keep INSERT OR IGNORE behaviour.
       if(data.replace_operational_logs===true) statements.push(db.prepare("DELETE FROM operational_logs"));
       if(data.replace_account_audit===true) statements.push(db.prepare("DELETE FROM account_audit"));
-      if(data.replace_notifications===true) { statements.push(db.prepare("DELETE FROM notification_reads")); statements.push(db.prepare("DELETE FROM notifications")); }
+      if(data.replace_notifications===true) { statements.push(db.prepare("DELETE FROM notification_hidden")); statements.push(db.prepare("DELETE FROM notification_reads")); statements.push(db.prepare("DELETE FROM notifications")); }
       if(data.replace_notification_state===true) statements.push(db.prepare("DELETE FROM notification_state"));
       if(data.replace_training_hours_log===true) statements.push(db.prepare("DELETE FROM training_hours_log"));
       for(const row of (Array.isArray(data.operational_logs)?data.operational_logs:[])) statements.push(db.prepare(`INSERT OR IGNORE INTO operational_logs(source_key,kind,log_date,callsign,member_name,action,details,changed_by,old_rank,new_rank,old_callsign,new_callsign)
@@ -954,7 +954,7 @@ export async function handleD1(context) {
     requireRolePermission(user,user.permissions,permissionForRequest(route,method,{...data,log_type:data.log_type||url.searchParams.get("log_type")}));
     if(route==="/api/notifications" && method==="GET") {
       await refreshD1Notifications(db,user);
-      const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? ORDER BY n.id DESC LIMIT 250").bind(user.account_id).all()).results||[];
+      const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? LEFT JOIN notification_hidden h ON h.notification_id=n.id AND h.account_id=? WHERE h.notification_id IS NULL ORDER BY n.id DESC LIMIT 250").bind(user.account_id,user.account_id).all()).results||[];
       const items=recent.filter(item=>notificationVisible(item,user)).slice(0,100);
       const response=json({items,unread_count:items.filter(item=>!Number(item.is_read)).length});
       // Keep the legacy notification sheet in sync without delaying the D1 response.
@@ -964,6 +964,11 @@ export async function handleD1(context) {
         context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,route,url,assertion,{});if(!mirror.ok)console.error("Notification Sheet mirror failed:",await mirror.text());}catch(error){console.error("Notification Sheet mirror failed:",error);}})());
       }
       return response;
+    }
+    if(route==="/api/notifications/clear-mine" && method==="POST") {
+      // Hides every notification for this account only; other people keep theirs.
+      await db.prepare("INSERT OR IGNORE INTO notification_hidden(account_id,notification_id,hidden_at) SELECT ?,id,? FROM notifications").bind(user.account_id,new Date().toISOString()).run();
+      return json({ok:true});
     }
     if(route==="/api/notifications/read" && method==="POST") {
       const requested=Array.isArray(data.ids)?[...new Set(data.ids.map(value=>Number(value)).filter(Number.isSafeInteger))]:[];
@@ -982,7 +987,7 @@ export async function handleD1(context) {
       const sheetMirror=await proxyToAppsScript(context,"/internal/notifications/clear",url,assertion,{});
       const mirrorResult=await sheetMirror.json().catch(()=>({}));
       if(!sheetMirror.ok||mirrorResult.ok!==true) throw Object.assign(new Error("Could not clear notifications from the Google Sheet: "+String(mirrorResult.detail||mirrorResult.error||"mirror failed")),{status:502});
-      await db.batch([db.prepare("DELETE FROM notification_reads"),db.prepare("DELETE FROM notifications")]);
+      await db.batch([db.prepare("DELETE FROM notification_hidden"),db.prepare("DELETE FROM notification_reads"),db.prepare("DELETE FROM notifications")]);
       return json({ok:true,cleared:true});
     }
     if(route==="/api/members-log/clear" && method==="POST") {
@@ -1006,7 +1011,7 @@ export async function handleD1(context) {
       if(!mirror.ok||mirrorResult.ok!==true) throw Object.assign(new Error("Google Sheets cleanup failed: "+String(mirrorResult.detail||mirrorResult.error||"mirror failed")),{status:502});
       const statements=[];
       for(const kind of kinds) {
-        if(kind==="notifications") statements.push(db.prepare("DELETE FROM notification_reads"),db.prepare("DELETE FROM notifications"));
+        if(kind==="notifications") statements.push(db.prepare("DELETE FROM notification_hidden"),db.prepare("DELETE FROM notification_reads"),db.prepare("DELETE FROM notifications"));
         else if(kind==="account_audit") statements.push(db.prepare("DELETE FROM account_audit"));
         else if(kind==="training_time") statements.push(db.prepare("DELETE FROM training_hours_log"));
         else statements.push(db.prepare("DELETE FROM operational_logs WHERE kind=?").bind(kind));

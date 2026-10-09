@@ -981,3 +981,10 @@ button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: no
 
 #accountSettingsPassword[hidden] { display:none }
 .account-password-section > .primary { margin-top:16px; width:100% }
+
+/* Training add actions: one toolbar in the Training header */
+.training-add-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; flex:1; margin:0 12px }
+.training-add-actions button { white-space:nowrap }
+/* Portal notification panel actions */
+.notification-panel-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end }
+.notification-panel-actions button { padding:6px 9px; font-size:12px }
