@@ -1288,6 +1288,12 @@ function canAddInstructorTraining(types) {
     return types.some(type => held.includes(type));
 }
 
+// True when the role is limited to no ranks for members, so Members, Eligible and Can Be Terminated are hidden.
+function viewRanksEmpty() {
+    const ranks = window.lvfrCachedUser?.()?.view_ranks;
+    return Array.isArray(ranks) && ranks.length === 0;
+}
+
 function renderLoiLists() {
     const canManage = currentUserHasPermission("loi_manage");
     const memberByName = new Map((allMembersCache || []).map(member => [String(member.name || "").trim().toLocaleLowerCase(), member]));
@@ -5361,7 +5367,8 @@ function applyAccountUser(user) {
     const doNotPromoteTab = $("#doNotPromoteTab");
     if (doNotPromoteTab) doNotPromoteTab.style.display = user.is_admin ? "" : "none";
     const inactiveTab = $("#inactiveTab");
-    if (inactiveTab) inactiveTab.style.display = currentUserHasPermission("inactive_view") ? "" : "none";
+    if (inactiveTab) inactiveTab.style.display = currentUserHasPermission("inactive_view") && !viewRanksEmpty() ? "" : "none";
+    if (viewRanksEmpty()) ["members", "eligible"].forEach(tab => { const node = document.querySelector(`.tab[data-tab="${tab}"]`); if (node) node.style.display = "none"; });
     const logViewPermissions = {promotion:"promotion_log_view",callsign:"callsign_log_view",termination:"termination_log_view",training:"training_log_view",training_time:"training_hours_log_view",loi:"loi_log_view",exam:"exam_log_view",note:"note_log_view",activity:"activity_log_view",instructor:"instructor_log_view",do_not_promote:"do_not_promote_log_view"};
     document.querySelectorAll("#membersLog .log-tab[data-log]").forEach(button => { button.style.display = currentUserHasPermission(logViewPermissions[button.dataset.log]) ? "" : "none"; });
     const anyLogView = Object.values(logViewPermissions).some(key => currentUserHasPermission(key));

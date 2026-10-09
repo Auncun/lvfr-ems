@@ -40,13 +40,25 @@ async function assertRankScope(db,actor,scope,fromRank,toRank){
   if(Array.isArray(rule.from)&&!rule.from.includes(fromRank)) throw Object.assign(new Error("Your role cannot change members of rank "+fromRank+"."),{status:403});
   if(toRank&&Array.isArray(rule.to)&&!rule.to.includes(toRank)) throw Object.assign(new Error("Your role cannot move a member to "+toRank+"."),{status:403});
 }
+// Ranks whose members the actor may see in lists and notifications. Null means no limit.
+async function viewRanks(db,actor){
+  if(String(actor.role||"").toLowerCase()==="admin") return null;
+  const rule=(await roleScopes(db,actor.role)).view;
+  return rule&&Array.isArray(rule.from)?rule.from:null;
+}
+async function filterRowsByViewRanks(db,actor,rows){
+  const viewable=await viewRanks(db,actor);
+  if(!viewable) return rows;
+  const rankByCallsign=new Map(((await db.prepare("SELECT callsign,rank FROM members").all()).results||[]).map(row=>[String(row.callsign||"").toUpperCase(),row.rank]));
+  return rows.filter(row=>viewable.includes(rankByCallsign.get(String(row.callsign||"").toUpperCase())||""));
+}
 function sanitizeScopes(input){
   const out={};
-  for(const scope of ["promote","demote","terminate"]) {
+  for(const scope of ["promote","demote","terminate","view"]) {
     const rule=input?.[scope];
     if(!rule||typeof rule!=="object") continue;
     const clean={};
-    for(const field of (scope==="terminate"?["from"]:["from","to"])) {
+    for(const field of (scope==="terminate"||scope==="view"?["from"]:["from","to"])) {
       if(!Array.isArray(rule[field])) continue;
       clean[field]=[...new Set(rule[field].map(String).filter(rank=>Object.hasOwn(RANK_LEVEL,rank)))];
     }
@@ -457,7 +469,7 @@ async function publicUser(db, account) {
     ? await db.prepare("SELECT instructor_type FROM members WHERE upper(callsign)=upper(?)").bind(account.callsign).first()
     : null;
   const permissions=await accountPermissions(db,account);
-  return { account_id: account.account_id, id: account.account_id, name: account.name, callsign: account.callsign,
+  return { account_id: account.account_id, id: account.account_id, name: account.name, callsign: account.callsign, view_ranks: await viewRanks(db,account),
     role: account.role, status: account.status, is_admin: ["admin","commander"].includes(account.role), is_operation: account.role === "admin", is_commander: account.role === "commander",
     is_command: ["admin", "commander"].includes(account.role) || /^(E|C|DIV|B|CHIEF|COM)-/.test(account.callsign),
     instructor_type: String(member?.instructor_type || ""), permissions, permission_overrides: parsePermissionOverrides(account.permissions_override_json) };
@@ -935,6 +947,52 @@ export async function handleD1(context) {
       order.sort((a,b)=>a.sort_order-b.sort_order||a.role.localeCompare(b.role));
       return json({profiles,scopes,ranks:Object.keys(RANK_LEVEL),keys:visibleKeys,actor_permissions:Object.fromEntries(visibleKeys.map(key=>[key,true])),order});
     }
+    if(route==="/api/role-permissions/history"&&method==="GET") {
+      const actor=session.account;
+      if(actor.role!=="admin"&&actor.role!=="commander"&&actor.permissions?.operation_command_access!==true) throw Object.assign(new Error("You cannot view the permission history."),{status:403});
+      const rows=(await db.prepare("SELECT id,role,changed_at,changed_by,before_json,after_json FROM role_permission_history ORDER BY id DESC LIMIT 30").all()).results||[];
+      return json({items:rows.map(row=>({id:row.id,role:row.role,changed_at:row.changed_at,changed_by:row.changed_by,before:JSON.parse(row.before_json||"{}"),after:JSON.parse(row.after_json||"{}")}))});
+    }
+    if(route==="/api/account-preview"&&method==="GET") {
+      const actor=session.account;
+      if(actor.role!=="admin"&&actor.role!=="commander"&&actor.permissions?.operation_command_access!==true) throw Object.assign(new Error("You cannot preview account permissions."),{status:403});
+      const account=await db.prepare("SELECT account_id,name,callsign,role,status,permissions_override_json FROM accounts WHERE account_id=?").bind(String(url.searchParams.get("account_id")||"")).first();
+      if(!account) throw Object.assign(new Error("Account was not found."),{status:404});
+      const effective=await accountPermissions(db,account), scopes=await roleScopes(db,account.role);
+      const definitions=[
+        {key:"promote",label:"Promote",perms:["promotion_manage","rank_manage"],scope:"promote",field:"from"},
+        {key:"demote",label:"Demote",perms:["rank_manage"],scope:"demote",field:"from"},
+        {key:"terminate",label:"Terminate",perms:["termination_manage"],scope:"terminate",field:"from"},
+        {key:"view",label:"See members",perms:["members_view","eligible_view","inactive_view","promotion_access"],scope:"view",field:"from"},
+      ];
+      const actions=definitions.map(item=>{
+        if(!item.perms.some(key=>effective[key]===true)) return {key:item.key,label:item.label,allowed:false,reason:"No permission."};
+        const rule=scopes[item.scope];
+        const ranks=rule&&Array.isArray(rule[item.field])?rule[item.field]:null;
+        return {key:item.key,label:item.label,allowed:true,reason:ranks?"Ranks: "+ranks.join(", "):"All ranks"};
+      });
+      return json({name:account.name,callsign:account.callsign,role:account.role,actions});
+    }
+    if(route==="/api/role-preview"&&method==="GET") {
+      const actor=session.account;
+      if(actor.role!=="admin"&&actor.role!=="commander"&&actor.permissions?.operation_command_access!==true) throw Object.assign(new Error("You cannot preview role permissions."),{status:403});
+      const role=String(url.searchParams.get("role")||"").toLowerCase(), rank=String(url.searchParams.get("rank")||"").trim();
+      if(!rank) return json({role,rank,actions:[]});
+      const profile=await rolePermissions(db,role), scopes=await roleScopes(db,role);
+      const definitions=[
+        {key:"promote",label:"Promote",perms:["promotion_manage","rank_manage"],scope:"promote",field:"from"},
+        {key:"demote",label:"Demote",perms:["rank_manage"],scope:"demote",field:"from"},
+        {key:"terminate",label:"Terminate",perms:["termination_manage"],scope:"terminate",field:"from"},
+        {key:"view",label:"See members of this rank",perms:["members_view","eligible_view","inactive_view","promotion_access"],scope:"view",field:"from"},
+      ];
+      const actions=definitions.map(item=>{
+        if(!item.perms.some(key=>profile[key]===true)) return {key:item.key,label:item.label,allowed:false,reason:"This role does not have the permission."};
+        const rule=scopes[item.scope];
+        if(rule&&Array.isArray(rule[item.field])&&!rule[item.field].includes(rank)) return {key:item.key,label:item.label,allowed:false,reason:"Rank "+rank+" is outside this role's limit."};
+        return {key:item.key,label:item.label,allowed:true,reason:rule&&Array.isArray(rule[item.field])?"Allowed for this rank.":"Allowed for all ranks."};
+      });
+      return json({role,rank,actions});
+    }
     if(route==="/api/role-permissions/order"&&method==="POST") {
       const actor=session.account; requireRankPermission(actor,"rank_reorder");
       const order=(await db.prepare("SELECT role,sort_order,display_name FROM role_permissions ORDER BY sort_order,role").all()).results||[];
@@ -995,10 +1053,12 @@ export async function handleD1(context) {
       permissions.logs_view=LOG_VIEW_PERMISSIONS.every(key=>permissions[key]===true);
       permissions.training_view=TRAINING_VIEW_PERMISSIONS.every(key=>permissions[key]===true);
       const now=new Date().toISOString();
+      const beforeSnapshot={permissions:await rolePermissions(db,role),scopes:await roleScopes(db,role)};
       await db.prepare(`INSERT INTO role_permissions(role,permissions_json,updated_at,updated_by) VALUES(?,?,?,?)
         ON CONFLICT(role) DO UPDATE SET permissions_json=excluded.permissions_json,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
         .bind(role,JSON.stringify(permissions),now,actor.name).run();
       if(data.scopes&&typeof data.scopes==="object") await db.prepare("UPDATE role_permissions SET scopes_json=? WHERE role=?").bind(JSON.stringify(sanitizeScopes(data.scopes)),role).run();
+      await db.prepare("INSERT INTO role_permission_history(role,changed_at,changed_by,before_json,after_json) VALUES(?,?,?,?,?)").bind(role,now,String(actor.name||""),JSON.stringify(beforeSnapshot),JSON.stringify({permissions:await rolePermissions(db,role),scopes:await roleScopes(db,role)})).run();
       // A role-level revocation must also remove conflicting personal grants;
       // otherwise account overrides would keep the revoked capability active.
       const affected=(await db.prepare("SELECT account_id,permissions_override_json FROM accounts WHERE role=? AND permissions_override_json!='{}'").bind(role).all()).results||[];
@@ -1017,7 +1077,13 @@ export async function handleD1(context) {
     if(route==="/api/notifications" && method==="GET") {
       await refreshD1Notifications(db,user);
       const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? LEFT JOIN notification_hidden h ON h.notification_id=n.id AND h.account_id=? LEFT JOIN notification_preferences p ON p.account_id=? AND p.kind=n.kind WHERE h.notification_id IS NULL AND COALESCE(p.enabled, CASE WHEN n.kind IN ('eligible','inactive','request') THEN 1 ELSE 0 END)=1 ORDER BY n.id DESC LIMIT 250").bind(user.account_id,user.account_id,user.account_id).all()).results||[];
-      const items=recent.filter(item=>notificationVisible(item,user)).slice(0,100);
+      const viewableNotif=await viewRanks(db,user);
+      let visibleItems=recent.filter(item=>notificationVisible(item,user));
+      if(viewableNotif){
+        const rankByCallsign=new Map(((await db.prepare("SELECT callsign,rank FROM members").all()).results||[]).map(row=>[String(row.callsign||"").toUpperCase(),row.rank]));
+        visibleItems=visibleItems.filter(item=>!item.callsign||viewableNotif.includes(rankByCallsign.get(String(item.callsign).toUpperCase())||""));
+      }
+      const items=visibleItems.slice(0,100);
       const response=json({items,unread_count:items.filter(item=>!Number(item.is_read)).length});
       // Keep the legacy notification sheet in sync without delaying the D1 response.
       if(env.LVFR_D1_AUTH_BRIDGE_SECRET) {
@@ -1107,10 +1173,10 @@ export async function handleD1(context) {
       const allowed=["promotion","callsign","termination","training","training_time","loi","exam","note","activity","instructor","do_not_promote"];
       if(!allowed.includes(kind)) throw Object.assign(new Error("Invalid log type: "+kind),{status:400});
       if(kind==="training_time") {
-        const rows=await db.prepare("SELECT id,log_date,callsign,member_name,action,previous_time,new_time,changed_by FROM training_hours_log ORDER BY id DESC LIMIT 200").all();
+        const rows={results:await filterRowsByViewRanks(db,user,(await db.prepare("SELECT id,log_date,callsign,member_name,action,previous_time,new_time,changed_by FROM training_hours_log ORDER BY id DESC LIMIT 200").all()).results||[])};
         return json(rows.results||[]);
       }
-      const rows=await db.prepare("SELECT id,kind,log_date,callsign,member_name,action,details,changed_by,old_rank,new_rank,old_callsign,new_callsign FROM operational_logs WHERE kind=? ORDER BY id DESC LIMIT 200").bind(kind).all();
+      const rows={results:await filterRowsByViewRanks(db,user,(await db.prepare("SELECT id,kind,log_date,callsign,member_name,action,details,changed_by,old_rank,new_rank,old_callsign,new_callsign FROM operational_logs WHERE kind=? ORDER BY id DESC LIMIT 200").bind(kind).all()).results||[])};
       return json((rows.results||[]).map(row=>({ ...row,
         ...(kind==="training"?{training_name:row.details}:{}),
         ...(kind==="loi"?(()=>{let details={};try{details=JSON.parse(row.details||"{}")}catch{}return {loi_type:details.loi_type||"",test_percent:details.test_percent??""}})():{}),
@@ -1297,7 +1363,9 @@ export async function handleD1(context) {
       return json({version});
     }
     if(route==="/api/members" && method==="GET") {
-      return json(await readMembers(db,url.searchParams.get("search")||"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET)));
+      const viewableMembers=await viewRanks(db,user);
+      const memberRows=await readMembers(db,url.searchParams.get("search")||"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
+      return json(viewableMembers?memberRows.filter(row=>viewableMembers.includes(row.rank)):memberRows);
     }
     if(route==="/api/sync-status" && method==="GET") {
       const snapshot=await db.prepare("SELECT COUNT(*) AS members,COALESCE(MAX(synced_at),'') AS synced_at FROM members").first();
@@ -1310,7 +1378,8 @@ export async function handleD1(context) {
       return json({ranks:["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer"],available_callsigns:available,trainings:["Basic Firefighting","Advanced Firefighting","Hert"],activities:["Active","Semi Active","Inactive","Can Be Terminated"],exams:["Supervisor Exam"]});
     }
     if(route==="/api/eligible" && method==="GET") {
-      const rows=await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
+      const viewableEligible=await viewRanks(db,user);
+      const rows=(await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>!viewableEligible||viewableEligible.includes(row.rank));
       const admin=["admin","commander"].includes(user.role);
       return json(rows.reduce((eligibleRows,row)=>{
         if(["Probationary","Probie","Probationary Volunteer","Probie Volunteer"].includes(row.rank)) return eligibleRows;
@@ -1320,7 +1389,8 @@ export async function handleD1(context) {
         return eligibleRows;
       },[]));
     }
-    if(route==="/api/inactive" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.activity==="Can Be Terminated").map(({callsign,name})=>({callsign,name})));
+    const viewableInactive=route==="/api/inactive"&&method==="GET"?await viewRanks(db,user):null;
+    if(route==="/api/inactive" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>(!viewableInactive||viewableInactive.includes(row.rank))&&row.activity==="Can Be Terminated").map(({callsign,name})=>({callsign,name})));
     if(route==="/api/do-not-promote" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.do_not_promote).map(({callsign,name})=>({callsign,name,added_at:"",added_by:""})));
     if(route==="/api/instructors" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).flatMap(row=>String(row.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(type=>(type==="HERT"&&user.permissions.hert_instructor_view)||(type==="FORT"&&user.permissions.fort_instructor_view)).map(type=>({name:row.name,type,date:""}))));
     const memberRoute=route.match(/^\/api\/member\/([^/]+)$/);

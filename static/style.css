@@ -1023,3 +1023,33 @@ table th .th-action { display:block; margin-top:6px; padding:5px 9px; font-size:
 .scope-box legend { padding:0 6px; color:#9aa4b2; font-size:12px }
 .scope-ranks { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:6px }
 .scope-ranks label { display:flex; align-items:center; gap:7px; font-size:13px }
+
+/* Role preview */
+.role-preview { margin:12px 0; border:1px solid #303945; border-radius:10px; padding:10px 12px; background:#0d1219 }
+.role-preview > summary { cursor:pointer; font-weight:600 }
+.role-preview-rank { display:flex; align-items:center; gap:8px; margin:10px 0; font-size:13px }
+.role-preview-rank select { width:auto; min-width:180px }
+.role-preview-list { list-style:none; padding:0; margin:0; display:grid; gap:6px }
+.role-preview-list li { padding:8px 10px; border-radius:8px; border:1px solid #303945; font-size:13px }
+.role-preview-list li.is-allowed { border-color:#1f6b3a; background:#0f2e1c }
+.role-preview-list li.is-denied { border-color:#6b2a2a; background:#2a1414 }
+
+/* Role card tabs */
+.role-tab-bar { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 }
+.role-tab { padding:7px 12px; border:1px solid #303945; border-radius:999px; background:#0d1219; color:#c9d1d9; cursor:pointer; font-size:13px }
+.role-tab:hover { border-color:#4a86e8 }
+.role-tab.active { border-color:#4a86e8; background:#14202e; color:#ffffff }
+.role-tabbed [data-role-tab] { display:none }
+.role-tabbed[data-active-tab="pages"] [data-role-tab="pages"],
+.role-tabbed[data-active-tab="actions"] [data-role-tab="actions"],
+.role-tabbed[data-active-tab="notifications"] [data-role-tab="notifications"],
+.role-tabbed[data-active-tab="limits"] [data-role-tab="limits"],
+.role-tabbed[data-active-tab="preview"] [data-role-tab="preview"] { display:block }
+
+/* Warnings above the save button */
+.role-warnings { list-style:none; padding:0; margin:12px 0; display:grid; gap:6px }
+.role-warnings:empty { display:none }
+.role-warnings li { padding:8px 10px; border:1px solid #6b5a2a; background:#2a2410; border-radius:8px; font-size:13px; color:#f3e7b3 }
+
+.role-start-from { display:flex; align-items:center; gap:6px; font-size:13px }
+.role-start-from select { width:auto; min-width:220px }

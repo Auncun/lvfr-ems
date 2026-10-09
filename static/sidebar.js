@@ -347,6 +347,23 @@
   }
   window.setTimeout(activatePendingNavigation, 0);
 
+  // Hide Members, Eligible and Can Be Terminated when the role can see no members.
+  const hideRestrictedEntries = () => {
+    const ranks = window.lvfrCachedUser?.()?.view_ranks;
+    if (!(Array.isArray(ranks) && ranks.length === 0)) return;
+    sidebar.querySelectorAll('[data-sidebar-entry]').forEach(entry => {
+      const tab = entry.querySelector(':scope > .sidebar-item-row [data-tab]')?.dataset.tab;
+      if (['members', 'eligible', 'inactive'].includes(tab)) entry.hidden = true;
+    });
+  };
+  hideRestrictedEntries();
+  let restrictionChecks = 0;
+  const restrictionTimer = window.setInterval(() => {
+    restrictionChecks += 1;
+    hideRestrictedEntries();
+    if (restrictionChecks >= 20) window.clearInterval(restrictionTimer);
+  }, 500);
+
   // After a refresh, return to the sidebar section the user had open. The app selects
   // its default section while it loads, so this runs a few times and stops once the
   // user acts, so it never overrides a choice the user has made.

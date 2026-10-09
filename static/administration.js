@@ -400,6 +400,17 @@ const permissionGroups = [
 let rolePermissionProfiles = {};
 let rolePermissionScopes = {};
 let rolePermissionRanks = [];
+const roleActiveTab = {};
+// Last saved state of each role, used by "Undo unsaved changes".
+const savedRoleSnapshot = {};
+function snapshotRoleProfiles() {
+    for (const role of Object.keys(rolePermissionProfiles)) {
+        savedRoleSnapshot[role] = {
+            profile: JSON.parse(JSON.stringify(rolePermissionProfiles[role] || {})),
+            scopes: JSON.parse(JSON.stringify(rolePermissionScopes[role] || {})),
+        };
+    }
+}
 let permissionRoleOrder = [];
 let permissionEditorCapabilities = {};
 let editablePermissionKeys = [];
@@ -436,14 +447,171 @@ function scopeEditor(role) {
         { scope: 'promote', title: 'Promote', allowed: profile.promotion_manage || profile.rank_manage, fields: [['from', 'Members of rank'], ['to', 'Can promote to rank']] },
         { scope: 'demote', title: 'Demote', allowed: profile.rank_manage, fields: [['from', 'Members of rank'], ['to', 'Can demote to rank']] },
         { scope: 'terminate', title: 'Terminate', allowed: profile.termination_manage, fields: [['from', 'Can terminate members of rank']] },
+        { scope: 'view', title: 'Viewing members', allowed: profile.members_view || profile.eligible_view || profile.inactive_view || profile.promotion_access, fields: [['from', 'Can see members of rank (lists and notifications)']] },
     ].filter(section => section.allowed);
     if (!sections.length || !rolePermissionRanks.length) return '';
     const box = (section, [field, label]) => {
         const selected = scopes[section.scope]?.[field];
         return `<fieldset class="scope-box"><legend>${esc(label)}</legend><div class="scope-ranks">${rolePermissionRanks.map(rank => `<label><input type="checkbox" data-scope-role="${esc(role)}" data-scope="${section.scope}" data-scope-field="${field}" value="${esc(rank)}" ${!selected || selected.includes(rank) ? 'checked' : ''}><span>${esc(rank)}</span></label>`).join('')}</div></fieldset>`;
     };
-    return `<details class="rank-limits" open><summary>Rank limits</summary>${sections.map(section => `<div class="rank-limit-section"><strong>${esc(section.title)}</strong>${section.fields.map(field => box(section, field)).join('')}</div>`).join('')}</details>`;
+    return `<details class="rank-limits" data-role-tab="limits" open><summary>Rank limits</summary>${sections.map(section => `<div class="rank-limit-section"><strong>${esc(section.title)}</strong>${section.fields.map(field => box(section, field)).join('')}</div>`).join('')}</details>`;
 }
+// Undo: restore the last saved state of this role and redraw the cards.
+document.addEventListener('click', event => {
+    const button = event.target.closest('[data-undo-permissions]');
+    if (!button) return;
+    const role = button.dataset.undoPermissions;
+    const snapshot = savedRoleSnapshot[role];
+    if (!snapshot) return;
+    rolePermissionProfiles[role] = JSON.parse(JSON.stringify(snapshot.profile));
+    rolePermissionScopes[role] = JSON.parse(JSON.stringify(snapshot.scopes));
+    renderRolePermissions();
+    const status = document.querySelector('#permissionStatus');
+    if (status) { status.textContent = 'Unsaved changes were undone.'; status.className = 'permission-status'; }
+});
+
+// Change history of role permissions, with "Restore previous" for each change.
+let permissionHistoryItems = [];
+let permissionHistoryLoadedAt = 0;
+function changedPermissionLabels(before, after) {
+    const names = [];
+    const b = before?.permissions || {}, a = after?.permissions || {};
+    Object.keys(a).forEach(key => { if (Boolean(b[key]) !== Boolean(a[key])) names.push(`${key} ${a[key] ? 'on' : 'off'}`); });
+    if (JSON.stringify(before?.scopes || {}) !== JSON.stringify(after?.scopes || {})) names.push('rank limits changed');
+    if (!names.length) return 'No permission changes';
+    return names.slice(0, 6).join(', ') + (names.length > 6 ? '…' : '');
+}
+async function renderPermissionHistory(force = false) {
+    const panel = document.querySelector('#rolePermissionsPanel');
+    if (!panel) return;
+    let box = document.querySelector('#permissionHistory');
+    if (!box) { box = document.createElement('section'); box.id = 'permissionHistory'; box.className = 'permission-history'; panel.after(box); }
+    if (!force && Date.now() - permissionHistoryLoadedAt < 3000 && box.innerHTML) return;
+    permissionHistoryLoadedAt = Date.now();
+    try {
+        const result = await api('/api/role-permissions/history');
+        permissionHistoryItems = result.items || [];
+        box.innerHTML = `<details class="rank-limits"><summary>Change history (${permissionHistoryItems.length})</summary>${permissionHistoryItems.length ? `<ul class="role-preview-list">${permissionHistoryItems.map(item => `<li class="is-allowed"><strong>${esc(roleTitle(item.role))}</strong> · ${esc(item.changed_by || 'Unknown')} · ${esc(item.changed_at || '')}<br><span class="muted">${esc(changedPermissionLabels(item.before, item.after))}</span> <button type="button" class="role-undo" data-restore-history="${item.id}">Restore previous</button></li>`).join('')}</ul>` : '<p class="muted">No changes yet.</p>'}</details>`;
+    } catch (error) {
+        box.innerHTML = `<p class="muted">${esc(error.message)}</p>`;
+    }
+}
+document.addEventListener('click', async event => {
+    const button = event.target.closest('[data-restore-history]');
+    if (!button) return;
+    const item = permissionHistoryItems.find(row => String(row.id) === button.dataset.restoreHistory);
+    if (!item) return;
+    button.disabled = true;
+    try {
+        await api('/api/role-permissions', { method: 'POST', body: JSON.stringify({ role: item.role, permissions: item.before.permissions, scopes: item.before.scopes }) });
+        await loadRolePermissions();
+        const status = document.querySelector('#permissionStatus');
+        if (status) { status.textContent = `${roleTitle(item.role)} was restored to its previous settings.`; status.className = 'permission-status success'; }
+        void renderPermissionHistory(true);
+    } catch (error) {
+        setMessage(`Could not restore: ${error.message}`, 'error');
+    } finally {
+        button.disabled = false;
+    }
+});
+
+// Account preview: choose an approved account to see what it can do, including its own overrides.
+function renderAccountPreview() {
+    const panel = document.querySelector('#rolePermissionsPanel');
+    if (!panel || document.querySelector('#accountPreview')) return;
+    const box = document.createElement('section');
+    box.id = 'accountPreview';
+    box.className = 'permission-history';
+    box.innerHTML = `<details class="role-preview"><summary>Preview an account: what can this person do?</summary><label class="role-preview-rank">Account <select id="accountPreviewSelect"><option value="">Choose an account</option></select></label><div id="accountPreviewResult"><p class="muted">Choose an account to see its permissions.</p></div></details>`;
+    panel.before(box);
+    const select = box.querySelector('#accountPreviewSelect');
+    const accounts = (allAccounts() || []).filter(account => account.status === 'approved' && account.account_id);
+    select.insertAdjacentHTML('beforeend', accounts.map(account => `<option value="${esc(account.account_id)}">${esc(account.name || '')}${account.callsign ? ` (${esc(account.callsign)})` : ''}</option>`).join(''));
+}
+document.addEventListener('change', async event => {
+    if (event.target.id !== 'accountPreviewSelect') return;
+    const out = document.querySelector('#accountPreviewResult');
+    if (!out) return;
+    if (!event.target.value) { out.innerHTML = '<p class="muted">Choose an account to see its permissions.</p>'; return; }
+    try {
+        const result = await api(`/api/account-preview?account_id=${encodeURIComponent(event.target.value)}`);
+        out.innerHTML = `<p class="muted">${esc(result.name || '')}${result.callsign ? ' · ' + esc(result.callsign) : ''} · ${esc(roleTitle(result.role))}</p><ul class="role-preview-list">${result.actions.map(item => `<li class="${item.allowed ? 'is-allowed' : 'is-denied'}"><strong>${esc(item.label)}:</strong> ${item.allowed ? 'Allowed' : 'Not allowed'} <span class="muted">${esc(item.reason)}</span></li>`).join('')}</ul>`;
+    } catch (error) {
+        out.innerHTML = `<p class="muted">${esc(error.message)}</p>`;
+    }
+});
+
+// Tabs on each role card. Each section is tagged with the tab it belongs to.
+const roleTabs = [['pages', 'Pages and lists'], ['actions', 'Actions'], ['notifications', 'Notifications'], ['limits', 'Rank limits'], ['preview', 'Preview']];
+function roleTabFor(groupName) {
+    if (groupName === 'Training and member changes') return 'actions';
+    if (groupName === 'Notifications') return 'notifications';
+    return 'pages';
+}
+function roleTabBar(role) {
+    const active = roleActiveTab[role] || 'pages';
+    return `<nav class="role-tab-bar" aria-label="Role sections">${roleTabs.map(([key, label]) => `<button type="button" class="role-tab ${active === key ? 'active' : ''}" data-role-tab-button="${key}" data-role="${esc(role)}">${esc(label)}</button>`).join('')}</nav>`;
+}
+document.addEventListener('click', event => {
+    const button = event.target.closest('[data-role-tab-button]');
+    if (!button) return;
+    const role = button.dataset.role;
+    roleActiveTab[role] = button.dataset.roleTabButton;
+    const card = document.querySelector(`[data-role-tabs="${role}"]`);
+    if (card) card.dataset.activeTab = roleActiveTab[role];
+    button.parentElement?.querySelectorAll('[data-role-tab-button]').forEach(item => item.classList.toggle('active', item === button));
+});
+
+// Warnings for settings that will not work as intended. They never block saving.
+function roleWarnings(role) {
+    const p = rolePermissionProfiles[role] || {};
+    const s = scopesFromDom(role);
+    const out = [];
+    const promote = p.promotion_manage || p.rank_manage;
+    const viewable = p.members_view || p.eligible_view || p.inactive_view || p.promotion_access;
+    if (promote && !(p.eligible_view || p.promotion_access)) out.push('Can promote, but cannot see the Eligible list.');
+    if (p.rank_manage && !p.members_view) out.push('Can demote, but cannot see the Members list.');
+    if (p.termination_manage && !(p.members_view || p.inactive_view)) out.push('Can terminate, but cannot see member lists.');
+    if (promote && Array.isArray(s.promote?.from) && !s.promote.from.length) out.push('Promote is enabled, but no rank is allowed.');
+    if (p.rank_manage && Array.isArray(s.demote?.from) && !s.demote.from.length) out.push('Demote is enabled, but no rank is allowed.');
+    if (p.termination_manage && Array.isArray(s.terminate?.from) && !s.terminate.from.length) out.push('Terminate is enabled, but no rank is allowed.');
+    if (viewable && Array.isArray(s.view?.from) && !s.view.from.length) out.push('No rank is allowed to view members, so the lists will be hidden.');
+    if (p.loi_manage || p.training_hours_manage) out.push('LOI and Training Hours need the member to be an instructor (HERT or FORT).');
+    return out;
+}
+function roleWarningsHtml(role) {
+    const items = roleWarnings(role);
+    return `<ul class="role-warnings" data-warnings-role="${esc(role)}">${items.map(text => `<li>${esc(text)}</li>`).join('')}</ul>`;
+}
+document.addEventListener('change', event => {
+    const card = event.target.closest('[data-permission-role]');
+    const scope = event.target.closest('[data-scope-role]');
+    const role = card?.dataset.permissionRole || scope?.dataset.scopeRole;
+    if (!role) return;
+    // Wait so the permission change is saved to the in-memory profile first.
+    setTimeout(() => document.querySelector(`[data-warnings-role="${role}"]`)?.replaceWith(Object.assign(document.createElement('div'), { innerHTML: roleWarningsHtml(role) }).firstElementChild), 0);
+});
+
+// Preview block on each role card: choose a rank and see what the role can do with members of that rank.
+function previewEditor(role) {
+    const options = rolePermissionRanks.map(rank => `<option value="${esc(rank)}">${esc(rank)}</option>`).join('');
+    return `<details class="role-preview" data-role-tab="preview"><summary>Preview: what can this role do?</summary><label class="role-preview-rank">Member rank <select data-preview-rank="${esc(role)}"><option value="">Choose a rank</option>${options}</select></label><div data-preview-result="${esc(role)}"><p class="muted">Choose a rank to see what this role can do.</p></div></details>`;
+}
+document.addEventListener('change', async event => {
+    const select = event.target.closest('[data-preview-rank]');
+    if (!select) return;
+    const role = select.dataset.previewRank;
+    const out = document.querySelector(`[data-preview-result="${role}"]`);
+    if (!out) return;
+    if (!select.value) { out.innerHTML = '<p class="muted">Choose a rank to see what this role can do.</p>'; return; }
+    try {
+        const result = await api(`/api/role-preview?role=${encodeURIComponent(role)}&rank=${encodeURIComponent(select.value)}`);
+        out.innerHTML = `<ul class="role-preview-list">${result.actions.map(item => `<li class="${item.allowed ? 'is-allowed' : 'is-denied'}"><strong>${esc(item.label)}:</strong> ${item.allowed ? 'Allowed' : 'Not allowed'} <span class="muted">${esc(item.reason)}</span></li>`).join('')}</ul>`;
+    } catch (error) {
+        out.innerHTML = `<p class="muted">${esc(error.message)}</p>`;
+    }
+});
+
 function scopesFromDom(role) {
     const scopes = {};
     document.querySelectorAll(`[data-scope-role="${role}"]`).forEach(input => {
@@ -457,6 +625,9 @@ function scopesFromDom(role) {
 function renderRolePermissions() {
   const panel = document.querySelector('#rolePermissionsPanel');
   if (!panel) return;
+  populateRoleStartOptions();
+  void renderPermissionHistory();
+  renderAccountPreview();
   openPermissionGroups = new Set([...panel.querySelectorAll('details.permission-group[open]')].map(item=>item.dataset.permissionGroup).filter(Boolean));
   openPermissionSubLists = new Set([...panel.querySelectorAll('details.permission-sublist[open]')].map(item=>item.dataset.permissionSublist).filter(Boolean));
   const query = document.querySelector('#permissionSearch').value.trim().toLocaleLowerCase();
@@ -471,14 +642,14 @@ function renderRolePermissions() {
     const groups = permissionGroups.map(group => {
       const items = group.items.filter(entry => permissionEntryMatches(entry,query,group.name) && (Array.isArray(entry)?editablePermissionKeys.includes(entry[0]):editablePermissionKeys.includes(entry.key)||entry.children.some(item=>editablePermissionKeys.includes(item[0]))));
       if (!items.length) return '';
-      return `<details class="permission-group" data-permission-group="${esc(group.name)}" ${query||openPermissionGroups.has(group.name)?'open':''}><summary>${esc(group.name)}</summary>${items.map(entry=>renderPermissionEntry(entry,rolePermissionProfiles[role],query,group.name)).join('')}</details>`;
+      return `<details class="permission-group" data-role-tab="${roleTabFor(group.name)}" data-permission-group="${esc(group.name)}" ${query||openPermissionGroups.has(group.name)?'open':''}><summary>${esc(group.name)}</summary>${items.map(entry=>renderPermissionEntry(entry,rolePermissionProfiles[role],query,group.name)).join('')}</details>`;
     }).join('');
     const enabled = Object.values(rolePermissionProfiles[role] || {}).filter(Boolean).length;
     const orderIndex=permissionRoleOrder.findIndex(item=>item.role===role);
     const actorRank=currentUser?.role==='admin'?1:(permissionRoleOrder.findIndex(item=>item.role===String(currentUser?.role||''))+1||2);
     const belowActor=orderIndex+1>actorRank;
     const rankTools=`<div class="admin-actions"><label>Rank name <input type="text" maxlength="32" data-rank-name="${esc(role)}" value="${esc(roleLabel)}" ${!canManageRanks('rank_rename')||!belowActor?'disabled':''}></label><button type="button" data-rename-rank="${esc(role)}" ${!canManageRanks('rank_rename')||!belowActor?'disabled':''}>Save name</button><button type="button" data-rank-move="up" data-rank-role="${esc(role)}" ${!canManageRanks('rank_reorder')||!belowActor||orderIndex<=1?'disabled':''}>Move up</button><button type="button" data-rank-move="down" data-rank-role="${esc(role)}" ${!canManageRanks('rank_reorder')||!belowActor||orderIndex<1||orderIndex>=permissionRoleOrder.length-1?'disabled':''}>Move down</button>${!['member','leader','commander'].includes(role)?`<button type="button" class="danger" data-delete-role="${esc(role)}" ${!canManageRanks('rank_delete')||!belowActor?'disabled':''}>Delete rank</button>`:''}</div>`;
-    return `<article class="role-permission-card" data-permission-role="${role}"><header><div><span class="role-kicker">RANK ${orderIndex+1} · ROLE PROFILE</span><h3>${roleLabel}</h3></div><span class="permission-count">${enabled} enabled</span></header>${rankTools}<div class="role-permission-groups">${canManageRoleProfiles()?(groups || '<p class="muted">No permissions match your search.</p>'):'<p class="muted">Rank actions are available according to your individual rank permissions. Editing permission profiles requires Operation Command access.</p>'}</div>${canManageRoleProfiles()?scopeEditor(role):''}${canManageRoleProfiles()?`<button type="button" class="primary" data-save-permissions="${role}">Save ${roleLabel} permissions</button>`:''}</article>`;
+    return `<article class="role-permission-card" data-permission-role="${role}"><header><div><span class="role-kicker">RANK ${orderIndex+1} · ROLE PROFILE</span><h3>${roleLabel}</h3></div><span class="permission-count">${enabled} enabled</span></header>${rankTools}${canManageRoleProfiles()?roleTabBar(role):''}<div class="role-tabbed" data-role-tabs="${esc(role)}" data-active-tab="${roleActiveTab[role]||'pages'}"><div class="role-permission-groups">${canManageRoleProfiles()?(groups || '<p class="muted">No permissions match your search.</p>'):'<p class="muted">Rank actions are available according to your individual rank permissions. Editing permission profiles requires Operation Command access.</p>'}</div>${canManageRoleProfiles()?scopeEditor(role):''}${canManageRoleProfiles()?previewEditor(role):''}</div>${canManageRoleProfiles()?roleWarningsHtml(role):''}${canManageRoleProfiles()?`<button type="button" class="role-undo" data-undo-permissions="${esc(role)}">Undo unsaved changes</button>`:''}${canManageRoleProfiles()?`<button type="button" class="primary" data-save-permissions="${role}">Save ${roleLabel} permissions</button>`:''}</article>`;
   }).join('');
   panel.querySelectorAll('[data-indeterminate="true"]').forEach(input => { input.indeterminate = true; });
 }
@@ -489,6 +660,7 @@ async function loadRolePermissions() {
     rolePermissionProfiles = result.profiles || {};
     rolePermissionScopes = result.scopes || {};
     rolePermissionRanks = result.ranks || [];
+    snapshotRoleProfiles();
     permissionRoleOrder = result.order || [];
     permissionEditorCapabilities = result.actor_permissions || {};
     editablePermissionKeys = Array.isArray(result.keys) ? result.keys : Object.keys(permissionEditorCapabilities).filter(key => permissionEditorCapabilities[key] === true);
@@ -574,6 +746,7 @@ document.querySelector('#rolePermissionsPanel').addEventListener('click', async 
     rolePermissionProfiles = persisted.profiles || rolePermissionProfiles;
     rolePermissionScopes = persisted.scopes || rolePermissionScopes;
     rolePermissionRanks = persisted.ranks || rolePermissionRanks;
+    snapshotRoleProfiles();
     permissionRoleOrder = persisted.order || permissionRoleOrder;
     permissionEditorCapabilities = persisted.actor_permissions || permissionEditorCapabilities;
     editablePermissionKeys = Array.isArray(persisted.keys) ? persisted.keys : editablePermissionKeys;
@@ -584,14 +757,46 @@ document.querySelector('#rolePermissionsPanel').addEventListener('click', async 
     status.textContent = `Save failed: ${error.message}`; status.className = 'permission-status error';
   } finally { button.disabled = false; }
 });
+// Starting points for a new role. Each template only lists permissions; the admin reviews them before saving.
+const roleTemplates = {
+    promotion_emt: { label: 'Promotions: EMT to AEMT', permissions: ['promotion_manage', 'eligible_view', 'members_view', 'profile_view'], scopes: { promote: { from: ['EMT'], to: ['AEMT'] }, view: { from: ['EMT', 'AEMT'] } } },
+    fort_training: { label: 'FORT training and LOI', permissions: ['training_fort_manage', 'fort_training_view', 'fort_instructor_view', 'fort_loi_view', 'loi_manage', 'training_hours_view', 'training_hours_manage'] },
+    hert_training: { label: 'HERT training and LOI', permissions: ['training_hert_manage', 'hert_certified_view', 'hert_instructor_view', 'hert_loi_view', 'loi_manage', 'training_hours_view', 'training_hours_manage'] },
+    read_only: { label: 'Read only: members and statistics', permissions: ['members_view', 'profile_view', 'statistics_view', 'eligible_view'] },
+};
+function populateRoleStartOptions() {
+    const select = document.querySelector('#newPermissionRoleFrom');
+    if (!select) return;
+    const roles = Object.keys(rolePermissionProfiles).filter(role => role !== 'admin');
+    select.innerHTML = `<option value="">Empty (no permissions)</option>`
+        + `<optgroup label="Copy from a role">${roles.map(role => `<option value="role:${esc(role)}">${esc(roleTitle(role))}</option>`).join('')}</optgroup>`
+        + `<optgroup label="Templates">${Object.entries(roleTemplates).map(([key, t]) => `<option value="template:${key}">${esc(t.label)}</option>`).join('')}</optgroup>`;
+}
+// Builds the permissions and limits for a new role from the chosen starting point.
+function startingProfileFor(choice) {
+    const empty = Object.fromEntries(editablePermissionKeys.map(key => [key, false]));
+    if (choice.startsWith('role:')) {
+        const from = choice.slice(5);
+        return { permissions: { ...empty, ...Object.fromEntries(editablePermissionKeys.map(key => [key, rolePermissionProfiles[from]?.[key] === true])) }, scopes: JSON.parse(JSON.stringify(rolePermissionScopes[from] || {})) };
+    }
+    if (choice.startsWith('template:')) {
+        const template = roleTemplates[choice.slice(9)];
+        if (!template) return { permissions: empty, scopes: {} };
+        return { permissions: { ...empty, ...Object.fromEntries(template.permissions.filter(key => editablePermissionKeys.includes(key)).map(key => [key, true])) }, scopes: JSON.parse(JSON.stringify(template.scopes || {})) };
+    }
+    return { permissions: empty, scopes: {} };
+}
 document.querySelector('#createPermissionRole')?.addEventListener('click', async () => {
   const input = document.querySelector('#newPermissionRole'), role = input.value.trim().toLowerCase().replace(/\s+/g,'_');
   if (!/^[a-z][a-z0-9_-]{1,31}$/.test(role)) return setMessage('Use 2–32 letters, numbers, underscores, or hyphens for the role name.', 'error');
   if (rolePermissionProfiles[role]) return setMessage('That role already exists.', 'error');
-  const empty = Object.fromEntries(editablePermissionKeys.map(key => [key,false]));
+  const start = startingProfileFor(document.querySelector('#newPermissionRoleFrom')?.value || '');
+  const empty = start.permissions;
   try {
-    await api('/api/role-permissions', {method:'POST',body:JSON.stringify({role,permissions:empty})});
+    await api('/api/role-permissions', {method:'POST',body:JSON.stringify({role,permissions:empty,scopes:start.scopes})});
     rolePermissionProfiles[role] = empty;
+    rolePermissionScopes[role] = start.scopes;
+    snapshotRoleProfiles();
     permissionRoleOrder.push({role,sort_order:Math.max(4,...permissionRoleOrder.map(item=>Number(item.sort_order)||0))+1});
     permissionRoleOrder.sort((a,b)=>a.sort_order-b.sort_order||a.role.localeCompare(b.role));
     selectedPermissionRole = role;
