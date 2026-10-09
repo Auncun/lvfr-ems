@@ -876,10 +876,14 @@ function renderIndividualPermissions() {
   save.hidden = !editing;
   if (!editing) { panel.replaceChildren(); return; }
   const effectiveProfile = Object.fromEntries(Object.keys(defaults).map(key => [key, Object.hasOwn(overrides, key) ? overrides[key] : defaults[key]]));
-  panel.innerHTML = permissionGroups.map(group => `<details class="permission-group" open><summary>${esc(group.name)}</summary>${group.items.map(entry => (Array.isArray(entry)?[entry]:entry.children).filter(([key]) => notificationEntryAllowed([key], effectiveProfile)).map(([key,label,description]) => {
-    const checked = Object.hasOwn(overrides,key) ? overrides[key] : Boolean(defaults[key]);
-    return `<label class="permission-item"><input type="checkbox" data-individual-permission="${key}" ${checked?'checked':''}><span><strong>${esc(label)}</strong><small>${esc(description)}</small></span></label>`;
-  }).join('')).join('')}</details>`).join('');
+  // Same list as the Rank Permission cards: same groups, sub-lists and labels.
+  panel.innerHTML = permissionGroups.map(group => {
+    const body = group.items
+      .filter(entry => notificationEntryAllowed(entry, effectiveProfile))
+      .map(entry => renderPermissionEntry(entry, effectiveProfile, '', group.name))
+      .join('');
+    return body ? `<details class="permission-group" data-permission-group="${esc(group.name)}" open><summary>${esc(group.name)}</summary>${body}</details>` : '';
+  }).join('').replace(/data-permission-key=/g, 'data-individual-permission=');
 }
 async function openIndividualPermissions(account) {
   const dialog = document.querySelector('#individualPermissionsDialog');
@@ -909,6 +913,14 @@ async function openIndividualPermissions(account) {
   }
 }
 document.querySelector('#individualPermissionsList')?.addEventListener('change', event => {
+  // A group's master checkbox sets every permission inside it.
+  const master = event.target.closest('[data-permission-parent]');
+  if (master && individualPermissionState) {
+    master.closest('details')?.querySelectorAll('[data-individual-permission]').forEach(child => {
+      if (child.checked !== master.checked) { child.checked = master.checked; child.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+    return;
+  }
   const input = event.target.closest('[data-individual-permission]');
   if (!input || !individualPermissionState) return;
   const key = input.dataset.individualPermission;
