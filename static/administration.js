@@ -27,7 +27,7 @@ function canManageRoleProfiles() {
   return ['admin', 'commander'].includes(String(currentUser?.role || '').toLowerCase())
     || currentUser?.permissions?.operation_command_access === true;
 }
-function canManageRanks(permission) { return currentUser?.role === 'admin' || currentUser?.permissions?.role_manage === true || currentUser?.permissions?.[permission] === true; }
+function canManageRanks(permission) { return currentUser?.role === 'admin' || currentUser?.permissions?.role_manage === true || currentUser?.permissions?.operation_command_access === true || currentUser?.permissions?.[permission] === true; }
 function canAccessPermissionPanel() { return canManageRoleProfiles() || ['rank_add','rank_rename','rank_delete','rank_reorder'].some(canManageRanks); }
 function canManageCommandAccounts() {
   return ['admin', 'commander'].includes(String(currentUser?.role || '').toLowerCase());
@@ -364,11 +364,7 @@ const permissionGroups = [
   ] },
   { name: 'Application access', items: [
     ['portal_access', 'EMS Operations', 'Open the EMS Operations application.'],
-    ['operation_command_access', 'Operation Command access', 'Open Access Permissions to manage role permission profiles. Does not grant account management.'],
-    ['rank_add', 'Add ranks', 'Create additional rank profiles.'],
-    ['rank_rename', 'Rename ranks', 'Change the names of ranks below your own.'],
-    ['rank_delete', 'Delete ranks', 'Delete custom ranks below your own when no accounts use them.'],
-    ['rank_reorder', 'Reorder ranks', 'Change the order of ranks below your own.'],
+    ['operation_command_access', 'Edit rank permission', 'Edit rank permissions, add, rename, delete and reorder ranks, and edit personal permissions. Does not grant account management.'],
     ['watch_command_view', 'Watch Command: view', 'Open Watch Command logs and activity.'],
     ['watch_command_edit', 'Watch Command: edit', 'Create and update Watch Command records.'],
     ['watch_command_roster', 'Watch Command: roster lookup', 'Search member names and callsigns.'],
@@ -538,8 +534,10 @@ function permissionChangeDetails(before, after) {
     if (!permissionRows.length && !scopeRows.length) return '<p class="muted">No changes were recorded for this entry.</p>';
     return `<table class="permission-change-table"><thead><tr><th>Setting</th><th>Change</th></tr></thead><tbody>${[...permissionRows, ...scopeRows].join('')}</tbody></table>`;
 }
+let permissionHistoryCanDelete = false;
+// Taken from the server, which applies the same check as the delete route.
 function canDeletePermissionLog() {
-    return currentUser?.role === 'admin' || currentUser?.permissions?.logs_delete_d1 === true;
+    return permissionHistoryCanDelete;
 }
 function permissionLogRowsHtml(query) {
     const q = query.trim().toLocaleLowerCase();
@@ -576,6 +574,7 @@ async function renderPermissionHistory(force = false) {
     try {
         const result = await api('/api/role-permissions/history');
         permissionHistoryItems = result.items || [];
+        permissionHistoryCanDelete = result.can_delete === true;
         box.innerHTML = `
             <div class="toolbar"><input id="permissionLogSearch" type="text" autocomplete="off" placeholder="Search role, person, date, or change"><button type="button" class="search-clear" id="permissionLogClear">Clear</button></div>
             <div class="history-log-head"><span class="muted">${permissionHistoryItems.length} entr${permissionHistoryItems.length === 1 ? 'y' : 'ies'}</span>${canDeletePermissionLog() && permissionHistoryItems.length ? '<button type="button" class="danger" data-clear-history>Delete logs from D1</button>' : ''}</div>

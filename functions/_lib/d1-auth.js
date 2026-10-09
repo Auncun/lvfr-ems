@@ -144,6 +144,8 @@ async function accountPermissions(db, account) {
   for(const key of TRAINING_VIEW_PERMISSIONS) if(!Object.hasOwn(overrides,key)&&Object.hasOwn(overrides,"training_view")) result[key]=overrides.training_view;
   result.logs_view=LOG_VIEW_PERMISSIONS.every(key=>result[key]);
   result.training_view=TRAINING_VIEW_PERMISSIONS.every(key=>result[key]);
+  // Edit rank permission (operation_command_access) includes the rank actions.
+  if(result.operation_command_access===true) for(const key of ["rank_add","rank_rename","rank_delete","rank_reorder","role_manage"]) result[key]=true;
   enforceNotificationKeys(result);
   return result;
 }
@@ -587,6 +589,7 @@ function requireRoleProfileManager(actor) {
     throw Object.assign(new Error("Operation Command access is required."),{status:403});
 }
 function requireRankPermission(actor,key) {
+  if(actor.role==="admin"||actor.permissions?.operation_command_access===true) return;
   if(actor.role!=="admin"&&actor.permissions?.[key]!==true&&actor.permissions?.role_manage!==true) throw Object.assign(new Error("Rank management permission is required."),{status:403});
 }
 async function leaders(db, actor) {
@@ -1003,7 +1006,7 @@ export async function handleD1(context) {
       const rows=(await db.prepare("SELECT id,role,changed_at,changed_by,before_json,after_json FROM role_permission_history ORDER BY id DESC LIMIT 30").all()).results||[];
       const viewerRights=actor.role==="admin"?null:await accountPermissions(db,actor);
       const limit=snapshot=>viewerRights?limitSnapshotToActor(snapshot,viewerRights):snapshot;
-      return json({items:rows.map(row=>({id:row.id,role:row.role,changed_at:row.changed_at,changed_by:row.changed_by,before:limit(JSON.parse(row.before_json||"{}")),after:limit(JSON.parse(row.after_json||"{}"))}))});
+      return json({can_delete:actor.role==="admin"||actor.permissions?.logs_delete_d1===true,items:rows.map(row=>({id:row.id,role:row.role,changed_at:row.changed_at,changed_by:row.changed_by,before:limit(JSON.parse(row.before_json||"{}")),after:limit(JSON.parse(row.after_json||"{}"))}))});
     }
     if(route==="/api/account-preview"&&method==="GET") {
       const actor=session.account;
