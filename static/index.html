@@ -1,112 +1,859 @@
 <!doctype html>
+
 <html lang="en">
+
 <head>
-  <meta charset="utf-8">
+
+<meta charset="utf-8">
   <meta name="color-scheme" content="dark">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Operation Command | LVFR EMS</title>
-  <link rel="stylesheet" href="/static/style.css?v=toolbar-search-20261009-3">
-  <style>
-    body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:72px 24px 24px}
-    .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-    .admin-brand{display:flex;align-items:center;gap:12px}
-    .admin-header{margin-bottom:20px}.admin-header h1{margin:0}.admin-header p,.muted{color:#9aa4b2}
-    .admin-card{margin:16px 0;padding:20px;border:1px solid #303945;border-radius:14px;background:#111720}
-    .admin-toolbar{justify-content:flex-start;margin:12px 0}.admin-toolbar input,.admin-toolbar select{min-width:200px}
-    .admin-table-wrap{overflow:auto}.admin-table{width:100%;border-collapse:collapse;min-width:800px}.admin-table th,.admin-table td{text-align:left;vertical-align:top;padding:11px 9px;border-bottom:1px solid #303945}.admin-table th{color:#9aa4b2;font-weight:600}
-    .admin-actions{justify-content:flex-start;gap:6px}.admin-actions button{padding:6px 9px}.admin-status{min-height:22px;color:#9aa4b2}.admin-status.error{color:#ff8178}.admin-status.success{color:#56d364}
-    .admin-tabs{display:flex;gap:8px;flex-wrap:wrap}.admin-tabs button[aria-pressed="true"]{border-color:#62a0ea;color:#8bbcff}
-    .command-tabs{display:flex;gap:8px;overflow-x:auto;margin:0 0 16px;padding:4px 0 8px;border-bottom:1px solid #27303b}.command-tab{flex:0 0 auto;padding:10px 15px;border:1px solid #303945;border-radius:10px;background:#111720;color:#aeb9c7;font-weight:650}.command-tab.active{border-color:#3984ce;background:#15283a;color:#b8d8ff;box-shadow:inset 0 -2px #58a6ff}.command-section[hidden]{display:none!important}
-    @media(max-width:650px){.admin-shell{padding:14px 14px 28px;min-width:0}.admin-card{padding:14px;min-width:0}.admin-header>*,.admin-toolbar>*{min-width:0;max-width:100%}.admin-table-wrap{width:100%;overflow-x:visible;-webkit-overflow-scrolling:touch}.admin-table{display:block;min-width:0!important;width:100%}.admin-table thead{display:none}.admin-table tbody{display:grid;gap:10px}.admin-table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px;padding:10px;border:1px solid #303945;border-radius:12px;background:#0c1219}.admin-table td{display:block;min-width:0;padding:8px 3px!important;border:0!important;border-bottom:1px solid #26313d}.admin-table td::before{content:attr(data-label);display:block;margin-bottom:4px;color:#8b9aaa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}.admin-table td:first-child,.admin-table td:last-child{grid-column:1/-1}.admin-table td:last-child{border:0!important}.admin-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.admin-actions button{min-width:0;overflow-wrap:anywhere}}
-    .permissions-card{border-color:#34485d;background:linear-gradient(145deg,#111b27,#111720 60%)}.permissions-heading{align-items:flex-start}.permissions-heading h2{margin:0}.permissions-heading p{max-width:680px;margin:7px 0 0;line-height:1.5}
-    #fullCleaningDialog{max-width:calc(100vw - 28px);max-height:calc(100dvh - 28px);padding:0;border:1px solid #394555;border-radius:14px;background:#111720;color:#f3f6fa}#fullCleaningDialog::backdrop{background:#000a}#fullCleaningDialog form{max-height:calc(100dvh - 30px);overflow:auto}.full-cleaning-footer{position:sticky;bottom:0;z-index:2;margin:12px -20px -20px;padding:12px 20px max(12px,env(safe-area-inset-bottom));border-top:1px solid #303945;background:#111720}.full-cleaning-footer .admin-status{margin:0 0 8px}.full-cleaning-footer .admin-actions{margin:0}
-  </style>
+<meta name="theme-color" content="#101720">
+<link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
+
+<meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+>
+
+<title>LVFR EMS Operations</title>
+
+<link
+    rel="stylesheet"
+    href="/static/style.css?v=notification-settings-20261009-4"
+>
+
+<style>
+
+    .log-tabs {
+
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 16px 0;
+
+    }
+
+
+    .log-tab {
+
+        padding: 9px 14px;
+
+        border: 1px solid rgba(255,255,255,.12);
+
+        border-radius: 8px;
+
+        cursor: pointer;
+
+    }
+
+
+    .log-tab.active {
+
+        font-weight: 700;
+
+    }
+
+
+    /* ========================================================
+       LOG TOOLBAR
+       ======================================================== */
+
+    .log-toolbar {
+
+        display: flex;
+
+        gap: 10px;
+
+        margin-bottom: 16px;
+
+        align-items: center;
+
+    }
+
+
+    .log-toolbar input {
+
+        flex: 1;
+
+        min-width: 220px;
+
+    }
+
+
+    /* ========================================================
+       INACTIVE SEARCH
+       ======================================================== */
+
+    .inactive-toolbar {
+
+        display: flex;
+
+        gap: 10px;
+
+        margin-bottom: 16px;
+
+        align-items: center;
+
+    }
+
+
+    .inactive-toolbar input {
+
+        flex: 1;
+
+        min-width: 220px;
+
+    }
+
+</style>
+
 </head>
+
+
 <body>
-  <button class="sidebar-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="appSidebar"><span></span><span></span><span></span></button>
-  <main class="admin-shell">
-    <header class="topbar admin-header">
-      <div class="topbar-left">
-      <div class="admin-brand"><a class="brand-home-link" href="/portal" aria-label="Go to application selection"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"></a><div><h1>Operation Command</h1><p>Manage account access, roles, and review account activity.</p></div></div>
+
+<button class="sidebar-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="appSidebar"><span></span><span></span><span></span></button>
+
+
+<!-- =========================================================
+     TOP BAR
+     ========================================================= -->
+
+<header class="topbar">
+
+
+    <div class="topbar-left">
+    <div class="brand">
+
+
+        <a class="brand-home-link" href="/portal" aria-label="Go to application selection">
+        <img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue">
+        </a>
+
+
+        <div>
+
+            <h1>
+                LVFR EMS Operations
+            </h1>
+
+            <p>
+                Personnel management & promotion control
+            </p>
+
+        </div>
+
+
+    </div>
+
+
+    <span id="dbStatus" class="status-dot">Checking…</span>
+
+    <div id="commandSyncPanel" class="command-sync-panel" hidden>
+      <div class="sync-status-group">
+        <span id="syncStatus" class="status-dot"></span>
+        <span id="syncActivityStatus" class="status-dot"></span>
+        <span id="googleWriteStatus" class="status-dot archive-status"></span>
+        <span id="archiveStatus" class="status-dot archive-status"></span>
       </div>
-      <div class="top-actions">
+      <div class="sync-actions">
+        <button id="syncBtn" class="primary" type="button">Sync now</button>
+        <button id="fullSyncBtn" class="danger" type="button" hidden>Full Sync</button>
+      </div>
+    </div>
+    </div>
+
+    <div class="top-actions">
+
         <div class="notification-control">
-          <button type="button" id="notificationButton" class="icon-button" aria-label="Notifications" title="Notifications" aria-expanded="false" aria-controls="notificationPanel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg><span id="notificationBadge" class="notification-badge" hidden>0</span></button>
-          <section id="notificationPanel" class="notification-panel" hidden aria-label="Notifications">
-            <div class="notification-panel-head"><strong>Notifications</strong><div class="notification-panel-actions"><button type="button" id="markNotificationsRead">Mark as read</button><button type="button" id="clearMyNotifications">Clear notifications</button></div></div>
-            <div id="notificationList"><div class="empty">Loading…</div></div>
-          </section>
+            <button type="button" id="notificationButton" class="icon-button" aria-label="Notifications" title="Notifications" aria-expanded="false" aria-controls="notificationPanel">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+                <span id="notificationBadge" class="notification-badge" hidden>0</span>
+            </button>
+            <section id="notificationPanel" class="notification-panel" hidden aria-label="Notifications">
+                <div class="notification-panel-head">
+                    <strong>Notifications</strong>
+                    <div class="notification-panel-actions"><button type="button" id="markNotificationsRead">Mark as read</button><button type="button" id="clearMyNotifications">Clear notifications</button></div>
+                </div>
+                <div id="notificationList"><div class="empty">Loading...</div></div>
+            </section>
         </div>
-        <div class="online-control"><button type="button" id="topOnlineCount" class="online-count-button" aria-expanded="false" aria-controls="onlineUsersPanel">Online: —</button><section id="onlineUsersPanel" class="online-users-panel" hidden aria-label="Online members"><strong>Online now</strong><div id="onlineUsersList" aria-live="polite"><div class="empty">Loading...</div></div></section></div>
-        <div class="account-control"><button type="button" id="accountMenuButton" class="icon-button" aria-label="Account menu" title="Account" aria-expanded="false" aria-controls="accountMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></button><section id="accountMenu" class="account-menu" hidden><strong id="accountName"></strong><button type="button" id="manageAccountButton">Settings</button><button type="button" id="logoutButton">Sign out</button></section></div>
-      </div>
-    </header>
-    <p id="adminMessage" class="admin-status" role="status" aria-live="polite"></p>
-    <nav class="command-tabs" aria-label="Operation Command sections">
-      <button type="button" class="command-tab active" data-command-section="accounts" aria-current="page">Accounts</button>
-      <button type="button" class="command-tab" data-command-section="permissions">Access Permissions</button>
-      <button type="button" class="command-tab" data-command-section="history">History</button>
-    </nav>
-    <section id="commandAccountsSection" class="admin-card command-section" aria-labelledby="accountsHeading">
-      <div class="admin-header"><div><h2 id="accountsHeading">Accounts</h2><p class="muted">Choose the account role here; role capabilities are managed in Access Permissions.</p></div><button type="button" class="list-refresh" id="refreshAccounts" aria-label="Refresh accounts" title="Refresh accounts"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
-      <div class="admin-tabs" aria-label="Account status filter">
-        <button type="button" data-status="all" aria-pressed="true">All</button>
-        <button type="button" data-status="pending" aria-pressed="false">Pending</button>
-        <button type="button" data-status="approved" aria-pressed="false">Active</button>
-        <button type="button" data-status="deactivated" aria-pressed="false">Deactivated</button>
-      </div>
-      <p id="onlineAccountCount" class="online-account-count" aria-live="polite">Online now: —</p>
-      <div class="admin-toolbar"><input id="accountSearch" type="search" placeholder="Search name or Callsign"><span id="accountCount" class="muted"></span></div>
-      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Account</th><th>Callsign</th><th>Status</th><th>Role</th><th>Presence</th><th>Created</th><th>Actions</th></tr></thead><tbody id="accountRows"><tr><td colspan="7">Loading accounts…</td></tr></tbody></table></div>
-    </section>
-    <section id="commandPermissionsSection" class="admin-card permissions-card command-section" aria-labelledby="permissionsHeading" hidden>
-      <div class="admin-header permissions-heading"><div><h2 id="permissionsHeading">Access Permissions</h2><p class="muted">Operation Command access manages role permission profiles. Separate permissions control adding, renaming, reordering, and deleting ranks below your own. Only Operation manages accounts and individual permissions.</p></div><div class="admin-actions"><button type="button" id="clearAllNotificationsAccess" class="danger" hidden>Clear notifications for all</button></div></div>
-      <label class="permission-search"><span>Find a permission</span><input id="permissionSearch" type="search" placeholder="Search pages and actions"></label>
-      <div class="permission-member-picker"><label>Find a member <input id="permissionMemberSearch" type="search" placeholder="Search name or callsign"></label><div id="permissionMemberResults" class="permission-member-results" hidden></div></div>
-      <div class="role-editor-layout"><nav id="permissionRoleNav" class="permission-role-nav" aria-label="Permission profiles"></nav><div class="role-editor-main"><div id="rolePermissionsPanel" class="role-permissions-panel"><div class="empty">Loading role permissions...</div></div><div class="custom-role-tools"><label>New role <input id="newPermissionRole" maxlength="32" placeholder="e.g. training_lead"></label><button type="button" id="createPermissionRole">Create role</button></div></div></div>
-      <p id="permissionStatus" class="permission-status" role="status" aria-live="polite"></p>
-    </section>
-    <section id="individualPermissionsDialog" class="admin-card individual-permissions-dialog" role="dialog" aria-modal="true" aria-labelledby="individualPermissionsTitle" hidden>
-      <div class="admin-header"><div><h2 id="individualPermissionsTitle">Individual permissions</h2><p id="individualPermissionsStatus" class="muted" aria-live="polite"></p></div><button type="button" id="individualPermissionsClose">Close</button></div>
-      <label class="permission-search" for="individualPermissionMode"><span>Permission mode</span><select id="individualPermissionMode"><option value="role">Role default</option><option value="customize">Customize</option></select></label>
-      <div id="individualPermissionsList" class="role-permission-groups"></div>
-      <div class="admin-actions"><button type="button" id="individualPermissionsCustomize" class="primary">Customize permissions</button><button type="button" id="individualPermissionsReset" hidden>Restore to Role</button><button type="button" id="individualPermissionsSave" hidden>Save customization</button></div>
-    </section>
-    <section id="commandHistorySection" class="admin-card command-section" aria-labelledby="auditHeading" hidden>
-      <div class="admin-header"><h2 id="auditHeading">Recent account activity</h2><div class="admin-actions"><button type="button" id="openFullCleaning" class="danger" hidden>Full Cleaning</button><button type="button" id="clearAllNotifications" class="danger" hidden>Clear notifications for all</button><button type="button" id="clearAccountAuditBtn" class="danger">Clear D1 audit</button></div></div>
-      <div class="toolbar"><input id="auditSearch" type="text" autocomplete="off" placeholder="Search name, callsign, action, or by"></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Date</th><th>Account</th><th>Action</th><th>By</th></tr></thead><tbody id="auditRows"><tr><td colspan="4">Loading history…</td></tr></tbody></table></div>
-    </section>
-    <dialog id="fullCleaningDialog" aria-labelledby="fullCleaningTitle">
-      <form method="dialog" class="admin-card" style="min-width:min(440px,calc(100vw - 32px));margin:0">
-        <h2 id="fullCleaningTitle">Full Cleaning</h2><p class="muted">Choose the logs or notifications to remove from D1 and Google Sheets.</p>
-        <label class="permission-item"><input type="checkbox" id="cleanAllLogs"><span><strong>All</strong><small>Select every log and notifications.</small></span></label>
-        <div class="role-permission-groups">
-          <label class="permission-item"><input type="checkbox" data-clean-log="promotion"><span><strong>Promotion</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="callsign"><span><strong>Callsign</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="termination"><span><strong>Termination</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="training"><span><strong>Training</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="training_time"><span><strong>Training Hours</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="loi"><span><strong>LOI</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="exam"><span><strong>Exam</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="note"><span><strong>Notes</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="activity"><span><strong>Activity</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="instructor"><span><strong>Instructor</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="account_audit"><span><strong>Account Audit</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="notifications"><span><strong>Notifications</strong></span></label>
+
+        <div class="account-control">
+        <button type="button" id="accountMenuButton" class="icon-button" aria-label="Account menu" title="Account" aria-expanded="false" aria-controls="accountMenu">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+        </button>
+        <section id="accountMenu" class="account-menu" hidden>
+            <strong id="accountName"></strong>
+            <button type="button" id="manageAccountButton">Settings</button>
+            <form action="/auth/logout" method="post"><button type="submit">Sign out</button></form>
+        </section>
         </div>
-        <footer class="full-cleaning-footer">
-          <p id="fullCleaningStatus" class="admin-status" role="status"></p>
-          <div class="admin-actions"><button type="button" id="cancelFullCleaning">Cancel</button><button type="button" id="confirmFullCleaning" class="danger">Delete selected</button></div>
-        </footer>
-      </form>
-    </dialog>
-  </main>
-  <script src="/static/session-auth.js?v=shared-session-7"></script>
-  <script src="/static/header-controls.js?v=header-controls-2"></script>
-  <script src="/static/account-settings.js?v=notification-toggle-20261009-4"></script>
-  <script src="/static/administration.js?v=do-not-promote-log-20261009-8"></script>
-  <script src="/static/sidebar.js?v=section-restore-20261009-2"></script>
-  <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
+        <div class="online-control">
+            <button type="button" id="topOnlineCount" class="online-count-button" aria-expanded="false" aria-controls="onlineUsersPanel">Online: —</button>
+            <section id="onlineUsersPanel" class="online-users-panel" hidden aria-label="Online members">
+                <strong>Online now</strong>
+                <div id="onlineUsersList" aria-live="polite"><div class="empty">Loading...</div></div>
+            </section>
+        </div>
+
+
+
+    </div>
+
+
+</header>
+
+
+<!-- =========================================================
+     MAIN TABS
+     ========================================================= -->
+
+<nav class="tabs">
+
+
+    <button
+        data-tab="members"
+        class="tab active"
+        aria-current="page"
+    >
+        Members
+    </button>
+
+
+    <button
+        data-tab="eligible"
+        class="tab"
+    >
+        Eligible
+    </button>
+
+    <button id="doNotPromoteTab" data-tab="doNotPromote" class="tab" style="display:none">
+        Do not Promote
+    </button>
+
+
+    <button
+        id="inactiveTab"
+        data-tab="inactive"
+        class="tab"
+    >
+        Can Be Terminated
+    </button>
+
+
+    <button
+        data-tab="membersLog"
+        class="tab"
+    >
+        Members Log
+    </button>
+
+    <button id="trainingTab" data-tab="trainingDirectory" class="tab">Training</button>
+
+    <button id="statisticsTab" data-tab="statistics" class="tab" style="display:none">
+        Statistics
+    </button>
+
+
+    <button
+        id="leadersTab"
+        data-tab="leaders"
+        class="tab"
+        style="display:none"
+    >
+        Supervisors
+    </button>
+
+
+</nav>
+
+
+<main>
+
+
+<!-- =========================================================
+     MEMBERS
+     ========================================================= -->
+
+<section
+    id="members"
+    class="panel active"
+>
+
+
+    <div class="section-head">
+
+
+        <div>
+
+            <h2>
+                Members
+            </h2>
+
+
+        </div>
+
+
+        <div class="member-heading-controls">
+            <span id="memberCount" class="count">0</span>
+            <button type="button" class="list-refresh" id="refreshMembersBtn" aria-label="Refresh members" title="Refresh members"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button>
+        </div>
+
+
+    </div>
+
+
+    <!-- =====================================================
+         REAL-TIME SEARCH
+         ===================================================== -->
+
+    <div class="toolbar">
+
+
+        <input
+            id="search"
+            type="text"
+            placeholder="Search by name, Callsign, or rank"
+            autocomplete="off"
+        >
+
+
+        <button
+            type="button"
+            id="clearBtn"
+        >
+            Clear
+        </button>
+
+        <details class="member-filter-menu">
+            <summary>Filters</summary>
+            <div class="member-filters">
+                <select id="filterRank" aria-label="Filter by rank" title="Rank">
+                    <option value="all">Rank: Any</option>
+                </select>
+                <select id="filterHert" aria-label="Filter by HERT" title="HERT">
+                    <option value="all">HERT: Any</option>
+                    <option value="yes">HERT: Yes</option>
+                    <option value="no">HERT: No</option>
+                </select>
+                <select id="filterFortInstructor" aria-label="Filter by FORT instructor" title="FORT Instructor">
+                    <option value="all">FORT Instructor: Any</option>
+                    <option value="yes">FORT Instructor: Yes</option>
+                    <option value="no">FORT Instructor: No</option>
+                </select>
+                <select id="filterHertInstructor" aria-label="Filter by HERT instructor" title="HERT Instructor">
+                    <option value="all">HERT Instructor: Any</option>
+                    <option value="yes">HERT Instructor: Yes</option>
+                    <option value="no">HERT Instructor: No</option>
+                </select>
+                <select id="filterBasic" aria-label="Filter by Basic FORT" title="Basic FORT">
+                    <option value="all">Basic FORT: Any</option>
+                    <option value="yes">Basic FORT: Yes</option>
+                    <option value="no">Basic FORT: No</option>
+                </select>
+                <select id="filterAdvanced" aria-label="Filter by Advanced FORT" title="Advanced FORT">
+                    <option value="all">Advanced FORT: Any</option>
+                    <option value="yes">Advanced FORT: Yes</option>
+                    <option value="no">Advanced FORT: No</option>
+                </select>
+                <select id="filterSupervisorExam" aria-label="Filter by Supervisor Exam" title="Supervisor Exam">
+                    <option value="all">Exam: Any</option>
+                    <option value="yes">Exam: Passed</option>
+                    <option value="no">Exam: No</option>
+                </select>
+                <select id="filterActivity" aria-label="Filter by Activity" title="Activity">
+                    <option value="all">Activity: Any</option>
+                    <option value="Active">Active</option>
+                    <option value="Semi Active">Semi Active</option>
+                    <option value="Inactive">Inactive</option>
+                    <option value="Can Be Terminated">Can Be Terminated</option>
+                </select>
+                <button type="button" id="resetMemberFilters">Reset</button>
+            </div>
+        </details>
+
+
+    </div>
+
+    <div
+        id="membersTable"
+        class="table-wrap"
+    ></div>
+
+
+</section>
+
+<section id="trainingDirectory" class="panel">
+  <div class="section-head"><div><h2>Training</h2></div><button type="button" class="list-refresh" id="refreshTrainingBtn" aria-label="Refresh training list" title="Refresh training list"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
+  <div class="training-directory-tabs"><button type="button" class="log-tab active" id="hertTrainingTab" data-training-view="HERT" aria-current="page">HERT</button><button type="button" class="log-tab" id="fortTrainingTab" data-training-view="FORT">FORT</button><button type="button" class="log-tab" id="trainingHoursTab" data-training-view="HOURS">Training Hours</button></div>
+  <section class="training-directory-view" data-training-panel="HERT">
+    <div class="training-directory-tabs"><button type="button" class="log-tab active" id="hertCertifiedTab" data-training-section="HERT_CERTIFIED" aria-current="page">HERT Certified</button><button type="button" class="log-tab" id="hertInstructorTab" data-training-section="HERT_INSTRUCTOR">Instructor</button><button type="button" class="log-tab" id="hertLoiTab" data-training-section="HERT_LOI">LOI</button></div>
+    <section data-training-subpanel="HERT_CERTIFIED"><div class="toolbar"><input type="text" autocomplete="off" id="hertCertifiedSearch" aria-label="Search HERT Certified members" placeholder="Search callsign or member"></div><div id="hertTrainingTable" class="table-wrap"></div></section>
+    <section data-training-subpanel="HERT_INSTRUCTOR" hidden><div class="toolbar"><input type="text" autocomplete="off" id="hertInstructorSearch" aria-label="Search HERT instructors" placeholder="Search callsign or member"></div><div id="hertInstructorTable" class="table-wrap"></div></section>
+    <section data-training-subpanel="HERT_LOI" hidden><div class="toolbar"><input id="hertLoiSearch" type="text" autocomplete="off" placeholder="Search member"></div><div id="hertLoiTable" class="table-wrap"></div></section>
+  </section>
+  <section class="training-directory-view" data-training-panel="FORT" hidden>
+    <div class="training-directory-tabs"><button type="button" class="log-tab active" id="fortTrainingSectionTab" data-training-section="FORT_TRAINING">FORT Training</button><button type="button" class="log-tab" id="fortInstructorTab" data-training-section="FORT_INSTRUCTOR">Instructor</button><button type="button" class="log-tab" id="fortLoiTab" data-training-section="FORT_LOI">LOI</button></div>
+    <section data-training-subpanel="FORT_TRAINING"><div class="toolbar"><input type="text" autocomplete="off" id="fortTrainingSearch" aria-label="Search FORT members" placeholder="Search callsign or member"><select id="fortTrainingFilter" aria-label="Filter FORT training"><option value="all">All</option><option value="basic">Only Basic</option><option value="advanced">Only Advanced</option></select></div><div id="fortTrainingTable" class="table-wrap"></div></section>
+    <section data-training-subpanel="FORT_INSTRUCTOR" hidden><div class="toolbar"><input type="text" autocomplete="off" id="fortInstructorSearch" aria-label="Search FORT instructors" placeholder="Search callsign or member"></div><div id="fortInstructorTable" class="table-wrap"></div></section>
+    <section data-training-subpanel="FORT_LOI" hidden><div class="toolbar"><input id="fortLoiSearch" type="text" autocomplete="off" placeholder="Search member"></div><div id="fortLoiTable" class="table-wrap"></div></section>
+  </section>
+  <section class="training-directory-view" data-training-panel="HOURS" hidden><div class="toolbar"><input id="trainingHoursSearch" type="text" autocomplete="off" aria-label="Search Training Hours" placeholder="Search callsign or member"></div><div id="trainingHoursTable" class="table-wrap"></div></section>
+  <div id="trainingHoursAddDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="trainingHoursAddTitle"><div class="modal-box"><button type="button" class="close" id="closeTrainingHoursAdd" aria-label="Close">&times;</button><h2 id="trainingHoursAddTitle">Add Training Record</h2><label class="training-directory-search">Search members<input id="trainingHoursAddSearch" type="search" placeholder="Search callsign or member"></label><div id="trainingHoursAddChoices" class="training-action-choices"></div></div></div>
+  <div id="loiAddDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="loiAddTitle"><div class="modal-box"><button type="button" class="close" id="closeLoiAdd" aria-label="Close">&times;</button><h2 id="loiAddTitle">Add LOI</h2><label class="training-directory-search">Search members<input id="loiAddSearch" type="search" placeholder="Search callsign or member"></label><div id="loiAddChoices" class="training-action-choices"></div></div></div>
+  <div id="fortPassDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="fortPassTitle"><div class="modal-box fort-pass-box"><button type="button" class="close" id="closeFortPass" aria-label="Close">&times;</button><h2 id="fortPassTitle">Passed FORT LOI</h2><p class="fort-pass-subtitle" id="fortPassMember"></p><p class="fort-pass-hint">Select the training to certify. You can choose Basic, Advanced, or both.</p><div id="fortPassOptions" class="fort-pass-options"></div><div class="fort-pass-actions"><button type="button" class="secondary" id="cancelFortPass">Cancel</button><button type="button" class="primary" id="fortPassSave">Save</button></div></div></div>
+  <div id="trainingActionDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="trainingActionTitle"><div class="modal-box"><button type="button" class="close" id="closeTrainingAction" aria-label="Close">&times;</button><h2 id="trainingActionTitle"></h2><label class="training-directory-search">Search members<input id="trainingActionSearch" type="search" placeholder="Search callsign or member"></label><div id="trainingActionChoices" class="training-action-choices"></div></div></div>
+</section>
+
+
+<!-- =========================================================
+     ELIGIBLE
+     ========================================================= -->
+
+<section
+    id="eligible"
+    class="panel"
+>
+
+
+    <div class="section-head">
+
+
+        <div>
+
+            <h2>
+                Eligible for Promotion
+            </h2>
+
+
+        </div>
+        <button type="button" class="list-refresh" id="refreshEligibleBtn" aria-label="Refresh eligible list" title="Refresh eligible list"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button>
+
+
+    </div>
+
+    <div class="eligible-filter-toolbar">
+        <select id="eligibleRankFilter" aria-label="Filter eligible members by rank">
+            <option value="all">All eligible ranks</option>
+            <option value="volunteer">Volunteer</option>
+            <option value="emt">EMT</option>
+            <option value="aemt">AEMT</option>
+        </select>
+    </div>
+
+
+    <div
+        id="eligibleTable"
+        class="table-wrap"
+    ></div>
+
+
+</section>
+
+
+<!-- =========================================================
+     Do not Promote
+     ========================================================= -->
+
+<section id="doNotPromote" class="panel">
+    <div class="section-head"><div><h2>Do not Promote</h2></div><button type="button" class="list-refresh" id="refreshDoNotPromoteBtn" aria-label="Refresh Do not Promote list" title="Refresh Do not Promote list"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
+    <div class="table-wrap" id="doNotPromoteTable"></div>
+</section>
+
+
+<!-- =========================================================
+     INACTIVE / CAN BE TERMINATED
+     ========================================================= -->
+
+<section
+    id="inactive"
+    class="panel"
+>
+
+
+    <div class="section-head">
+
+
+        <div>
+
+            <h2>
+                Can Be Terminated
+            </h2>
+
+
+        </div>
+        <button type="button" class="list-refresh" id="refreshInactiveBtn" aria-label="Refresh termination list" title="Refresh termination list"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button>
+
+
+    </div>
+
+
+    <!-- =====================================================
+         REAL-TIME SEARCH
+         ===================================================== -->
+
+    <div class="inactive-toolbar">
+
+
+        <input
+            id="inactiveSearch"
+            type="text"
+            placeholder="Search by name or Callsign"
+            autocomplete="off"
+        >
+
+
+        <button
+            type="button"
+            id="inactiveClearBtn"
+        >
+            Clear
+        </button>
+
+
+    </div>
+
+
+    <div
+        id="inactiveTable"
+        class="table-wrap"
+    ></div>
+
+
+</section>
+
+
+<!-- =========================================================
+     MEMBERS LOG
+     ========================================================= -->
+
+<section
+    id="membersLog"
+    class="panel"
+>
+
+
+    <div class="section-head">
+
+
+        <div>
+
+            <h2>
+                Members Log
+            </h2>
+
+
+        </div>
+
+
+        <button type="button" class="list-refresh" id="refreshMembersLogBtn" aria-label="Refresh member log" title="Refresh member log"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button>
+    </div>
+
+
+    <!-- =====================================================
+         LOG TABS
+         ===================================================== -->
+
+    <div class="log-tabs">
+
+
+        <button
+            type="button"
+            class="log-tab active"
+            data-log="promotion"
+        >
+            Promotion/Demotion
+        </button>
+
+
+        <button
+            type="button"
+            class="log-tab"
+            data-log="callsign"
+        >
+            Callsign Changes
+        </button>
+
+
+        <button
+            type="button"
+            class="log-tab"
+            data-log="termination"
+            id="terminationLogTab"
+        >
+            Termination
+        </button>
+
+
+        <button
+            type="button"
+            class="log-tab"
+            data-log="training"
+        >
+            Training
+        </button>
+
+        <button type="button" class="log-tab" id="trainingTimeLogTab" data-log="training_time">Training Time Log</button>
+
+        <button type="button" class="log-tab" id="loiLogTab" data-log="loi">LOI Log</button>
+
+
+        <button
+            type="button"
+            class="log-tab"
+            data-log="exam"
+        >
+            Exam
+        </button>
+
+
+        <button
+            type="button"
+            class="log-tab"
+            data-log="note"
+        >
+            Note
+        </button>
+
+        <button
+            type="button"
+            class="log-tab"
+            data-log="activity"
+        >
+            Activity
+        </button>
+
+        <button type="button" class="log-tab" id="instructorLogTab" data-log="instructor" style="display:none">
+            Instructor
+        </button>
+        <button type="button" class="log-tab" id="doNotPromoteLogTab" data-log="do_not_promote" style="display:none">
+            Do Not Promote
+        </button>
+
+    </div>
+
+
+    <div id="membersLogContent">
+    <!-- =====================================================
+         LOG SEARCH
+         ===================================================== -->
+
+    <div class="log-toolbar">
+
+
+        <input
+            id="membersLogSearch"
+            type="text"
+            placeholder="Search current log"
+            autocomplete="off"
+        >
+
+
+        <button
+            type="button"
+            id="membersLogClearBtn"
+        >
+            Clear
+        </button>
+
+        <button type="button" id="membersLogDeleteBtn" class="danger" hidden>
+            Delete this log from D1
+        </button>
+
+
+    </div>
+
+    <div id="logFilters" class="log-filters">
+        <label id="promotionFilterWrap">
+            Promotion/Demotion
+            <select id="promotionFilter" aria-label="Filter promotions and demotions">
+                <option value="all">All</option>
+                <option value="promotion">Promotion</option>
+                <option value="demotion">Demotion</option>
+            </select>
+        </label>
+        <label id="trainingFilterWrap" style="display:none">
+            Training
+            <select id="trainingFilter" aria-label="Filter training log">
+                <option value="all">All</option>
+                <option value="basic_firefighting">Basic</option>
+                <option value="advanced_firefighting">Advanced</option>
+                <option value="hert">HERT</option>
+            </select>
+        </label>
+        <label id="noteFilterWrap" style="display:none">
+            Action
+            <select id="noteFilter" aria-label="Filter note actions">
+                <option value="all">All</option>
+                <option value="add">Add</option>
+                <option value="delete">Delete</option>
+                <option value="edit">Edit</option>
+            </select>
+        </label>
+    </div>
+
+
+    <div
+        id="membersLogTable"
+        class="table-wrap"
+    ></div>
+
+    </div>
+
+    <div id="instructorLog" style="display:none">
+        <div class="section-head"><div><h2>Instructor Log</h2></div></div>
+        <div class="log-toolbar">
+            <input id="instructorLogSearch" type="text" placeholder="Search instructor log" autocomplete="off">
+            <button type="button" id="instructorLogClearBtn">Clear</button>
+            <button type="button" id="instructorLogDeleteBtn" class="danger" hidden>Delete this log from D1</button>
+        </div>
+        <div id="instructorLogTable" class="table-wrap"></div>
+    </div>
+
+</section>
+
+
+<section id="statistics" class="panel">
+    <div class="section-head"><div><h2>Statistics</h2><p>Training and instructor coverage</p></div><button type="button" class="list-refresh" id="refreshStatisticsBtn" aria-label="Refresh statistics" title="Refresh statistics"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
+    <div class="statistics-filters">
+        <div class="statistics-rank-control">
+            <span>Include ranks <small>(none selected means all)</small></span>
+            <details id="statisticsIncludeRanks" class="statistics-rank-picker">
+                <summary>All ranks</summary>
+                <div class="statistics-rank-picker-menu">
+                    <input type="search" data-rank-search placeholder="Search ranks" aria-label="Search ranks to include">
+                    <button type="button" data-rank-clear>Clear selection</button>
+                    <div class="statistics-rank-options" role="group" aria-label="Ranks to include"></div>
+                </div>
+            </details>
+        </div>
+        <div class="statistics-rank-control">
+            <span>Exclude ranks</span>
+            <details id="statisticsExcludeRanks" class="statistics-rank-picker">
+                <summary>No ranks excluded</summary>
+                <div class="statistics-rank-picker-menu">
+                    <input type="search" data-rank-search placeholder="Search ranks" aria-label="Search ranks to exclude">
+                    <button type="button" data-rank-clear>Clear selection</button>
+                    <div class="statistics-rank-options" role="group" aria-label="Ranks to exclude"></div>
+                </div>
+            </details>
+        </div>
+        <fieldset>
+            <legend>Show statistics for</legend>
+            <label><input type="checkbox" value="exam" data-stat-metric checked> Supervisor Exam</label>
+            <label><input type="checkbox" value="basic" data-stat-metric checked> Basic FORT</label>
+            <label><input type="checkbox" value="advanced" data-stat-metric checked> Advanced FORT</label>
+            <label><input type="checkbox" value="hert" data-stat-metric checked> HERT</label>
+            <label><input type="checkbox" value="fortInstructor" data-stat-metric checked> FORT Instructors</label>
+            <label><input type="checkbox" value="hertInstructor" data-stat-metric checked> HERT Instructors</label>
+        </fieldset>
+    </div>
+    <p id="statisticsPopulation" class="statistics-population" aria-live="polite"></p>
+    <div id="statisticsCards" class="statistics-cards"></div>
+</section>
+
+
+<!-- =========================================================
+     ACCOUNT MANAGEMENT
+     ========================================================= -->
+
+<section
+    id="leaders"
+    class="panel"
+>
+    <div class="section-head">
+        <div>
+            <h2>Supervisors</h2>
+        </div>
+        <button type="button" class="list-refresh" id="refreshLeadersBtn" aria-label="Refresh supervisors" title="Refresh supervisors"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button>
+    </div>
+
+    <div class="log-tabs">
+        <button type="button" class="log-tab leader-view-tab" data-leader-view="pending">
+            Requests <span id="pendingLeaderCount">0</span>
+        </button>
+        <button type="button" class="log-tab leader-view-tab active" data-leader-view="all">All Members</button>
+        <button type="button" class="log-tab leader-view-tab" data-leader-view="audit">History</button>
+    </div>
+
+    <div id="pendingLeadersView" style="display:none">
+        <div id="pendingLeadersTable" class="table-wrap"></div>
+    </div>
+
+    <div id="allLeadersView">
+        <p id="onlineAccountCount" class="online-account-count" aria-live="polite">Online now: —</p>
+        <div class="log-filters leader-role-filter">
+            <label for="leaderRoleFilter">Role</label>
+            <select id="leaderRoleFilter" aria-label="Filter Supervisors by role">
+                <option value="all">All roles</option>
+                <option value="leader">Leader</option>
+                <option value="member">Member</option>
+                <option value="commander">Commander</option>
+                <option value="admin">Operation</option>
+            </select>
+        </div>
+        <div id="allLeadersTable" class="table-wrap"></div>
+    </div>
+
+    <div id="leaderAuditView" style="display:none">
+        <div id="leaderAuditTable" class="table-wrap"></div>
+    </div>
+
+</section>
+
+
+</main>
+
+<!-- =========================================================
+     MODAL
+     ========================================================= -->
+
+<div
+    id="modal"
+    class="modal hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Member details"
+>
+
+
+    <div class="modal-box">
+
+
+        <button
+            class="close"
+            data-action="close-modal"
+        >&times;</button>
+
+
+        <div id="modalContent"></div>
+
+
+    </div>
+
+
+</div>
+
+
+<!-- =========================================================
+     TOAST
+     ========================================================= -->
+
+<div id="toast" aria-live="polite"></div>
+
+
+<!-- =========================================================
+     APPLICATION JAVASCRIPT
+     ========================================================= -->
+
+<script src="/static/session-auth.js?v=shared-session-7"></script>
+<script src="/static/account-settings.js?v=notification-look-20261009-5"></script>
+<script src="/static/app.js?v=do-not-promote-log-20261009-7"></script>
+<script src="/static/sidebar.js?v=sidebar-interval-20261009-3"></script>
+<script src="/static/mobile-popovers.js?v=portal-controls-20261004-1"></script>
+
+
 <script src="/static/search-clear.js?v=2" defer></script>
 </body>
+
 </html>

@@ -544,6 +544,9 @@ function isCommandRank(user) {
   return ["admin","commander"].includes(String(user.role||"").toLowerCase()) || /^(E|C|DIV|B|CHIEF|COM)-/i.test(String(user.callsign||""));
 }
 function notificationVisible(row,user) {
+  // Types tied to a permission are visible to anyone who holds that permission.
+  const pref=NOTIFICATION_PREFERENCE_KINDS.find(item=>item.kind===row.kind);
+  if(pref&&(String(user.role||"").toLowerCase()==="admin"||user.permissions?.[pref.permission]===true)) return true;
   if(row.kind==="request") return ["admin","commander"].includes(String(user.role||""));
   if(row.kind==="inactive") return isCommandRank(user);
   if(row.kind!=="eligible") return false;

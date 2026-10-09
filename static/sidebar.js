@@ -370,7 +370,12 @@
     if (view.log) document.querySelector(`[data-log="${view.log}"]`)?.click();
     if (view.leader) document.querySelector(`[data-leader-view="${view.leader}"]`)?.click();
   };
-  [300, 1200, 2500, 4500].forEach(ms => window.setTimeout(restoreSidebarView, ms));
+  let restoreChecks = 0;
+  const restoreTimer = window.setInterval(() => {
+    restoreChecks += 1;
+    restoreSidebarView();
+    if (restoreChecks >= 40 || userActed) window.clearInterval(restoreTimer);
+  }, 200);
 
   const refreshAccess = () => {
     const user = window.lvfrCachedUser?.();
