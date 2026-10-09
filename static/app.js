@@ -1179,6 +1179,14 @@ async function loadMembers(silent = false, forceFresh = false) {
     }
 }
 
+// True when the sidebar has chosen a Training list for this page, so the default list must not override it.
+function sidebarChoseTraining() {
+    const pathname = location.pathname.replace(/\/$/, "") || "/";
+    const read = key => { try { return JSON.parse(sessionStorage.getItem(key) || "null"); } catch { return null; } };
+    return [read("lvfr.sidebar.pending-navigation"), read("lvfr.sidebar.current-view")]
+        .some(view => view && view.page === pathname && view.tab === "trainingDirectory");
+}
+
 function renderTrainingDirectory(members = allMembersCache || []) {
     const has = value => value === true || Number(value) === 1;
     const instructorHas = (member, type) => String(member.instructor_type || "").toUpperCase().split(/\s*\/\s*/).includes(type);
@@ -5367,7 +5375,9 @@ function applyAccountUser(user) {
     document.querySelector('[data-training-view="HERT"]').style.display = hertView ? "" : "none";
     document.querySelector('[data-training-view="FORT"]').style.display = fortView ? "" : "none";
     const availableTrainingSection = [...document.querySelectorAll('[data-training-section]')].find(button=>button.style.display!=="none");
-    if (availableTrainingSection) {
+    if (sidebarChoseTraining()) {
+        // The sidebar chose a Training list (from another page or before a refresh); sidebar.js opens it.
+    } else if (availableTrainingSection) {
         const topView=availableTrainingSection.dataset.trainingSection.startsWith("HERT_")?"HERT":"FORT";
         if (document.querySelector(`[data-training-view="${topView}"]`)?.style.display!=="none") document.querySelector(`[data-training-view="${topView}"]`)?.click();
         availableTrainingSection.click();
