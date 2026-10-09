@@ -439,6 +439,20 @@ function renderPermissionEntry(entry, profile, query, groupName) {
 }
 let openPermissionGroups = new Set();
 let openPermissionSubLists = new Set();
+// A notification type is listed only when one of its base permissions is on, as with rank limits.
+const notificationBaseKeys = {
+    notif_termination: ['termination_manage'], notif_inactive: ['inactive_view'], notif_promotion: ['promotion_manage', 'rank_manage'],
+    notif_eligible: ['eligible_view', 'promotion_access'], notif_callsign: ['callsign_manage'], notif_training: ['training_hert_manage', 'training_fort_manage'],
+    notif_training_time: ['training_hours_manage'], notif_loi: ['loi_manage'], notif_exam: ['exam_manage'], notif_note: ['notes_manage'],
+    notif_activity: ['activity_manage'], notif_instructor: ['instructor_manage'], notif_do_not_promote: ['do_not_promote_manage'],
+};
+function notificationEntryAllowed(entry, profile) {
+    const key = Array.isArray(entry) ? entry[0] : entry.key;
+    const bases = notificationBaseKeys[key];
+    if (!bases) return true;
+    return bases.some(base => profile?.[base] === true);
+}
+
 // Rank limits shown only for the actions this role is allowed to perform. Unchecked ranks are not allowed.
 function scopeEditor(role) {
     const profile = rolePermissionProfiles[role] || {};
@@ -661,7 +675,7 @@ function renderRolePermissions() {
   panel.innerHTML = roles.filter(role => role === selectedPermissionRole).map(role => {
     const roleLabel = roleTitle(role);
     const groups = permissionGroups.map(group => {
-      const items = group.items.filter(entry => permissionEntryMatches(entry,query,group.name) && (Array.isArray(entry)?editablePermissionKeys.includes(entry[0]):editablePermissionKeys.includes(entry.key)||entry.children.some(item=>editablePermissionKeys.includes(item[0]))));
+      const items = group.items.filter(entry => notificationEntryAllowed(entry, rolePermissionProfiles[role]) && permissionEntryMatches(entry,query,group.name) && (Array.isArray(entry)?editablePermissionKeys.includes(entry[0]):editablePermissionKeys.includes(entry.key)||entry.children.some(item=>editablePermissionKeys.includes(item[0]))));
       if (!items.length) return '';
       return `<details class="permission-group" data-role-tab="${roleTabFor(group.name)}" data-permission-group="${esc(group.name)}" ${query||openPermissionGroups.has(group.name)?'open':''}><summary>${esc(group.name)}</summary>${items.map(entry=>renderPermissionEntry(entry,rolePermissionProfiles[role],query,group.name)).join('')}</details>`;
     }).join('');
@@ -861,29 +875,37 @@ function renderIndividualPermissions() {
   restore.hidden = !editing;
   save.hidden = !editing;
   if (!editing) { panel.replaceChildren(); return; }
-  panel.innerHTML = permissionGroups.map(group => `<details class="permission-group" open><summary>${esc(group.name)}</summary>${group.items.map(entry => (Array.isArray(entry)?[entry]:entry.children).map(([key,label,description]) => {
+  const effectiveProfile = Object.fromEntries(Object.keys(defaults).map(key => [key, Object.hasOwn(overrides, key) ? overrides[key] : defaults[key]]));
+  panel.innerHTML = permissionGroups.map(group => `<details class="permission-group" open><summary>${esc(group.name)}</summary>${group.items.map(entry => (Array.isArray(entry)?[entry]:entry.children).filter(([key]) => notificationEntryAllowed([key], effectiveProfile)).map(([key,label,description]) => {
     const checked = Object.hasOwn(overrides,key) ? overrides[key] : Boolean(defaults[key]);
     return `<label class="permission-item"><input type="checkbox" data-individual-permission="${key}" ${checked?'checked':''}><span><strong>${esc(label)}</strong><small>${esc(description)}</small></span></label>`;
   }).join('')).join('')}</details>`).join('');
 }
 async function openIndividualPermissions(account) {
+  const dialog = document.querySelector('#individualPermissionsDialog');
+  const status = document.querySelector('#individualPermissionsStatus');
   if (currentUser?.role !== 'admin') {
     setMessage('Only the admin account can customize individual permissions.', 'error');
     return;
   }
   individualPermissionTarget = account;
-  const dialog = document.querySelector('#individualPermissionsDialog');
   document.querySelector('#individualPermissionsTitle').textContent = `Permissions: ${account.display_name || account.name}`;
-  document.querySelector('#individualPermissionsStatus').textContent = 'Loading permissions...';
   dialog.hidden = false;
   dialog.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (account.role === 'admin') {
+    individualPermissionState = null;
+    status.textContent = 'Admin accounts keep full access and cannot be customized.';
+    return;
+  }
+  status.textContent = 'Loading permissions...';
   try {
     individualPermissionState = await api(`/api/leaders/${encodeURIComponent(account.account_id)}/permissions`);
     individualPermissionMode = Object.keys(individualPermissionState.overrides || {}).length ? 'customize' : 'role';
     renderIndividualPermissions();
-    document.querySelector('#individualPermissionsStatus').textContent = `Role defaults: ${individualRoleLabel(individualPermissionState.role)}. Customize starts with these permissions; Restore to Role removes the personal changes without changing the account role.`;
+    status.textContent = `Role: ${roleTitle(individualPermissionState.role)}. Press "Customize permissions" to change this person's permissions.`;
   } catch (error) {
-    document.querySelector('#individualPermissionsStatus').textContent = `Could not load permissions: ${error.message}`;
+    individualPermissionState = null;
+    status.textContent = `Could not load permissions: ${error.message}`;
   }
 }
 document.querySelector('#individualPermissionsList')?.addEventListener('change', event => {
