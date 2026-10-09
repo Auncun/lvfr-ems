@@ -1,5 +1,5 @@
 # Background operations and data flow
-
+test
 ## Source of truth
 
 Cloudflare D1 is the application's runtime data store. The website reads from and commits its operational changes to D1 first. Google Sheets remains an integration surface: it provides roster and legacy data for deliberate sync operations, receives mirrors of selected website changes, and can send supported spreadsheet edits back to D1.
