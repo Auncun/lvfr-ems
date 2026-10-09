@@ -485,7 +485,7 @@ async function renderPermissionHistory(force = false) {
     const panel = document.querySelector('#rolePermissionsPanel');
     if (!panel) return;
     let box = document.querySelector('#permissionHistory');
-    if (!box) { box = document.createElement('section'); box.id = 'permissionHistory'; box.className = 'permission-history'; (document.querySelector('#commandHistorySection') || panel).appendChild(box); }
+    if (!box) { box = document.createElement('section'); box.id = 'permissionHistory'; box.className = 'permission-history'; (document.querySelector('#permissionLogPanel') || panel).appendChild(box); }
     if (!force && Date.now() - permissionHistoryLoadedAt < 3000 && box.innerHTML) return;
     permissionHistoryLoadedAt = Date.now();
     try {
@@ -512,6 +512,24 @@ document.addEventListener('click', async event => {
         setMessage(`Could not restore: ${error.message}`, 'error');
     } finally {
         button.disabled = false;
+    }
+});
+
+// Sub-tabs: Rank / Personal Permission, and Account Audit / Permission log.
+document.addEventListener('click', event => {
+    const permissionTab = event.target.closest('[data-permission-subtab]');
+    if (permissionTab) {
+        const key = permissionTab.dataset.permissionSubtab;
+        document.querySelectorAll('[data-permission-subpanel]').forEach(panel => { panel.hidden = panel.dataset.permissionSubpanel !== key; });
+        document.querySelectorAll('[data-permission-subtab]').forEach(button => button.classList.toggle('active', button === permissionTab));
+        return;
+    }
+    const historyTab = event.target.closest('[data-history-tab]');
+    if (historyTab) {
+        const key = historyTab.dataset.historyTab;
+        document.querySelectorAll('[data-history-subpanel]').forEach(panel => { panel.hidden = panel.dataset.historySubpanel !== key; });
+        document.querySelectorAll('[data-history-tab]').forEach(button => button.classList.toggle('active', button === historyTab));
+        if (key === 'permission') renderPermissionHistory(true);
     }
 });
 
@@ -633,7 +651,7 @@ function renderRolePermissions() {
   renderAccountPreview();
   openPermissionGroups = new Set([...panel.querySelectorAll('details.permission-group[open]')].map(item=>item.dataset.permissionGroup).filter(Boolean));
   openPermissionSubLists = new Set([...panel.querySelectorAll('details.permission-sublist[open]')].map(item=>item.dataset.permissionSublist).filter(Boolean));
-  const query = document.querySelector('#permissionSearch').value.trim().toLocaleLowerCase();
+  const query = (document.querySelector('#permissionSearch')?.value || '').trim().toLocaleLowerCase();
   const roles = Object.keys(rolePermissionProfiles).filter(role => role !== 'admin' && role !== String(currentUser?.role || '').toLowerCase()).sort((a,b) => {
     const ai=permissionRoleOrder.findIndex(item=>item.role===a), bi=permissionRoleOrder.findIndex(item=>item.role===b);
     return (ai<0?999:ai)-(bi<0?999:bi) || a.localeCompare(b);
@@ -676,7 +694,7 @@ async function loadRolePermissions() {
     status.className = 'permission-status error';
   }
 }
-document.querySelector('#permissionSearch').addEventListener('input', renderRolePermissions);
+document.querySelector('#permissionSearch')?.addEventListener('input', renderRolePermissions);
 document.querySelector('#permissionRoleNav')?.addEventListener('click', event => {
   const button = event.target.closest('[data-select-permission-role]');
   if (!button) return;

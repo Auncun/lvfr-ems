@@ -61,9 +61,13 @@
     </section>
     <section id="commandPermissionsSection" class="admin-card permissions-card command-section" aria-labelledby="permissionsHeading" hidden>
       <div class="admin-header permissions-heading"><div><h2 id="permissionsHeading">Access Permissions</h2><p class="muted">Operation Command access manages role permission profiles. Separate permissions control adding, renaming, reordering, and deleting ranks below your own. Only Operation manages accounts and individual permissions.</p></div></div>
-      <label class="permission-search"><span>Find a permission</span><input id="permissionSearch" type="search" placeholder="Search pages and actions"></label>
+      <nav class="role-tab-bar permission-subtabs" aria-label="Permission type"><button type="button" class="role-tab active" data-permission-subtab="rank">Rank Permission</button><button type="button" class="role-tab" data-permission-subtab="personal">Personal Permission</button></nav>
+      <div class="permission-subpanel" data-permission-subpanel="personal" hidden>
       <div class="permission-member-picker"><label>Find a member <input id="permissionMemberSearch" type="search" placeholder="Search name or callsign"></label><div id="permissionMemberResults" class="permission-member-results" hidden></div></div>
+      </div>
+      <div class="permission-subpanel" data-permission-subpanel="rank">
       <div class="role-editor-layout"><nav id="permissionRoleNav" class="permission-role-nav" aria-label="Permission profiles"></nav><div class="role-editor-main"><div id="rolePermissionsPanel" class="role-permissions-panel"><div class="empty">Loading role permissions...</div></div><div class="custom-role-tools"><label>New role <input id="newPermissionRole" maxlength="32" placeholder="e.g. training_lead"><label class="role-start-from">Start from <select id="newPermissionRoleFrom" aria-label="Start from"></select></label></label><button type="button" id="createPermissionRole">Create role</button></div></div></div>
+      </div>
       <p id="permissionStatus" class="permission-status" role="status" aria-live="polite"></p>
     </section>
     <section id="individualPermissionsDialog" class="admin-card individual-permissions-dialog" role="dialog" aria-modal="true" aria-labelledby="individualPermissionsTitle" hidden>
@@ -74,7 +78,11 @@
     </section>
     <section id="commandHistorySection" class="admin-card command-section" aria-labelledby="auditHeading" hidden>
       <div class="admin-header"><h2 id="auditHeading">History</h2><div class="admin-actions"><button type="button" id="openFullCleaning" class="danger" hidden>Full Cleaning</button><button type="button" id="clearAllNotifications" class="danger" hidden>Clear notifications for all</button><button type="button" id="clearAccountAuditBtn" class="danger">Clear D1 audit</button></div></div>
+      <nav class="role-tab-bar history-subtabs" aria-label="History type"><button type="button" class="role-tab active" data-history-tab="audit">Account Audit</button><button type="button" class="role-tab" data-history-tab="permission">Permission log</button></nav>
+      <div class="history-subpanel" data-history-subpanel="audit">
       <div class="toolbar"><input id="auditSearch" type="text" autocomplete="off" placeholder="Search name, callsign, action, or by"></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Date</th><th>Account</th><th>Action</th><th>By</th></tr></thead><tbody id="auditRows"><tr><td colspan="4">Loading history…</td></tr></tbody></table></div>
+      </div>
+      <div class="history-subpanel" data-history-subpanel="permission" id="permissionLogPanel" hidden></div>
     </section>
     <dialog id="fullCleaningDialog" aria-labelledby="fullCleaningTitle">
       <form method="dialog" class="admin-card" style="min-width:min(440px,calc(100vw - 32px));margin:0">
@@ -104,7 +112,7 @@
   <script src="/static/session-auth.js?v=shared-session-7"></script>
   <script src="/static/header-controls.js?v=header-controls-2"></script>
   <script src="/static/account-settings.js?v=clean-20261009-21"></script>
-  <script src="/static/administration.js?v=history-refresh-20261009-19"></script>
+  <script src="/static/administration.js?v=subtabs-20261009-22"></script>
   <script src="/static/sidebar.js?v=history-label-20261009-5"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 <script src="/static/search-clear.js?v=2" defer></script>
