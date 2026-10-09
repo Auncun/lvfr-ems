@@ -539,13 +539,13 @@ window.addEventListener('hashchange', () => { if (location.hash === '#auditHeadi
 
 // Account preview: choose an approved account to see what it can do, including its own overrides.
 function renderAccountPreview() {
-    const panel = document.querySelector('#rolePermissionsPanel');
-    if (!panel || document.querySelector('#accountPreview')) return;
+    const host = document.querySelector('[data-permission-subpanel="personal"]');
+    if (!host || document.querySelector('#accountPreview')) return;
     const box = document.createElement('section');
     box.id = 'accountPreview';
     box.className = 'permission-history';
     box.innerHTML = `<details class="role-preview"><summary>Preview an account: what can this person do?</summary><label class="role-preview-rank">Account <select id="accountPreviewSelect"><option value="">Choose an account</option></select></label><div id="accountPreviewResult"><p class="muted">Choose an account to see its permissions.</p></div></details>`;
-    panel.before(box);
+    host.append(box);
     const select = box.querySelector('#accountPreviewSelect');
     const accounts = (allAccounts() || []).filter(account => account.status === 'approved' && account.account_id);
     select.insertAdjacentHTML('beforeend', accounts.map(account => `<option value="${esc(account.account_id)}">${esc(account.name || '')}${account.callsign ? ` (${esc(account.callsign)})` : ''}</option>`).join(''));
@@ -867,7 +867,10 @@ function renderIndividualPermissions() {
   }).join('')).join('')}</details>`).join('');
 }
 async function openIndividualPermissions(account) {
-  if (currentUser?.role !== 'admin') return;
+  if (currentUser?.role !== 'admin') {
+    setMessage('Only the admin account can customize individual permissions.', 'error');
+    return;
+  }
   individualPermissionTarget = account;
   const dialog = document.querySelector('#individualPermissionsDialog');
   document.querySelector('#individualPermissionsTitle').textContent = `Permissions: ${account.display_name || account.name}`;
@@ -919,7 +922,20 @@ document.querySelector('#individualPermissionMode')?.addEventListener('change', 
     document.querySelector('#individualPermissionsStatus').textContent = `Restore failed: ${error.message}`;
   } finally { selector.disabled = false; }
 });
-document.querySelector('#individualPermissionsCustomize')?.addEventListener('click', () => {
+document.querySelector('#individualPermissionsCustomize')?.addEventListener('click', async () => {
+  const status = document.querySelector('#individualPermissionsStatus');
+  if (!individualPermissionState && individualPermissionTarget) {
+    try {
+      individualPermissionState = await api(`/api/leaders/${encodeURIComponent(individualPermissionTarget.account_id)}/permissions`);
+    } catch (error) {
+      status.textContent = `Could not load permissions: ${error.message}`;
+      return;
+    }
+  }
+  if (!individualPermissionState) {
+    status.textContent = 'Choose a member first.';
+    return;
+  }
   individualPermissionMode = 'customize';
   renderIndividualPermissions();
 });
