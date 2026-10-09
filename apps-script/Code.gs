@@ -57,7 +57,7 @@ function doPost(e) {
       if (record.kind === 'account_audit') {
         recordAccountAudit_(String(record.account_id || ''), String(record.name || ''), String(record.callsign || ''), String(record.action || ''), String(record.actor_name || ''));
       } else {
-        const allowedKinds = ['promotion', 'callsign', 'termination', 'training', 'training_time', 'loi', 'exam', 'note', 'activity', 'instructor', 'date'];
+        const allowedKinds = ['promotion', 'callsign', 'termination', 'training', 'training_time', 'loi', 'exam', 'note', 'activity', 'instructor', 'date', 'do_not_promote'];
         if (!allowedKinds.includes(String(record.kind || ''))) throw new Error('Unsupported log mirror kind.');
         appendAppLog_(record);
       }
@@ -1640,7 +1640,7 @@ function readMemberLogs_(kind) {
   const lastRow = sheet.getLastRow();
   const rowCount = Math.min(Math.max(0, lastRow - 1), 2000);
   const rows = rowCount ? sheet.getRange(lastRow - rowCount + 1, 1, rowCount, APP_LOG_HEADERS.length).getDisplayValues() : [];
-  const aliases = { promotion: ['promotion'], callsign: ['callsign'], training: ['training'], training_time: ['training_time'], loi: ['loi'], exam: ['exam'], note: ['note'], activity: ['activity'], instructor: ['instructor'], termination: ['termination'] };
+  const aliases = { do_not_promote: ['do_not_promote'], promotion: ['promotion'], callsign: ['callsign'], training: ['training'], training_time: ['training_time'], loi: ['loi'], exam: ['exam'], note: ['note'], activity: ['activity'], instructor: ['instructor'], termination: ['termination'] };
   const allowed = aliases[kind] || [];
   const current = rows.filter(row => allowed.includes(String(row[1]).toLowerCase())).map(row => {
     const record = Object.fromEntries(APP_LOG_HEADERS.map((key, index) => [key, row[index]]));

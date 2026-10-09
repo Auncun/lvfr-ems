@@ -3,7 +3,7 @@ const json = (body, status = 200, headers = {}) => Response.json(body, { status,
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 const LOG_VIEW_PERMISSIONS = ["promotion_log_view","callsign_log_view","termination_log_view","training_log_view","training_hours_log_view","loi_log_view","exam_log_view","note_log_view","activity_log_view","instructor_log_view"];
 const TRAINING_VIEW_PERMISSIONS = ["hert_certified_view","hert_instructor_view","hert_loi_view","fort_training_view","fort_instructor_view","fort_loi_view"];
-const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
+const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
 const DEFAULT_ROLE_PERMISSIONS = {
   member: { portal_access:false,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:false,eligible_view:false,promotion_access:false,profile_view:false,inactive_view:false,logs_view:false,training_view:false,training_fort_manage:false,training_hert_manage:false,training_hours_view:false,training_hours_manage:false,loi_manage:false,statistics_view:false,notes_manage:false,promotion_manage:false,callsign_manage:false,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:false,sync_manage:false },
   leader: { portal_access:true,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,promotion_access:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,loi_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true },
@@ -83,7 +83,7 @@ function permissionForRequest(route, method, data={}) {
   return method==="POST"?writes[route]||null:null;
 }
 function logViewPermission(kind) {
-  return ({promotion:"promotion_log_view",callsign:"callsign_log_view",termination:"termination_log_view",training:"training_log_view",training_time:"training_hours_log_view",loi:"loi_log_view",exam:"exam_log_view",note:"note_log_view",activity:"activity_log_view",instructor:"instructor_log_view"})[String(kind||"").toLowerCase()]||"logs_view";
+  return ({promotion:"promotion_log_view",callsign:"callsign_log_view",termination:"termination_log_view",training:"training_log_view",training_time:"training_hours_log_view",loi:"loi_log_view",exam:"exam_log_view",note:"note_log_view",activity:"activity_log_view",instructor:"instructor_log_view",do_not_promote:"do_not_promote_log_view"})[String(kind||"").toLowerCase()]||"logs_view";
 }
 function requireRolePermission(user, permissions, key) {
   if(!key || user.role === "admin") return;
@@ -583,7 +583,7 @@ async function writeOperationalLog(db,old,route,data,result,user) {
   else if(route==="/api/date") { kind="date"; action="Rank Date Changed"; details=String(data.date_str||""); }
   else if(route==="/api/training") { kind="training"; action=data.remove?"REMOVED":"ADDED"; details=String(data.training||""); }
   else if(route==="/api/exam") { kind="exam"; action=data.remove?"REMOVED":"ADDED"; details="Supervisor Exam"; }
-  else if(route==="/api/do-not-promote") { kind="activity"; action=data.blocked?"Do Not Promote Added":"Do Not Promote Removed"; details=action; }
+  else if(route==="/api/do-not-promote") { kind="do_not_promote"; action=data.blocked?"ADDED":"REMOVED"; details="Do Not Promote"; }
   else if(route==="/api/terminate") { kind="termination"; action="Terminated"; details=String(data.note||""); }
   else if(route==="/api/member/"+callsign+"/instructor") { kind="instructor"; const type=String(data.instructor_type||"").toUpperCase(); action=type+" Instructor "+(data.assigned?"Assigned":"Removed"); details=type; }
   else if(route==="/api/change-callsign") { kind="callsign"; action="Callsign Changed"; newCallsign=String(result.new_callsign||data.new_callsign||""); newRank=String(result.new_rank||old.rank||""); }
@@ -1022,7 +1022,7 @@ export async function handleD1(context) {
     const directLogKind={"/api/promotions":"promotion","/api/training-log":"training","/api/exam-log":"exam","/api/termination-log":"termination"}[route];
     if((route==="/api/members-log"||directLogKind) && method==="GET") {
       const kind=directLogKind||String(url.searchParams.get("log_type")||"promotion").toLowerCase();
-      const allowed=["promotion","callsign","termination","training","training_time","loi","exam","note","activity","instructor"];
+      const allowed=["promotion","callsign","termination","training","training_time","loi","exam","note","activity","instructor","do_not_promote"];
       if(!allowed.includes(kind)) throw Object.assign(new Error("Invalid log type: "+kind),{status:400});
       if(kind==="training_time") {
         const rows=await db.prepare("SELECT id,log_date,callsign,member_name,action,previous_time,new_time,changed_by FROM training_hours_log ORDER BY id DESC LIMIT 200").all();
