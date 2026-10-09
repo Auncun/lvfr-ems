@@ -87,6 +87,8 @@ function configureOperationAccess() {
     rolePermissionsLoadPromise = loadRolePermissions().finally(() => { rolePermissionsLoadPromise = null; });
   }
   if (!allowed && commandSections.permissions?.hidden === false && accountManager) showCommandSection('accounts');
+  // The section named in the URL (from the sidebar) is applied now that permissions are known.
+  selectCommandSectionFromHash();
 }
 function accountActions(account) {
   const id = esc(account.account_id);
