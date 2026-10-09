@@ -139,6 +139,14 @@
   backdrop.addEventListener('click', close);
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && !sidebar.hidden) close(); });
 
+  const savedViewKey = 'lvfr.sidebar.current-view';
+  const viewFromItem = item => ({
+    page: item.dataset.page || '', tab: item.dataset.tab || '', training: item.dataset.training || '',
+    trainingSection: item.dataset.trainingSection || '', log: item.dataset.log || '', leader: item.dataset.leader || ''
+  });
+  const rememberSidebarView = view => { try { sessionStorage.setItem(savedViewKey, JSON.stringify(view)); } catch {} };
+  const readSavedView = () => { try { return JSON.parse(sessionStorage.getItem(savedViewKey) || 'null'); } catch { return null; } };
+
   sidebar.addEventListener('click', event => {
     const expand = event.target.closest('.sidebar-expand');
     if (expand) {
@@ -154,9 +162,11 @@
     if (!item) return;
     const targetTab = item.dataset.tab;
     if (targetTab) {
+      rememberSidebarView(viewFromItem(item));
       if (item.dataset.page !== currentPath) {
         sessionStorage.setItem('lvfr.sidebar.pending-navigation', JSON.stringify({
-          page: item.dataset.page, tab: targetTab, log: item.dataset.log || '', leader: item.dataset.leader || ''
+          page: item.dataset.page, tab: targetTab, log: item.dataset.log || '', leader: item.dataset.leader || '',
+          training: item.dataset.training || '', trainingSection: item.dataset.trainingSection || ''
         }));
         location.assign(item.dataset.page);
         return;
@@ -326,11 +336,34 @@
     }
     sessionStorage.removeItem('lvfr.sidebar.pending-navigation');
     tab.click();
+    if (pending.training) document.querySelector(`[data-training-view="${pending.training}"]`)?.click();
+    if (pending.trainingSection) document.querySelector(`[data-training-section="${pending.trainingSection}"]`)?.click();
     if (pending.log) document.querySelector(`[data-log="${pending.log}"]`)?.click();
     if (pending.leader) document.querySelector(`[data-leader-view="${pending.leader}"]`)?.click();
     history.replaceState(null, '', location.pathname);
   }
   window.setTimeout(activatePendingNavigation, 0);
+
+  // After a refresh, return to the sidebar section the user had open. The app selects
+  // its default section while it loads, so this runs a few times and stops once the
+  // user acts, so it never overrides a choice the user has made.
+  let userActed = false;
+  ['pointerdown', 'keydown'].forEach(type => document.addEventListener(type, () => { userActed = true; }, { capture: true, once: true }));
+  const restoreSidebarView = () => {
+    if (userActed || sessionStorage.getItem('lvfr.sidebar.pending-navigation')) return;
+    const view = readSavedView();
+    if (!view || view.page !== currentPath || !view.tab) return;
+    const tab = document.querySelector(`[data-tab="${view.tab}"]`);
+    if (!tab || getComputedStyle(tab).display === 'none') return;
+    const sectionButton = view.trainingSection ? document.querySelector(`[data-training-section="${view.trainingSection}"]`) : null;
+    if (document.querySelector('.tab.active')?.dataset.tab === view.tab && (!view.trainingSection || sectionButton?.classList.contains('active'))) return;
+    tab.click();
+    if (view.training) document.querySelector(`[data-training-view="${view.training}"]`)?.click();
+    if (view.trainingSection) document.querySelector(`[data-training-section="${view.trainingSection}"]`)?.click();
+    if (view.log) document.querySelector(`[data-log="${view.log}"]`)?.click();
+    if (view.leader) document.querySelector(`[data-leader-view="${view.leader}"]`)?.click();
+  };
+  [300, 1200, 2500, 4500].forEach(ms => window.setTimeout(restoreSidebarView, ms));
 
   const refreshAccess = () => {
     const user = window.lvfrCachedUser?.();
