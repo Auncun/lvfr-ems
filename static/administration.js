@@ -692,6 +692,21 @@ notificationButton.addEventListener('click', async () => {
   if (!panel.hidden) await loadNotifications();
 });
 document.querySelector('#markNotificationsRead').addEventListener('click', () => markNotificationsRead());
+// Clears only this account's view of notifications. Other people keep theirs.
+document.querySelector('#clearMyNotifications').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    await api('/api/notifications/clear-mine', { method: 'POST', body: '{}' });
+    notificationItems = [];
+    try { localStorage.setItem(notificationCacheKey, '[]'); } catch {}
+    renderNotifications();
+  } catch (error) {
+    setMessage(`Could not clear notifications: ${error.message}`, 'error');
+  } finally {
+    button.disabled = false;
+  }
+});
 document.querySelector('#notificationList').addEventListener('click', async event => {
   const button = event.target.closest('[data-notification-id]');
   if (!button) return;

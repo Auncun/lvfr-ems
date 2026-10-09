@@ -153,7 +153,6 @@
   });
   // Clears only this account's view of notifications. Other people keep theirs.
   clearNotificationsButton?.addEventListener('click', async () => {
-    if (!window.confirm('Clear your notifications? Other people will still see them.')) return;
     clearNotificationsButton.disabled = true;
     try {
       const response = await fetch('/api/notifications/clear-mine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
