@@ -19,6 +19,13 @@
         <dt>Training</dt><dd id="accountSettingsTraining"></dd>
         <dt>Supervisor exam</dt><dd id="accountSettingsExam"></dd>
       </dl>
+      <div class="account-notifications-section">
+        <h3>Notifications</h3>
+        <p class="muted">Choose the notifications you want to receive. You only see the types your role allows.</p>
+        <div id="accountNotificationOptions" class="account-notification-options"><p class="muted">Loading…</p></div>
+        <button type="button" class="primary" id="accountSaveNotifications">Save notification settings</button>
+        <p id="accountNotificationMessage" role="status" aria-live="polite"></p>
+      </div>
       <div class="account-password-section">
         <button type="button" class="primary" id="accountTogglePassword">Change password</button>
         <form id="accountSettingsPassword" class="form-grid" hidden>
@@ -56,12 +63,47 @@
     field('accountSettingsExam').textContent = member?.has_supervisor_exam ? 'Passed' : 'Not completed';
   };
   const close = () => dialog.classList.add('hidden');
+  async function loadNotificationOptions() {
+    const list = field('accountNotificationOptions');
+    field('accountNotificationMessage').textContent = '';
+    try {
+      const response = await fetch('/api/account/notification-preferences');
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || result.error || 'Could not load notification settings.');
+      const allowed = result.options.filter(option => option.allowed);
+      list.innerHTML = allowed.length
+        ? allowed.map(option => `<label class="account-notification-option"><input type="checkbox" data-notification-kind="${option.kind}" ${option.enabled ? 'checked' : ''}><span>${option.label}</span></label>`).join('')
+        : '<p class="muted">Your role has no notification types to choose from.</p>';
+      field('accountSaveNotifications').hidden = !allowed.length;
+    } catch (error) {
+      list.innerHTML = `<p class="muted">${error.message}</p>`;
+    }
+  }
+  field('accountSaveNotifications').addEventListener('click', async () => {
+    const button = field('accountSaveNotifications');
+    const message = field('accountNotificationMessage');
+    const preferences = {};
+    dialog.querySelectorAll('[data-notification-kind]').forEach(input => { preferences[input.dataset.notificationKind] = input.checked; });
+    button.disabled = true;
+    message.textContent = 'Saving…';
+    try {
+      const response = await fetch('/api/account/notification-preferences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preferences }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || result.error || 'Could not save notification settings.');
+      message.textContent = 'Notification settings saved.';
+    } catch (error) {
+      message.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
   openButton.addEventListener('click', async () => {
     const accountMenu = document.querySelector('#accountMenu');
     const accountMenuButton = document.querySelector('#accountMenuButton');
     if (accountMenu) accountMenu.hidden = true;
     accountMenuButton?.setAttribute('aria-expanded', 'false');
     dialog.classList.remove('hidden');
+    void loadNotificationOptions();
     const user = window.lvfrCachedUser?.();
     const accountId = user?.account_id || user?.id || '';
     if (!accountProfile && accountId) {

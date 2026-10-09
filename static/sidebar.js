@@ -28,7 +28,8 @@
           { label: 'Exam Log', tab: 'membersLog', log: 'exam' },
           { label: 'Notes Log', tab: 'membersLog', log: 'note' },
           { label: 'Activity Log', tab: 'membersLog', log: 'activity' },
-          { label: 'Instructor Log', tab: 'membersLog', log: 'instructor', availability: '#instructorLogTab' }
+          { label: 'Instructor Log', tab: 'membersLog', log: 'instructor', availability: '#instructorLogTab' },
+          { label: 'Do Not Promote Log', tab: 'membersLog', log: 'do_not_promote', availability: '#doNotPromoteLogTab' }
         ] },
         { label: 'Statistics', tab: 'statistics', availability: '#statisticsTab' },
         { label: 'Supervisors', tab: 'leaders', availability: '#leadersTab', children: [
@@ -356,7 +357,11 @@
     const tab = document.querySelector(`[data-tab="${view.tab}"]`);
     if (!tab || getComputedStyle(tab).display === 'none') return;
     const sectionButton = view.trainingSection ? document.querySelector(`[data-training-section="${view.trainingSection}"]`) : null;
-    if (document.querySelector('.tab.active')?.dataset.tab === view.tab && (!view.trainingSection || sectionButton?.classList.contains('active'))) return;
+    const mainOk = document.querySelector('.tab.active')?.dataset.tab === view.tab;
+    const sectionOk = !view.trainingSection || !!sectionButton?.classList.contains('active');
+    const logOk = !view.log || !!document.querySelector(`#membersLog .log-tab[data-log="${view.log}"]`)?.classList.contains('active');
+    const leaderOk = !view.leader || !!document.querySelector(`[data-leader-view="${view.leader}"]`)?.classList.contains('active');
+    if (mainOk && sectionOk && logOk && leaderOk) return;
     tab.click();
     if (view.training) document.querySelector(`[data-training-view="${view.training}"]`)?.click();
     if (view.trainingSection) document.querySelector(`[data-training-section="${view.trainingSection}"]`)?.click();

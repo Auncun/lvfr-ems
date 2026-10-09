@@ -1,6 +1,22 @@
 const enc = new TextEncoder();
 const json = (body, status = 200, headers = {}) => Response.json(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
 const nowSeconds = () => Math.floor(Date.now() / 1000);
+// Notification types a person can choose to receive, each tied to the permission that allows it.
+const NOTIFICATION_PREFERENCE_KINDS=[
+  {kind:"termination",label:"Termination",permission:"termination_log_view"},
+  {kind:"inactive",label:"Can be terminated",permission:"inactive_view"},
+  {kind:"promotion",label:"Promotion",permission:"promotion_log_view"},
+  {kind:"eligible",label:"Eligible for promotion",permission:"eligible_view"},
+  {kind:"callsign",label:"Callsign",permission:"callsign_log_view"},
+  {kind:"training",label:"Training",permission:"training_log_view"},
+  {kind:"training_time",label:"Training Hours",permission:"training_hours_log_view"},
+  {kind:"loi",label:"LOI",permission:"loi_log_view"},
+  {kind:"exam",label:"Exam",permission:"exam_log_view"},
+  {kind:"note",label:"Note",permission:"note_log_view"},
+  {kind:"activity",label:"Activity",permission:"activity_log_view"},
+  {kind:"instructor",label:"Instructor",permission:"instructor_log_view"},
+  {kind:"do_not_promote",label:"Do Not Promote",permission:"do_not_promote_log_view"}
+];
 const LOG_VIEW_PERMISSIONS = ["promotion_log_view","callsign_log_view","termination_log_view","training_log_view","training_hours_log_view","loi_log_view","exam_log_view","note_log_view","activity_log_view","instructor_log_view"];
 const TRAINING_VIEW_PERMISSIONS = ["hert_certified_view","hert_instructor_view","hert_loi_view","fort_training_view","fort_instructor_view","fort_loi_view"];
 const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
@@ -954,7 +970,7 @@ export async function handleD1(context) {
     requireRolePermission(user,user.permissions,permissionForRequest(route,method,{...data,log_type:data.log_type||url.searchParams.get("log_type")}));
     if(route==="/api/notifications" && method==="GET") {
       await refreshD1Notifications(db,user);
-      const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? LEFT JOIN notification_hidden h ON h.notification_id=n.id AND h.account_id=? WHERE h.notification_id IS NULL ORDER BY n.id DESC LIMIT 250").bind(user.account_id,user.account_id).all()).results||[];
+      const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? LEFT JOIN notification_hidden h ON h.notification_id=n.id AND h.account_id=? LEFT JOIN notification_preferences p ON p.account_id=? AND p.kind=n.kind WHERE h.notification_id IS NULL AND COALESCE(p.enabled,1)=1 ORDER BY n.id DESC LIMIT 250").bind(user.account_id,user.account_id,user.account_id).all()).results||[];
       const items=recent.filter(item=>notificationVisible(item,user)).slice(0,100);
       const response=json({items,unread_count:items.filter(item=>!Number(item.is_read)).length});
       // Keep the legacy notification sheet in sync without delaying the D1 response.
@@ -964,6 +980,25 @@ export async function handleD1(context) {
         context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,route,url,assertion,{});if(!mirror.ok)console.error("Notification Sheet mirror failed:",await mirror.text());}catch(error){console.error("Notification Sheet mirror failed:",error);}})());
       }
       return response;
+    }
+    if(route==="/api/account/notification-preferences" && method==="GET") {
+      const rows=(await db.prepare("SELECT kind,enabled FROM notification_preferences WHERE account_id=?").bind(user.account_id).all()).results||[];
+      const saved=new Map(rows.map(row=>[row.kind,Number(row.enabled)===1]));
+      const isAdmin=String(user.role||"").toLowerCase()==="admin";
+      const options=NOTIFICATION_PREFERENCE_KINDS.map(item=>({kind:item.kind,label:item.label,allowed:isAdmin||user.permissions?.[item.permission]===true,enabled:saved.has(item.kind)?saved.get(item.kind):true}));
+      return json({options});
+    }
+    if(route==="/api/account/notification-preferences" && method==="POST") {
+      const isAdmin=String(user.role||"").toLowerCase()==="admin";
+      const requested=data.preferences&&typeof data.preferences==="object"?data.preferences:{};
+      const statements=[];
+      for(const item of NOTIFICATION_PREFERENCE_KINDS) {
+        if(!(isAdmin||user.permissions?.[item.permission]===true)) continue;
+        if(!Object.hasOwn(requested,item.kind)) continue;
+        statements.push(db.prepare("INSERT INTO notification_preferences(account_id,kind,enabled) VALUES(?,?,?) ON CONFLICT(account_id,kind) DO UPDATE SET enabled=excluded.enabled").bind(user.account_id,item.kind,requested[item.kind]?1:0));
+      }
+      if(statements.length) await db.batch(statements);
+      return json({ok:true});
     }
     if(route==="/api/notifications/clear-mine" && method==="POST") {
       // Hides every notification for this account only; other people keep theirs.
