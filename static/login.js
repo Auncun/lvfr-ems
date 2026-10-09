@@ -1,4 +1,4 @@
-const message = document.querySelector('#authMessage');
+﻿const message = document.querySelector('#authMessage');
 const loginForm = document.querySelector('#loginForm');
 const signupForm = document.querySelector('#signupForm');
 try {
@@ -65,6 +65,20 @@ async function submitAuth(form, route) {
 
 loginForm.addEventListener('submit', event => { event.preventDefault(); submitAuth(loginForm, '/auth/login'); });
 signupForm.addEventListener('submit', event => { event.preventDefault(); submitAuth(signupForm, '/auth/signup'); });
+// The sign-up form is a separate panel so a new user can find it immediately.
+const signupPanel = document.querySelector('#signupPanel');
+const authSwitch = document.querySelector('.auth-switch');
+function showAuthPanel(panel) {
+  const signingUp = panel === 'signup';
+  loginForm.hidden = signingUp;
+  authSwitch.hidden = signingUp;
+  signupPanel.hidden = !signingUp;
+  message.textContent = '';
+  message.className = 'auth-message';
+  (signingUp ? signupForm.querySelector('input[name="name"]') : loginForm.querySelector('input[name="name"]'))?.focus();
+}
+document.querySelector('#showSignup').addEventListener('click', () => showAuthPanel('signup'));
+document.querySelector('#showLogin').addEventListener('click', () => showAuthPanel('login'));
 document.querySelectorAll('[data-show-password]').forEach(toggle => {
   toggle.addEventListener('change', () => {
     const password = toggle.closest('form').querySelector('input[name="password"]');
