@@ -485,7 +485,7 @@ async function renderPermissionHistory(force = false) {
     const panel = document.querySelector('#rolePermissionsPanel');
     if (!panel) return;
     let box = document.querySelector('#permissionHistory');
-    if (!box) { box = document.createElement('section'); box.id = 'permissionHistory'; box.className = 'permission-history'; panel.after(box); }
+    if (!box) { box = document.createElement('section'); box.id = 'permissionHistory'; box.className = 'permission-history'; (document.querySelector('#commandHistorySection') || panel).appendChild(box); }
     if (!force && Date.now() - permissionHistoryLoadedAt < 3000 && box.innerHTML) return;
     permissionHistoryLoadedAt = Date.now();
     try {
@@ -514,6 +514,10 @@ document.addEventListener('click', async event => {
         button.disabled = false;
     }
 });
+
+// Refresh the change history whenever the History section is opened.
+document.querySelectorAll('[data-command-section="history"]').forEach(button => button.addEventListener('click', () => renderPermissionHistory(true)));
+window.addEventListener('hashchange', () => { if (location.hash === '#auditHeading') renderPermissionHistory(true); });
 
 // Account preview: choose an approved account to see what it can do, including its own overrides.
 function renderAccountPreview() {
@@ -576,7 +580,6 @@ function roleWarnings(role) {
     if (p.rank_manage && Array.isArray(s.demote?.from) && !s.demote.from.length) out.push('Demote is enabled, but no rank is allowed.');
     if (p.termination_manage && Array.isArray(s.terminate?.from) && !s.terminate.from.length) out.push('Terminate is enabled, but no rank is allowed.');
     if (viewable && Array.isArray(s.view?.from) && !s.view.from.length) out.push('No rank is allowed to view members, so the lists will be hidden.');
-    if (p.loi_manage || p.training_hours_manage) out.push('LOI and Training Hours need the member to be an instructor (HERT or FORT).');
     return out;
 }
 function roleWarningsHtml(role) {

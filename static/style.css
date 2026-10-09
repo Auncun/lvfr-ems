@@ -1070,3 +1070,10 @@ table th .th-action { display:block; margin-top:6px; padding:5px 9px; font-size:
 .role-tab-bar { padding-bottom:10px; border-bottom:1px solid #27303b }
 .role-undo { margin-top:6px; padding:6px 10px; font-size:12px }
 .permission-history { margin:16px 0 }
+
+/* Rank limits: selectable chips */
+.scope-ranks label { padding:6px 10px; border:1px solid #303945; border-radius:999px; background:#111720; cursor:pointer; transition:border-color .15s, background .15s }
+.scope-ranks label:hover { border-color:#4a86e8 }
+.scope-ranks label:has(input:checked) { border-color:#4a86e8; background:#14202e; color:#ffffff }
+.scope-ranks input { accent-color:#4a86e8; margin:0; width:auto }
+.scope-box { background:#0d1219 }
