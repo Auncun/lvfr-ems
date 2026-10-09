@@ -2015,7 +2015,7 @@ function trainingHoursSheet_() {
 
 const LOI_SHEET_CONFIG = Object.freeze({
   HERT: { sheet: 'HERT Certified', startRow: 72, nameColumn: 2, percentColumn: 0 },
-  FORT: { sheet: 'FIREFIGHTER CERT', startRow: 28, nameColumn: 1, percentColumn: 5 }
+  FORT: { sheet: 'FIREFIGHTER CERT', startRow: 15, nameColumn: 1, percentColumn: 5 }
 });
 
 function loiSheetConfig_(type) {
