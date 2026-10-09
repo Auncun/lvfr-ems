@@ -497,6 +497,42 @@ function changedPermissionLabels(before, after) {
     if (!names.length) return 'No permission changes';
     return names.slice(0, 6).join(', ') + (names.length > 6 ? '…' : '');
 }
+// Readable view of one change: which permissions were turned on or off, and how rank limits moved.
+function permissionLabelMap() {
+    const map = {};
+    const addEntry = entry => {
+        if (Array.isArray(entry)) map[entry[0]] = entry[1];
+        else {
+            if (entry.key) map[entry.key] = entry.label;
+            (entry.children || []).forEach(child => { map[child[0]] = child[1]; });
+        }
+    };
+    permissionGroups.forEach(group => group.items.forEach(addEntry));
+    return map;
+}
+function rankListText(list) {
+    if (list === undefined || list === null) return 'All ranks';
+    return list.length ? list.join(', ') : 'No rank';
+}
+function permissionChangeDetails(before, after) {
+    const labels = permissionLabelMap();
+    const b = before?.permissions || {}, a = after?.permissions || {};
+    const permissionRows = Object.keys(a)
+        .filter(key => Boolean(b[key]) !== Boolean(a[key]))
+        .map(key => `<tr><td>${esc(labels[key] || key)}</td><td><span class="change-badge ${a[key] ? 'is-on' : 'is-off'}">${a[key] ? 'Turned on' : 'Turned off'}</span></td></tr>`);
+    const scopeNames = { promote: 'Promote', demote: 'Demote', terminate: 'Terminate', view: 'Members visible' };
+    const bs = before?.scopes || {}, as = after?.scopes || {};
+    const scopeRows = [];
+    Object.keys({ ...bs, ...as }).forEach(scope => {
+        ['from', 'to'].forEach(field => {
+            const was = (bs[scope] || {})[field], now = (as[scope] || {})[field];
+            if (JSON.stringify(was ?? null) === JSON.stringify(now ?? null)) return;
+            scopeRows.push(`<tr><td>${esc(scopeNames[scope] || scope)} · ${field === 'from' ? 'current rank' : 'target rank'}</td><td>${esc(rankListText(was))} → <strong>${esc(rankListText(now))}</strong></td></tr>`);
+        });
+    });
+    if (!permissionRows.length && !scopeRows.length) return '<p class="muted">No changes were recorded for this entry.</p>';
+    return `<table class="permission-change-table"><thead><tr><th>Setting</th><th>Change</th></tr></thead><tbody>${[...permissionRows, ...scopeRows].join('')}</tbody></table>`;
+}
 function canDeletePermissionLog() {
     return currentUser?.role === 'admin' || currentUser?.permissions?.logs_delete_d1 === true;
 }
@@ -891,9 +927,14 @@ document.querySelector('#createPermissionRole')?.addEventListener('click', async
     document.querySelector('#permissionStatus').className = 'permission-status success';
   } catch (error) { setMessage(`Could not create role: ${error.message}`, 'error'); }
 });
-document.querySelector('#permissionMemberSearch')?.addEventListener('input', event => {
+document.querySelector('#permissionMemberSearch')?.addEventListener('input', async event => {
   const results = document.querySelector('#permissionMemberResults'), query = event.target.value.trim().toLowerCase();
   if (!query) { results.hidden = true; results.replaceChildren(); return; }
+  if (!allAccounts().length) {
+    results.innerHTML = '<span class="muted">Loading members...</span>';
+    results.hidden = false;
+    try { await loadAccounts(); } catch {}
+  }
   const matches = allAccounts().filter(account => `${account.display_name||account.name} ${account.callsign}`.toLowerCase().includes(query)).slice(0,8);
   results.innerHTML = matches.map(account => `<button type="button" data-permission-member="${esc(account.account_id)}">${esc(account.display_name||account.name)} · ${esc(account.callsign||'')}</button>`).join('') || '<span class="muted">No members found.</span>';
   results.hidden = false;
