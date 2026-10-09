@@ -441,6 +441,11 @@ function renderPermissionEntry(entry, profile, query, groupName) {
 }
 let openPermissionGroups = new Set();
 let openPermissionSubLists = new Set();
+// Rank limits are shown only when the viewer holds one of their permissions.
+const scopeBaseKeys = {
+    promote: ['promotion_manage', 'rank_manage'], demote: ['rank_manage'], terminate: ['termination_manage'],
+    view: ['members_view', 'eligible_view', 'inactive_view', 'promotion_access'],
+};
 // A notification type is listed only when one of its base permissions is on, as with rank limits.
 const notificationBaseKeys = {
     notif_termination: ['termination_manage'], notif_inactive: ['inactive_view'], notif_promotion: ['promotion_manage', 'rank_manage'],
@@ -464,7 +469,7 @@ function scopeEditor(role) {
         { scope: 'demote', title: 'Demote', allowed: profile.rank_manage, fields: [['from', 'Members of rank'], ['to', 'Can demote to rank']] },
         { scope: 'terminate', title: 'Terminate', allowed: profile.termination_manage, fields: [['from', 'Can terminate members of rank']] },
         { scope: 'view', title: 'Viewing members', allowed: profile.members_view || profile.eligible_view || profile.inactive_view || profile.promotion_access, fields: [['from', 'Can see members of rank (lists and notifications)']] },
-    ].filter(section => section.allowed);
+    ].filter(section => section.allowed && scopeBaseKeys[section.scope].some(key => editablePermissionKeys.includes(key)));
     if (!sections.length || !rolePermissionRanks.length) return '';
     const box = (section, [field, label]) => {
         const selected = scopes[section.scope]?.[field];

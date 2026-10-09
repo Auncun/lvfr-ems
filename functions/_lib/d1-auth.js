@@ -69,6 +69,19 @@ async function filterRowsByViewRanks(db,actor,rows){
   const rankByCallsign=new Map(((await db.prepare("SELECT callsign,rank FROM members").all()).results||[]).map(row=>[String(row.callsign||"").toUpperCase(),row.rank]));
   return rows.filter(row=>viewable.includes(rankByCallsign.get(String(row.callsign||"").toUpperCase())||""));
 }
+// Permissions that a rank limit belongs to. A viewer without any of them cannot see or set that limit.
+const SCOPE_BASE_PERMISSIONS={
+  promote:["promotion_manage","rank_manage"],
+  demote:["rank_manage"],
+  terminate:["termination_manage"],
+  view:["members_view","eligible_view","inactive_view","promotion_access"],
+};
+// Shows a non-admin viewer only the permissions and limits they hold.
+function limitSnapshotToActor(snapshot,effective){
+  const permissions=Object.fromEntries(Object.entries(snapshot?.permissions||{}).filter(([key])=>effective[key]===true));
+  const scopes=Object.fromEntries(Object.entries(snapshot?.scopes||{}).filter(([scope])=>(SCOPE_BASE_PERMISSIONS[scope]||[]).some(key=>effective[key]===true)));
+  return {permissions,scopes};
+}
 function sanitizeScopes(input){
   const out={};
   for(const scope of ["promote","demote","terminate","view"]) {
@@ -954,7 +967,7 @@ export async function handleD1(context) {
       const roles=new Set(["member","leader","commander",...rows.map(row=>String(row.role||"").toLowerCase())]);
       const profiles={}, effective=await accountPermissions(db,actor);
       const canEditProfiles=actor.role==="admin"||actor.role==="commander"||effective.operation_command_access===true;
-      const visibleKeys=canEditProfiles?ROLE_PERMISSION_KEYS:ROLE_PERMISSION_KEYS.filter(key=>effective[key]===true);
+      const visibleKeys=actor.role==="admin"?ROLE_PERMISSION_KEYS:ROLE_PERMISSION_KEYS.filter(key=>effective[key]===true);
       for(const role of roles) if(role!=="admin"&&role!==actor.role) {
         const profile=await rolePermissions(db,role);
         profiles[role]=Object.fromEntries(visibleKeys.map(key=>[key,Boolean(profile[key])]));
@@ -978,7 +991,9 @@ export async function handleD1(context) {
       const actor=session.account;
       if(actor.role!=="admin"&&actor.role!=="commander"&&actor.permissions?.operation_command_access!==true) throw Object.assign(new Error("You cannot view the permission history."),{status:403});
       const rows=(await db.prepare("SELECT id,role,changed_at,changed_by,before_json,after_json FROM role_permission_history ORDER BY id DESC LIMIT 30").all()).results||[];
-      return json({items:rows.map(row=>({id:row.id,role:row.role,changed_at:row.changed_at,changed_by:row.changed_by,before:JSON.parse(row.before_json||"{}"),after:JSON.parse(row.after_json||"{}")}))});
+      const viewerRights=actor.role==="admin"?null:await accountPermissions(db,actor);
+      const limit=snapshot=>viewerRights?limitSnapshotToActor(snapshot,viewerRights):snapshot;
+      return json({items:rows.map(row=>({id:row.id,role:row.role,changed_at:row.changed_at,changed_by:row.changed_by,before:limit(JSON.parse(row.before_json||"{}")),after:limit(JSON.parse(row.after_json||"{}"))}))});
     }
     if(route==="/api/account-preview"&&method==="GET") {
       const actor=session.account;
@@ -1085,7 +1100,17 @@ export async function handleD1(context) {
       await db.prepare(`INSERT INTO role_permissions(role,permissions_json,updated_at,updated_by) VALUES(?,?,?,?)
         ON CONFLICT(role) DO UPDATE SET permissions_json=excluded.permissions_json,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
         .bind(role,JSON.stringify(permissions),now,actor.name).run();
-      if(data.scopes&&typeof data.scopes==="object") await db.prepare("UPDATE role_permissions SET scopes_json=? WHERE role=?").bind(JSON.stringify(sanitizeScopes(data.scopes)),role).run();
+      if(data.scopes&&typeof data.scopes==="object") {
+        const nextScopes=sanitizeScopes(data.scopes);
+        if(actor.role!=="admin") {
+          const currentScopes=await roleScopes(db,role);
+          for(const scope of Object.keys(SCOPE_BASE_PERMISSIONS)) {
+            if(SCOPE_BASE_PERMISSIONS[scope].some(key=>effective[key]===true)) continue;
+            if(currentScopes[scope]) nextScopes[scope]=currentScopes[scope]; else delete nextScopes[scope];
+          }
+        }
+        await db.prepare("UPDATE role_permissions SET scopes_json=? WHERE role=?").bind(JSON.stringify(nextScopes),role).run();
+      }
       await db.prepare("INSERT INTO role_permission_history(role,changed_at,changed_by,before_json,after_json) VALUES(?,?,?,?,?)").bind(role,now,String(actor.name||""),JSON.stringify(beforeSnapshot),JSON.stringify({permissions:await rolePermissions(db,role),scopes:await roleScopes(db,role)})).run();
       // A role-level revocation must also remove conflicting personal grants;
       // otherwise account overrides would keep the revoked capability active.
