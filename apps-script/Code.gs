@@ -76,9 +76,9 @@ function doPost(e) {
     if (route === '/internal/loi') {
       const expected = String(PropertiesService.getScriptProperties().getProperty('LVFR_D1_WORKER_SECRET') || '');
       if (!expected || !input.workerSecret || !constantTimeEquals_(String(input.workerSecret), expected)) throw new Error('LOI authentication failed.');
-      const result = String(input.method || 'GET').toUpperCase() === 'GET'
-        ? listLoiSheet_()
-        : mutateLoiSheet_(input.data || {});
+      const isRead = String(input.method || 'GET').toUpperCase() === 'GET';
+      const result = isRead ? listLoiSheet_() : mutateLoiSheet_(input.data || {});
+      if (!isRead && String((input.data || {}).action || '').toLowerCase() === 'passed') certifyLoiPass_(input.data || {});
       return output_({ ok: true, data: result });
     }
     if (route === '/internal/training-hours/mirror' && String(input.method || '') === 'POST') {
@@ -1928,12 +1928,12 @@ function clearTerminatedMemberTraining_(data) {
     loi += clearMatchingRows(fortSheet, config.nameColumn, config.startRow, fortSheet.getLastRow(), [config.nameColumn, config.percentColumn]);
   }
   const hoursSheet = trainingHoursSheet_();
-  const count = Math.max(0, hoursSheet.getLastRow() - 1);
+  const count = Math.max(0, hoursSheet.getLastRow() - TRAINING_HOURS_FIRST_ROW + 1);
   if (count) {
-    const names = hoursSheet.getRange(2, 2, count, 1).getDisplayValues();
+    const names = hoursSheet.getRange(TRAINING_HOURS_FIRST_ROW, 2, count, 1).getDisplayValues();
     names.forEach((row, index) => {
       if (sheetNameKey_(row[0]) !== key) return;
-      const rowNumber = index + 2;
+      const rowNumber = index + TRAINING_HOURS_FIRST_ROW;
       [2, 4, 6].forEach(column => hoursSheet.getRange(rowNumber, column).clearContent());
       hours++;
     });
@@ -1984,6 +1984,9 @@ function findNamedSheetRows_(sheet, nameColumn, name, ignoredRows) {
     .map((row, index) => !ignoredRows.includes(index + 2) && sheetNameKey_(row[0]) === normalizedName ? index + 2 : 0)
     .filter(Boolean);
 }
+
+// Training Hours data starts on this row of Sheet1. Rows 1-4 are not part of the table.
+const TRAINING_HOURS_FIRST_ROW = 5;
 
 function trainingHoursSheet_() {
   const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
@@ -2103,6 +2106,21 @@ function mutateLoiSheet_(data) {
     if (config.percentColumn) config.sheet.getRange(row, config.percentColumn).clearContent();
     SpreadsheetApp.flush();
     return { ok: true, changed: true, type, name, row, test_percent: percent };
+  });
+}
+
+// A passed LOI also certifies the member on the roster for each selected training. Already-certified members are left unchanged, and a failure here
+// is logged without failing the LOI update, which has already been written.
+function certifyLoiPass_(data) {
+  const callsign = String(data.callsign || '').trim().toUpperCase();
+  const trainings = Array.isArray(data.trainings) ? data.trainings : [];
+  if (!callsign || !trainings.length) return;
+  trainings.forEach(training => {
+    try {
+      changeTraining_({ callsign: callsign, training: String(training), remove: false }, { name: String(data.changed_by || 'LOI passed') });
+    } catch (error) {
+      console.error('LOI pass certification failed (' + training + '): ' + (error && error.message ? error.message : error));
+    }
   });
 }
 
@@ -2244,7 +2262,7 @@ function mirrorTrainingHoursFromD1Locked_(data) {
   const action = String(data.action || '').trim().toLowerCase();
   const sourceRow = Number(data.source_row) || 0;
   let row = sourceRow;
-  if (row && (row < 2 || row > sheet.getMaxRows())) throw new Error('Invalid Training Hours sheet row.');
+  if (row && (row < TRAINING_HOURS_FIRST_ROW || row > sheet.getMaxRows())) throw new Error('Invalid Training Hours sheet row.');
   if (sourceRow && normalizeMemberName_(sheet.getRange(row, 2).getDisplayValue()) !== normalizeMemberName_(member.name)) {
     throw new Error('Training Hours row no longer matches this roster member.');
   }
@@ -2254,13 +2272,13 @@ function mirrorTrainingHoursFromD1Locked_(data) {
     if (!row) {
       const date = String(data.date || '').trim();
       const time = String(data.previous_time || '').trim();
-      const count = Math.max(0, sheet.getLastRow() - 1);
+      const count = Math.max(0, sheet.getLastRow() - TRAINING_HOURS_FIRST_ROW + 1);
       if (count && date && time) {
-        const values = sheet.getRange(2, 2, count, 5).getDisplayValues();
+        const values = sheet.getRange(TRAINING_HOURS_FIRST_ROW, 2, count, 5).getDisplayValues();
         const matches = [];
         values.forEach((values, index) => {
           if (normalizeMemberName_(values[0]) === normalizeMemberName_(member.name) &&
-              String(values[2] || '').trim() === date && String(values[4] || '').trim() === time) matches.push(index + 2);
+              String(values[2] || '').trim() === date && String(values[4] || '').trim() === time) matches.push(index + TRAINING_HOURS_FIRST_ROW);
         });
         if (matches.length === 1) row = matches[0];
         else if (matches.length > 1) throw new Error('Training Hours row is ambiguous; refresh the Sheet-to-D1 row mapping before removing it.');
@@ -2279,12 +2297,12 @@ function mirrorTrainingHoursFromD1Locked_(data) {
       const match = String(value || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
       return match ? match[3] + '-' + String(match[1]).padStart(2, '0') + '-' + String(match[2]).padStart(2, '0') : String(value || '').trim();
     };
-    const count = Math.max(0, sheet.getLastRow() - 1);
-    const block = count ? sheet.getRange(2, 2, count, 5).getDisplayValues() : [];
+    const count = Math.max(0, sheet.getLastRow() - TRAINING_HOURS_FIRST_ROW + 1);
+    const block = count ? sheet.getRange(TRAINING_HOURS_FIRST_ROW, 2, count, 5).getDisplayValues() : [];
     const matches = [];
     block.forEach((values, index) => {
       if (normalizeMemberName_(values[0]) === normalizeMemberName_(member.name) &&
-          dateKey(values[2]) === dateKey(date) && String(values[4] || '').trim() === time) matches.push(index + 2);
+          dateKey(values[2]) === dateKey(date) && String(values[4] || '').trim() === time) matches.push(index + TRAINING_HOURS_FIRST_ROW);
     });
     if (matches.length === 1) return { ok: true, changed: false, row: matches[0], idempotent_retry: true };
     if (matches.length > 1) throw new Error('Training Hours retry matched multiple identical Sheet rows; no duplicate was added. Refresh the D1 row mapping before retrying.');
@@ -2292,11 +2310,11 @@ function mirrorTrainingHoursFromD1Locked_(data) {
   if (!row) {
     // Use a row only when Name (B), Date (D) and Time (F) are ALL empty, so a
     // half-cleared row or one that still holds a stray value is never reused.
-    const count = Math.max(0, sheet.getMaxRows() - 1);
-    const block = count ? sheet.getRange(2, 2, count, 5).getDisplayValues() : [];
+    const count = Math.max(0, sheet.getMaxRows() - TRAINING_HOURS_FIRST_ROW + 1);
+    const block = count ? sheet.getRange(TRAINING_HOURS_FIRST_ROW, 2, count, 5).getDisplayValues() : [];
     const emptyIndex = block.findIndex(values =>
       !String(values[0] || '').trim() && !String(values[2] || '').trim() && !String(values[4] || '').trim());
-    if (emptyIndex >= 0) row = emptyIndex + 2;
+    if (emptyIndex >= 0) row = emptyIndex + TRAINING_HOURS_FIRST_ROW;
     else { sheet.insertRowAfter(sheet.getMaxRows()); row = sheet.getMaxRows(); }
   }
   const dateValue = String(data.date || '').trim();
@@ -2317,10 +2335,10 @@ function mirrorTrainingHoursFromD1Locked_(data) {
 
 function listTrainingHours_() {
   const sheet = trainingHoursSheet_();
-  const count = Math.max(0, sheet.getLastRow() - 1);
+  const count = Math.max(0, sheet.getLastRow() - TRAINING_HOURS_FIRST_ROW + 1);
   if (!count) return [];
-  const values = sheet.getRange(2, 2, count, 5).getDisplayValues();
-  return values.map((row, index) => ({ id: index + 2, name: String(row[0] || '').trim(), date: String(row[2] || ''), time: String(row[4] || ''), row: index + 2 }))
+  const values = sheet.getRange(TRAINING_HOURS_FIRST_ROW, 2, count, 5).getDisplayValues();
+  return values.map((row, index) => ({ id: index + TRAINING_HOURS_FIRST_ROW, name: String(row[0] || '').trim(), date: String(row[2] || ''), time: String(row[4] || ''), row: index + TRAINING_HOURS_FIRST_ROW }))
     .filter(record => record.name)
     .reverse();
 }
@@ -2344,9 +2362,9 @@ function changeTrainingHours_(data, user) {
   let newTime = '';
   if (action === 'add') {
     if (!name) throw new Error('Choose a member to add.');
-    const names = sheet.getRange(2, 2, Math.max(0, sheet.getMaxRows() - 1), 1).getDisplayValues();
+    const names = sheet.getRange(TRAINING_HOURS_FIRST_ROW, 2, Math.max(0, sheet.getMaxRows() - TRAINING_HOURS_FIRST_ROW + 1), 1).getDisplayValues();
     const emptyIndex = names.findIndex(values => !String(values[0] || '').trim());
-    if (emptyIndex >= 0) row = emptyIndex + 2;
+    if (emptyIndex >= 0) row = emptyIndex + TRAINING_HOURS_FIRST_ROW;
     else { sheet.insertRowAfter(sheet.getMaxRows()); row = sheet.getMaxRows(); }
     newTime = String(data.time || '').trim();
     if (!newTime) throw new Error('Enter a training time.');
@@ -2355,13 +2373,13 @@ function changeTrainingHours_(data, user) {
     sheet.getRange(row, 4).setNumberFormat('MM/dd/yyyy');
     sheet.getRange(row, 6).setValue(newTime);
   } else if (action === 'remove') {
-    if (row < 2 || row > sheet.getLastRow() || normalizeMemberName_(sheet.getRange(row, 2).getDisplayValue()) !== normalizeMemberName_(name)) throw new Error('This Training Hours record was not found.');
+    if (row < TRAINING_HOURS_FIRST_ROW || row > sheet.getLastRow() || normalizeMemberName_(sheet.getRange(row, 2).getDisplayValue()) !== normalizeMemberName_(name)) throw new Error('This Training Hours record was not found.');
     previousTime = String(sheet.getRange(row, 6).getDisplayValue() || '');
     sheet.getRange(row, 2).clearContent();
     sheet.getRange(row, 4).clearContent();
     sheet.getRange(row, 6).clearContent();
   } else if (action === 'time') {
-    if (row < 2 || row > sheet.getLastRow() || normalizeMemberName_(sheet.getRange(row, 2).getDisplayValue()) !== normalizeMemberName_(name)) throw new Error('This Training Hours record was not found.');
+    if (row < TRAINING_HOURS_FIRST_ROW || row > sheet.getLastRow() || normalizeMemberName_(sheet.getRange(row, 2).getDisplayValue()) !== normalizeMemberName_(name)) throw new Error('This Training Hours record was not found.');
     previousTime = String(sheet.getRange(row, 6).getDisplayValue() || '');
     newTime = String(data.time || '').trim();
     if (!newTime) throw new Error('Enter a training time.');

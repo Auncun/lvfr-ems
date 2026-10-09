@@ -1283,29 +1283,55 @@ document.querySelectorAll("[data-open-loi-add]").forEach(button => button.addEve
 $("#loiAddSearch")?.addEventListener("input", renderLoiAddChoices);
 $("#closeLoiAdd")?.addEventListener("click", () => $("#loiAddDialog")?.classList.add("hidden"));
 $("#loiAddDialog")?.addEventListener("click", event => { if (event.target.id === "loiAddDialog") event.currentTarget.classList.add("hidden"); });
+const loiTrainingLabels = { "Hert": "HERT", "Basic Firefighting": "Basic FORT", "Advanced Firefighting": "Advanced FORT" };
+let fortPassPending = null;
+// Passing a FORT LOI asks which FORT training to certify. A training the member
+// already holds is shown as checked and marked as already held.
+function openFortPassDialog(button) {
+    const cached = memberCache.get(String(button.dataset.loiCallsign || "").trim().toUpperCase()) || {};
+    const owned = { "Basic Firefighting": Boolean(Number(cached.has_basic_firefighting)), "Advanced Firefighting": Boolean(Number(cached.has_advanced_firefighting)) };
+    fortPassPending = button;
+    $("#fortPassTitle").textContent = `Passed FORT LOI: ${button.dataset.loiName}`;
+    $("#fortPassOptions").innerHTML = Object.keys(owned).map(training => `<label class="training-action-choice"><span>${loiTrainingLabels[training]}${owned[training] ? " <em>(already has)</em>" : ""}</span><input type="checkbox" value="${training}" ${owned[training] ? "checked disabled" : ""}></label>`).join("");
+    $("#fortPassDialog")?.classList.remove("hidden");
+}
+$("#closeFortPass")?.addEventListener("click", () => { fortPassPending = null; $("#fortPassDialog")?.classList.add("hidden"); });
+$("#fortPassDialog")?.addEventListener("click", event => { if (event.target.id === "fortPassDialog") { fortPassPending = null; event.currentTarget.classList.add("hidden"); } });
+$("#fortPassSave")?.addEventListener("click", () => {
+    const button = fortPassPending;
+    if (!button) return;
+    const trainings = [...document.querySelectorAll("#fortPassOptions input:checked")].map(input => input.value);
+    if (!trainings.length) return toast("Select Basic FORT, Advanced FORT, or both.");
+    fortPassPending = null;
+    $("#fortPassDialog")?.classList.add("hidden");
+    void saveLoiChange(button, "passed", { trainings });
+});
 document.addEventListener("click", async event => {
     const add = event.target.closest("[data-loi-add]"), result = event.target.closest("[data-loi-result]"), button = add || result;
     if (!button || !currentUserHasPermission("loi_manage")) return;
-    const row = button.closest(".training-action-choice");
     const action = add ? "add" : button.dataset.loiResult;
     const type = button.dataset.loiType;
-    const payload = { action, type, name: button.dataset.loiName, callsign: button.dataset.loiCallsign };
-    if (add && type === "FORT") {
-        const entered = String(row?.querySelector("[data-loi-percent]")?.value || "").trim();
-        if (!entered || !Number.isFinite(Number(entered)) || Number(entered) < 0 || Number(entered) > 100) return toast("Enter a FORT LOI percentage from 0 to 100.");
-        payload.test_percent = Number(entered);
-    }
-    if (result) {
-        payload.row = Number(button.dataset.loiRow);
-        payload.test_percent = button.dataset.loiPercent;
-        if (!window.confirm(`Mark ${payload.name}'s ${type} LOI as ${action}? This removes the entry from D1 and syncs the Sheet.`)) return;
-    }
+    if (action === "passed" && type === "FORT") { openFortPassDialog(button); return; }
+    const extra = {};
+    if (add) {
+        if (type === "FORT") {
+            const row = button.closest(".training-action-choice");
+            const entered = String(row?.querySelector("[data-loi-percent]")?.value || "").trim();
+            if (!entered || !Number.isFinite(Number(entered)) || Number(entered) < 0 || Number(entered) > 100) return toast("Enter a FORT LOI percentage from 0 to 100.");
+            extra.test_percent = Number(entered);
+        }
+    } else if (!window.confirm(`Mark ${button.dataset.loiName}'s ${type} LOI as ${action}? This removes the entry from D1 and syncs the Sheet.`)) return;
+    await saveLoiChange(button, action, extra);
+});
+// Shows the change in D1 at once; the Sheet mirror runs in the background on the server.
+async function saveLoiChange(button, action, extra = {}) {
+    const add = action === "add", type = button.dataset.loiType, key = type.toLowerCase();
+    const payload = { action, type, name: button.dataset.loiName, callsign: button.dataset.loiCallsign, ...extra };
+    if (!add) { payload.row = Number(button.dataset.loiRow); payload.test_percent = button.dataset.loiPercent; }
     button.disabled = true;
-    const key = type.toLowerCase();
     const before = loiLists[key].slice();
     loiSaves++;
-    // Show the D1 change immediately; the Sheet mirror runs in the background.
-    if (result) {
+    if (!add) {
         loiLists[key] = loiLists[key].filter(item => !(Number(item.row) === payload.row && item.name === payload.name));
         renderLoiLists();
     } else {
@@ -1316,6 +1342,12 @@ document.addEventListener("click", async event => {
     try {
         const saved = await api("/api/loi", { method: "POST", body: JSON.stringify(payload) });
         if (saved && saved.sheet_synced === false) toast(`${type} LOI saved on the website, but the Sheet was NOT updated: ${saved.sheet_sync_error || "unknown Apps Script error"}`);
+        else if (saved?.training_added) {
+            const labels = (saved.trainings || []).map(item => loiTrainingLabels[item] || item).join(" and ");
+            toast(`${type} LOI passed. ${labels} added to ${payload.name}.`);
+            apiReadCache.clear();
+            void loadMembers(true, true);
+        }
         else toast(add ? `${type} LOI added.` : `${type} LOI marked ${action}.`);
     } catch (error) {
         loiLists[key] = before;
@@ -1327,7 +1359,7 @@ document.addEventListener("click", async event => {
         loiSignature = "";
         await loadLoiLists(true);
     }
-});
+}
 const trainingActionDialog = $("#trainingActionDialog"), trainingActionChoices = $("#trainingActionChoices"), trainingActionSearch = $("#trainingActionSearch");
 let activeTrainingAction = null;
 function renderTrainingActionChoices() {

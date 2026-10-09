@@ -594,6 +594,25 @@ async function writeOperationalLog(db,old,route,data,result,user) {
     VALUES(?,?,?,?,?,?,?,?,?,?,?)`).bind(kind,now,callsign,String(old.name||""),action,details,String(user.name||""),String(old.rank||""),newRank||String(old.rank||""),kind==="callsign"||kind==="promotion"?callsign:"",kind==="callsign"||kind==="promotion"?newCallsign:"").run();
 }
 
+// FORT LOI passes may certify Basic and/or Advanced Firefighting.
+const FORT_PASS_TRAININGS=["Basic Firefighting","Advanced Firefighting"];
+
+// Sheet mirror for writes whose D1 change is already committed. Runs after the
+// response via waitUntil and retries transient failures; D1 is never rolled back.
+async function mirrorToSheetInBackground(context,label,route,url,assertion,data){
+  let lastError="";
+  for(let attempt=1;attempt<=3;attempt++){
+    try {
+      const { proxyToAppsScript } = await import("../[[path]].js");
+      const response=await proxyToAppsScript(context,route,url,assertion,data);
+      if(response.ok) return;
+      lastError=String(await response.text()).slice(0,500);
+    } catch(error) { lastError=String(error?.message||error).slice(0,500); }
+    if(attempt<3) await new Promise(resolve=>setTimeout(resolve,1000*attempt));
+  }
+  console.error(label+" Sheet mirror failed after retries:",lastError);
+}
+
 export async function handleD1(context) {
   const { request, env } = context, url = new URL(request.url), route = url.pathname, method=request.method;
   const db=env.LVFR_DB;
@@ -1034,6 +1053,14 @@ export async function handleD1(context) {
       const rawPercent=data.test_percent;
       const percent=rawPercent==null||String(rawPercent).trim()===""?null:Number(rawPercent);
       if(action==="add"&&type==="FORT"&&(!Number.isFinite(percent)||percent<0||percent>100)) throw new Error("FORT LOI % on test must be a number from 0 to 100.");
+      // Validate the passed training before the LOI row is removed, so a bad request changes nothing.
+      let passedTrainings=[];
+      if(action==="passed"&&type==="HERT") passedTrainings=["Hert"];
+      else if(action==="passed") {
+        passedTrainings=[...new Set((Array.isArray(data.trainings)?data.trainings:[]).map(item=>String(item)))];
+        if(!passedTrainings.length) throw new Error("Select Basic FORT, Advanced FORT, or both.");
+        if(passedTrainings.some(item=>!FORT_PASS_TRAININGS.includes(item))) throw new Error("Choose Basic or Advanced Firefighting.");
+      }
       let entryId=Number(data.row)||0, previous=null;
       if(action==="add") {
         const saved=await db.prepare("INSERT INTO loi_entries(type,callsign,name,test_percent,source_row,updated_at,updated_by) VALUES(?,?,?,?,NULL,?,?) ON CONFLICT(type,callsign) DO NOTHING RETURNING id")
@@ -1053,29 +1080,38 @@ export async function handleD1(context) {
       const logDate=new Date().toISOString(), details=JSON.stringify({loi_type:type,test_percent:testPercent});
       await db.prepare("INSERT INTO operational_logs(kind,log_date,callsign,member_name,action,details,changed_by) VALUES('loi',?,?,?,?,?,?)")
         .bind(logDate,member.callsign,member.name,eventAction,details,String(user.name||"")).run();
+      // A passed LOI certifies the member in D1 at once. Trainings already held are left unchanged.
+      const trainingAdded=[];
+      for(const training of passedTrainings) {
+        const oldMember=await db.prepare("SELECT * FROM members WHERE upper(callsign)=upper(?)").bind(member.callsign).first();
+        const trainingData={callsign:member.callsign,training,remove:false};
+        const trainingResult=await applyRosterMutationD1(db,"/api/training",trainingData,user);
+        if(trainingResult.changed!==false) {
+          trainingAdded.push(training);
+          if(oldMember) await writeOperationalLog(db,oldMember,"/api/training",trainingData,trainingResult,user);
+        }
+      }
       const {proxyToAppsScript}=await import("../[[path]].js");
-      const mirrorData={type,action,name:member.name,callsign:member.callsign,test_percent:testPercent,source_row:previous?.source_row||null};
+      const mirrorData={type,action,name:member.name,callsign:member.callsign,test_percent:testPercent,source_row:previous?.source_row||null,trainings:passedTrainings,changed_by:String(user.name||"")};
       const sheetAssertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
       const logAssertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
-      let sheetSynced=true, sheetSyncError="";
-      try {
-        const mirror=await proxyToAppsScript(context,"/internal/loi",url,sheetAssertion,mirrorData);
-        if(!mirror.ok) {
-          const failure=await mirror.json().catch(()=>({}));
-          sheetSynced=false; sheetSyncError=String(failure.detail||"Apps Script rejected the LOI update.");
-          console.error("LOI Sheet mirror failed:",sheetSyncError);
-        } else if(action==="add") {
-          const synced=await mirror.json().catch(()=>({}));
-          if(Number(synced.row)>0) await db.prepare("UPDATE loi_entries SET source_row=? WHERE id=?").bind(Number(synced.row),entryId).run();
-        }
-      } catch(error) { sheetSynced=false; sheetSyncError=String(error?.message||error); console.error("LOI Sheet mirror failed:",error); }
-      context.waitUntil((async()=>{
+      // The Sheet mirror runs after the response: D1 is already committed.
+      const loiMirrorTask=(async()=>{
+        try {
+          const mirror=await proxyToAppsScript(context,"/internal/loi",url,sheetAssertion,mirrorData);
+          if(!mirror.ok) console.error("LOI Sheet mirror failed:",String(await mirror.text()).slice(0,500));
+          else if(action==="add") {
+            const synced=await mirror.json().catch(()=>({}));
+            if(Number(synced.row)>0) await db.prepare("UPDATE loi_entries SET source_row=? WHERE id=?").bind(Number(synced.row),entryId).run();
+          }
+        } catch(error) { console.error("LOI Sheet mirror failed:",error); }
         try {
           const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,logAssertion,{kind:"loi",log_date:logDate,callsign:member.callsign,member_name:member.name,action:eventAction,details,changed_by:String(user.name||"")});
           if(!mirror.ok) console.error("LOI log Sheet mirror failed:",await mirror.text());
         } catch(error) { console.error("LOI log Sheet mirror failed:",error); }
-      })());
-      return json({ok:true,changed:true,id:entryId,row:entryId,type,name:member.name,callsign:member.callsign,test_percent:testPercent,action:eventAction,sheet_synced:sheetSynced,sheet_sync_error:sheetSyncError});
+      })();
+      context.waitUntil(loiMirrorTask);
+      return json({ok:true,changed:true,background:true,id:entryId,row:entryId,type,name:member.name,callsign:member.callsign,test_percent:testPercent,action:eventAction,trainings:trainingAdded,training_added:trainingAdded.length>0});
     }
     if(route==="/api/training-hours" && method==="GET") {
       const result=await db.prepare("SELECT h.id,h.source_row,h.callsign,h.name,h.training_date AS date,h.time,m.rank FROM training_hours h LEFT JOIN members m ON upper(m.callsign)=upper(h.callsign) ORDER BY lower(h.name),h.callsign,h.training_date,h.id").all();
@@ -1253,7 +1289,6 @@ export async function handleD1(context) {
       const oldMember=await db.prepare("SELECT * FROM members WHERE upper(callsign)=upper(?)").bind(mutationData.callsign).first();
       const result=await applyRosterMutationD1(db,route,mutationData,user);
       if(result.changed!==false && oldMember) await writeOperationalLog(db,oldMember,route,mutationData,result,user);
-      const isHertTraining=route==="/api/training" && String(mutationData.training||"").trim().toLowerCase()==="hert";
       // Sheets can be out of sync with D1 (for example after a manual edit or
       // a prior background write failure). Always mirror instructor changes,
       // even when D1 already has the requested instructor state. Wait for the
@@ -1261,9 +1296,7 @@ export async function handleD1(context) {
       // claiming the instructor was removed.
       if(instructorWrite) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
-        const { proxyToAppsScript } = await import("../[[path]].js");
-        const sheetResponse=await proxyToAppsScript(context,route,url,assertion,mutationData);
-        if(!sheetResponse.ok) return json({detail:"Instructor state was saved in D1, but Google Sheets could not be updated: "+await sheetResponse.text()},502);
+        context.waitUntil(mirrorToSheetInBackground(context,"Instructor",route,url,assertion,mutationData));
       } else if(route==="/api/terminate") {
         let sheetCleaned=true,sheetCleanupError="";
         try {
@@ -1280,7 +1313,10 @@ export async function handleD1(context) {
         }
         result.sheet_cleaned=sheetCleaned;
         if(sheetCleanupError) result.sheet_cleanup_error=sheetCleanupError;
-      } else if(result.changed!==false || isHertTraining) {
+      } else if(route==="/api/training") {
+        const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
+        context.waitUntil(mirrorToSheetInBackground(context,"Training",route,url,assertion,mutationData));
+      } else if(result.changed!==false) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
         const { proxyToAppsScript } = await import("../[[path]].js");
         try {

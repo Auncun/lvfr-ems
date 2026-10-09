@@ -13,8 +13,9 @@ For ordinary member and account operations, the Cloudflare handler validates per
 Some paths report Sheet mirror status directly:
 
 - Training Hours changes are committed to D1 first, then mirrored to the roster spreadsheet. The response includes `sheet_synced` and `sheet_sync_error`; a mirror failure does not undo the D1 change. Its activity log is also mirrored to Sheets.
-- HERT/FORT LOI changes are committed to D1 first, then mirrored to the appropriate Sheet list. The response reports the same mirror status. The LOI activity-log mirror runs separately in the background.
-- Instructor changes update the D1 member record and await the Apps Script mirror. A Sheet failure can therefore return an error even though D1 has already changed; check D1 before retrying.
+- HERT/FORT LOI changes are committed to D1 and the response returns immediately. The Sheet list mirror and the LOI activity-log mirror run in the background via `waitUntil`. A Sheet failure is logged by the Worker and is not reported in the response. Marking an LOI **passed** also records the matching training in D1 in the same request (HERT LOI -> HERT certification; FORT LOI -> the Basic and/or Advanced Firefighting the coordinator selects, and trainings already held are left unchanged). Apps Script then certifies the member on the roster sheet through the `/internal/loi` mirror.
+- Instructor changes update the D1 member record and return immediately. The Apps Script mirror runs in the background with up to three attempts; a failure is logged, and D1 remains the saved state. Check the Worker logs and D1 before retrying.
+- HERT training changes (`/api/training` with `Hert`) commit to D1 and return immediately. The roster mirror runs in the background with retries, as with instructor changes. FORT training uses the same path.
 - Notification reads and read receipts are stored in D1, with Sheet mirrors in the background. Notification cleanup mirrors the cleanup to Sheets first and then deletes the D1 rows.
 - Log cleanup checks the Sheet cleanup before deleting the selected D1 log rows.
 
@@ -50,3 +51,8 @@ When changing the Apps Script API, deploy a new Apps Script Web App version. Whe
 Apps Script needs `LVFR_D1_SYNC_URL` and `LVFR_D1_WORKER_SECRET` in Script Properties. The Cloudflare environment must have the matching worker secret and the D1 auth bridge configuration used by the Apps Script bridge. Do not use a `/dev` or `script.googleusercontent.com` URL for `GAS_WEB_APP_URL`.
 
 After deployment or trigger setup, check Worker logs for mirror errors and Apps Script **Executions** for failed syncs. Ordinary background mirrors do not automatically retry, so resolve the failure and use the appropriate sync or source-specific repair path.
+
+
+## Training Hours sheet layout
+
+Training Hours data in Sheet1 starts on row 5 (`TRAINING_HOURS_FIRST_ROW` in `Code.gs`). Rows 1-4 are not read or written by the website, the Sheet-to-D1 import, or add operations.

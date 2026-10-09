@@ -28,8 +28,8 @@ function migrateTrainingHoursToD1() {
   });
 
   const unmatched = [];
-  const count = Math.max(0, hours.getLastRow() - 1);
-  const records = count ? hours.getRange(2, 2, count, 5).getDisplayValues().reduce((result, row, index) => {
+  const count = Math.max(0, hours.getLastRow() - TRAINING_HOURS_FIRST_ROW + 1);
+  const records = count ? hours.getRange(TRAINING_HOURS_FIRST_ROW, 2, count, 5).getDisplayValues().reduce((result, row, index) => {
     const name = String(row[0] || '').trim().replace(/\s+/g, ' ');
     const time = String(row[4] || '').trim();
     // The source tab may have a second header row below a title/blank row.
@@ -38,8 +38,8 @@ function migrateTrainingHoursToD1() {
     const callsign = callsignByName.get(name.toLowerCase());
     // One name that is not on the roster must not block every other row from
     // syncing. Send it anyway so D1 keeps its place; the Worker skips it.
-    if (!callsign) unmatched.push('row ' + (index + 2) + ': ' + name);
-    result.push({ callsign: callsign || '', name, date: String(row[2] || '').trim(), time, source_row: index + 2 });
+    if (!callsign) unmatched.push('row ' + (index + TRAINING_HOURS_FIRST_ROW) + ': ' + name);
+    result.push({ callsign: callsign || '', name, date: String(row[2] || '').trim(), time, source_row: index + TRAINING_HOURS_FIRST_ROW });
     return result;
   }, []) : [];
 
