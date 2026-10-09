@@ -497,6 +497,33 @@ function changedPermissionLabels(before, after) {
     if (!names.length) return 'No permission changes';
     return names.slice(0, 6).join(', ') + (names.length > 6 ? '…' : '');
 }
+function canDeletePermissionLog() {
+    return currentUser?.role === 'admin' || currentUser?.permissions?.logs_delete_d1 === true;
+}
+function permissionLogRowsHtml(query) {
+    const q = query.trim().toLocaleLowerCase();
+    const canDelete = canDeletePermissionLog();
+    const rows = permissionHistoryItems.filter(item => !q || [roleTitle(item.role), item.changed_by, item.changed_at, changedPermissionLabels(item.before, item.after)]
+        .join(' ').toLocaleLowerCase().includes(q));
+    if (!rows.length) return `<tr><td colspan="5">${q ? 'No matching changes.' : 'No changes yet.'}</td></tr>`;
+    return rows.map(item => `
+        <tr>
+            <td>${esc(item.changed_at || '')}</td>
+            <td><strong>${esc(roleTitle(item.role))}</strong></td>
+            <td>${esc(item.changed_by || 'Unknown')}</td>
+            <td>${esc(changedPermissionLabels(item.before, item.after))}</td>
+            <td class="log-actions">
+                <button type="button" data-view-history="${item.id}">View</button>
+                <button type="button" class="role-undo" data-restore-history="${item.id}">Restore previous</button>
+                ${canDelete ? `<button type="button" class="danger" data-delete-history="${item.id}">Delete</button>` : ''}
+            </td>
+        </tr>
+        <tr class="log-detail" data-detail-for="${item.id}" hidden><td colspan="5">${permissionChangeDetails(item.before, item.after)}</td></tr>`).join('');
+}
+function renderPermissionLogRows() {
+    const body = document.querySelector('#permissionLogRows');
+    if (body) body.innerHTML = permissionLogRowsHtml(document.querySelector('#permissionLogSearch')?.value || '');
+}
 async function renderPermissionHistory(force = false) {
     const panel = document.querySelector('#rolePermissionsPanel');
     if (!panel) return;
@@ -504,14 +531,35 @@ async function renderPermissionHistory(force = false) {
     if (!box) { box = document.createElement('section'); box.id = 'permissionHistory'; box.className = 'permission-history'; (document.querySelector('#permissionLogPanel') || panel).appendChild(box); }
     if (!force && Date.now() - permissionHistoryLoadedAt < 3000 && box.innerHTML) return;
     permissionHistoryLoadedAt = Date.now();
+    const previousQuery = document.querySelector('#permissionLogSearch')?.value || '';
     try {
         const result = await api('/api/role-permissions/history');
         permissionHistoryItems = result.items || [];
-        box.innerHTML = `<details class="rank-limits"><summary>Change history (${permissionHistoryItems.length})</summary>${permissionHistoryItems.length ? `<ul class="role-preview-list">${permissionHistoryItems.map(item => `<li class="is-allowed"><strong>${esc(roleTitle(item.role))}</strong> · ${esc(item.changed_by || 'Unknown')} · ${esc(item.changed_at || '')}<br><span class="muted">${esc(changedPermissionLabels(item.before, item.after))}</span> <button type="button" class="role-undo" data-restore-history="${item.id}">Restore previous</button></li>`).join('')}</ul>` : '<p class="muted">No changes yet.</p>'}</details>`;
+        box.innerHTML = `
+            <div class="toolbar"><input id="permissionLogSearch" type="text" autocomplete="off" placeholder="Search role, person, date, or change"><button type="button" class="search-clear" id="permissionLogClear">Clear</button></div>
+            <div class="history-log-head"><span class="muted">${permissionHistoryItems.length} entr${permissionHistoryItems.length === 1 ? 'y' : 'ies'}</span>${canDeletePermissionLog() && permissionHistoryItems.length ? '<button type="button" class="danger" data-clear-history>Delete logs from D1</button>' : ''}</div>
+            <div class="table-wrap"><table><thead><tr><th>Date</th><th>Role</th><th>Changed By</th><th>Changes</th><th>Actions</th></tr></thead><tbody id="permissionLogRows"></tbody></table></div>`;
+        const search = box.querySelector('#permissionLogSearch');
+        if (search) search.value = previousQuery;
+        renderPermissionLogRows();
     } catch (error) {
         box.innerHTML = `<p class="muted">${esc(error.message)}</p>`;
     }
 }
+document.addEventListener('input', event => { if (event.target.id === 'permissionLogSearch') renderPermissionLogRows(); });
+document.addEventListener('click', event => {
+    if (event.target.closest('#permissionLogClear')) {
+        const search = document.querySelector('#permissionLogSearch');
+        if (search) search.value = '';
+        renderPermissionLogRows();
+        return;
+    }
+    const view = event.target.closest('[data-view-history]');
+    if (view) {
+        const detail = document.querySelector(`[data-detail-for="${view.dataset.viewHistory}"]`);
+        if (detail) detail.hidden = !detail.hidden;
+    }
+});
 document.addEventListener('click', async event => {
     const button = event.target.closest('[data-restore-history]');
     if (!button) return;

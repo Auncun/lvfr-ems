@@ -1092,3 +1092,8 @@ table th .th-action { display:block; margin-top:6px; padding:5px 9px; font-size:
 .change-badge { padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid }
 .change-badge.is-on { color:#4ade80; border-color:#1f6b3a; background:#0f2e1c }
 .change-badge.is-off { color:#f87171; border-color:#6b2a2a; background:#2a1414 }
+
+/* Permission log: same table style as the other logs */
+.log-actions { display:flex; gap:6px; flex-wrap:wrap }
+.log-actions button { padding:5px 9px; font-size:12px }
+tr.log-detail > td { background:#0d1219; padding:10px 12px }

@@ -969,7 +969,7 @@ export async function handleD1(context) {
     const historyDelete=route.match(/^\/api\/role-permissions\/history(?:\/(\d+))?$/);
     if(historyDelete&&method==="DELETE") {
       const actor=session.account;
-      if(actor.role!=="admin") throw Object.assign(new Error("Only the admin account can delete the permission log."),{status:403});
+      if(actor.role!=="admin"&&actor.permissions?.logs_delete_d1!==true) throw Object.assign(new Error("You need the Delete logs from D1 permission."),{status:403});
       if(historyDelete[1]) await db.prepare("DELETE FROM role_permission_history WHERE id=?").bind(Number(historyDelete[1])).run();
       else await db.prepare("DELETE FROM role_permission_history").run();
       return json({ok:true});
