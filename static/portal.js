@@ -19,7 +19,9 @@ const notificationsButton = document.querySelector('#portalNotificationsButton')
 const notificationPanel = document.querySelector('#portalNotificationPanel');
 const markAllReadButton = document.querySelector('#portalMarkAllRead');
 const clearMyNotificationsButton = document.querySelector('#portalClearMine');
-const notificationStorageKey = `lvfr.portal.notifications.v1:${cachedPortalUser?.account_id || cachedPortalUser?.id || 'user'}`;
+const notificationStorageKey = `lvfr.portal.notifications.v2:${cachedPortalUser?.account_id || cachedPortalUser?.id || 'user'}`;
+
+try { Object.keys(localStorage).filter(key => key.startsWith('lvfr.portal.notifications.v1:')).forEach(key => localStorage.removeItem(key)); } catch {}
 function renderPortalNotifications(items = []) {
   if (!notificationList) return;
   const unread = items.filter(item => !Number(item.is_read)).length;
@@ -82,7 +84,6 @@ notificationsButton?.addEventListener('click', () => {
 markAllReadButton?.addEventListener('click', () => { void markPortalNotificationsRead(); });
 // Clears only this account's view of notifications. Other people keep theirs.
 clearMyNotificationsButton?.addEventListener('click', async () => {
-  if (!window.confirm('Clear your notifications? Other people will still see them.')) return;
   clearMyNotificationsButton.disabled = true;
   try {
     const response = await fetch('/api/notifications/clear-mine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });

@@ -575,6 +575,7 @@ function toast(msg) {
 }
 
 
+try { Object.keys(localStorage).filter(key => key.startsWith('lvfr.portal.notifications.v1:')).forEach(key => localStorage.removeItem(key)); } catch {}
 let notificationItems = [];
 let notificationLoadPromise = null;
 let notificationCacheHydrated = false;
@@ -606,7 +607,7 @@ async function loadNotifications(silent = true) {
     if (!notificationCacheHydrated && currentUserAccountId) {
         notificationCacheHydrated = true;
         try {
-            const cached = JSON.parse(localStorage.getItem(`lvfr.portal.notifications.v1:${currentUserAccountId}`) || "null");
+            const cached = JSON.parse(localStorage.getItem(`lvfr.portal.notifications.v2:${currentUserAccountId}`) || "null");
             if (Array.isArray(cached)) {
                 notificationItems = cached;
                 renderNotifications();
@@ -619,7 +620,7 @@ async function loadNotifications(silent = true) {
             const result = await api("/api/notifications");
             notificationItems = Array.isArray(result.items) ? result.items : [];
             try {
-                if (currentUserAccountId) localStorage.setItem(`lvfr.portal.notifications.v1:${currentUserAccountId}`, JSON.stringify(notificationItems));
+                if (currentUserAccountId) localStorage.setItem(`lvfr.portal.notifications.v2:${currentUserAccountId}`, JSON.stringify(notificationItems));
             } catch {}
             renderNotifications();
         } catch (error) {
@@ -645,7 +646,7 @@ async function markNotificationsRead(ids = []) {
         try {
             if (currentUserAccountId) {
                 localStorage.setItem(
-                    `lvfr.portal.notifications.v1:${currentUserAccountId}`,
+                    `lvfr.portal.notifications.v2:${currentUserAccountId}`,
                     JSON.stringify(notificationItems)
                 );
             }
@@ -712,7 +713,7 @@ $("#clearMyNotifications")?.addEventListener("click", async event => {
         await api("/api/notifications/clear-mine", { method: "POST", body: "{}" });
         notificationItems = [];
         try {
-            if (currentUserAccountId) localStorage.setItem(`lvfr.portal.notifications.v1:${currentUserAccountId}`, "[]");
+            if (currentUserAccountId) localStorage.setItem(`lvfr.portal.notifications.v2:${currentUserAccountId}`, "[]");
         } catch {}
         renderNotifications();
     } catch (error) {
