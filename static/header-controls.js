@@ -84,14 +84,7 @@
   const notificationList = document.querySelector('#watchNotificationList');
   const notificationBadge = document.querySelector('#watchNotificationBadge');
   let notifications = [];
-  const setCanClearNotifications = user => clearNotificationsButton?.toggleAttribute('hidden',
-    !['leader', 'admin', 'commander'].includes(String(user?.role || '').toLowerCase()));
-  setCanClearNotifications(window.lvfrCachedUser?.());
-  if (clearNotificationsButton && clearNotificationsButton.hidden) {
-    fetch('/auth/me').then(response => response.ok ? response.json() : null).then(user => {
-      if (user) { window.lvfrCacheUser?.(user); setCanClearNotifications(user); }
-    }).catch(() => {});
-  }
+  const markAllReadButton = document.querySelector('#watchMarkAllRead');
   function renderNotifications() {
     if (!notificationList) return;
     const unread = notifications.filter(item => !Number(item.is_read)).length;
@@ -145,13 +138,27 @@
     notificationButton.setAttribute('aria-expanded', String(!notificationPanel.hidden));
     if (!notificationPanel.hidden) await loadNotifications();
   });
+  markAllReadButton?.addEventListener('click', async () => {
+    markAllReadButton.disabled = true;
+    try {
+      const response = await fetch('/api/notifications/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [] }) });
+      if (!response.ok) throw new Error('Could not mark notifications as read.');
+      notifications = notifications.map(item => ({ ...item, is_read: 1 }));
+      renderNotifications();
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      markAllReadButton.disabled = false;
+    }
+  });
+  // Clears only this account's view of notifications. Other people keep theirs.
   clearNotificationsButton?.addEventListener('click', async () => {
-    if (!window.confirm('Clear all notifications for everyone?')) return;
+    if (!window.confirm('Clear your notifications? Other people will still see them.')) return;
     clearNotificationsButton.disabled = true;
     try {
-      const response = await fetch('/api/notifications/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const response = await fetch('/api/notifications/clear-mine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.detail || result.error || 'Could not clear notifications.');
+      if (!response.ok) throw new Error(result.detail || result.error || 'Could not clear your notifications.');
       notifications = [];
       renderNotifications();
     } catch (error) {

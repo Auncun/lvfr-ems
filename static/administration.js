@@ -50,9 +50,28 @@ function allAccounts() {
     ...(overview.deactivated || []).map(account => ({ ...account, status: 'deactivated' })),
   ];
 }
+const canClearAllNotifications = () => currentUser?.role === 'admin' || currentUser?.permissions?.notifications_clear_all === true;
+const clearAllNotificationsHandler = async event => {
+  if (!window.confirm('Clear notifications for everyone? They will be deleted from D1 and Google Sheets.')) return;
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const response = await fetch('/api/notifications/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.detail || result.error || 'Could not clear notifications.');
+    window.alert('All notifications were cleared.');
+  } catch (error) {
+    window.alert(error.message);
+  } finally {
+    button.disabled = false;
+  }
+};
+['#clearAllNotifications', '#clearAllNotificationsAccess'].forEach(selector => document.querySelector(selector)?.addEventListener('click', clearAllNotificationsHandler));
 function configureOperationAccess() {
   const allowed = canAccessPermissionPanel(), accountManager = canManageCommandAccounts();
   document.querySelector('#openFullCleaning')?.toggleAttribute('hidden', currentUser?.role !== 'admin');
+  document.querySelector('#clearAllNotifications')?.toggleAttribute('hidden', !canClearAllNotifications());
+  document.querySelector('#clearAllNotificationsAccess')?.toggleAttribute('hidden', !canClearAllNotifications());
   document.querySelector('[data-command-section="accounts"]')?.toggleAttribute('hidden', !accountManager);
   document.querySelector('[data-command-section="history"]')?.toggleAttribute('hidden', !accountManager);
   document.querySelector('[data-command-section="permissions"]')?.toggleAttribute('hidden', !allowed);
@@ -338,7 +357,7 @@ const permissionGroups = [
     { key:'logs_view', label:'Members Log (all)', description:'Allow every log tab.', children:[
       ['promotion_log_view','Promotion log','View promotion and rank-change history.'],['callsign_log_view','Callsign log','View callsign-change history.'],['termination_log_view','Termination log','View termination history.'],['training_log_view','Training log','View FORT and HERT training history.'],['training_hours_log_view','Training Hours log','View Training Hours changes.'],['loi_log_view','LOI log','View LOI history.'],['exam_log_view','Exam log','View exam history.'],['note_log_view','Note log','View member-note history.'],['activity_log_view','Activity log','View activity-status history.'],['instructor_log_view','Instructor log','View instructor-assignment history.']
     ]}, ['statistics_view', 'Statistics', 'View roster statistics.'],
-    ['logs_delete_d1', 'Delete logs from D1', 'Delete the selected log from the website database.'], ['logs_clean_full', 'Full Cleaning', 'Delete selected logs and notifications from D1 and Google Sheets.'],
+    ['logs_delete_d1', 'Delete logs from D1', 'Delete the selected log from the website database.'], ['logs_clean_full', 'Full Cleaning', 'Delete selected logs and notifications from D1 and Google Sheets.'], ['notifications_clear_all', 'Clear notifications (everyone)', 'Delete all notifications for everyone from D1 and Google Sheets. Button appears in Operation Command.'],
     { key:'training_view', label:'Training lists (all)', description:'Allow every HERT and FORT training sublist.', children:[
       ['hert_certified_view','HERT Certified','View HERT certification records.'],['hert_instructor_view','HERT Instructor','View HERT instructor records.'],['hert_loi_view','HERT LOI','View the HERT LOI list.'],['fort_training_view','FORT Training','View Basic and Advanced FORT records.'],['fort_instructor_view','FORT Instructor','View FORT instructor records.'],['fort_loi_view','FORT LOI','View the FORT LOI list.']
     ]}, ['training_hours_view', 'Training Hours: view', 'View Training Hours records.'],

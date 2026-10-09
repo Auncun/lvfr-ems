@@ -17,9 +17,8 @@ const cachedPortalUser = window.lvfrCachedUser?.();
 const notificationList = document.querySelector('#portalNotificationList');
 const notificationsButton = document.querySelector('#portalNotificationsButton');
 const notificationPanel = document.querySelector('#portalNotificationPanel');
-const clearNotificationsButton = document.querySelector('#portalClearNotifications');
-const canClearNotifications = user => ['leader', 'admin', 'commander'].includes(String(user?.role || '').toLowerCase());
-clearNotificationsButton?.toggleAttribute('hidden', !canClearNotifications(cachedPortalUser));
+const markAllReadButton = document.querySelector('#portalMarkAllRead');
+const clearMyNotificationsButton = document.querySelector('#portalClearMine');
 const notificationStorageKey = `lvfr.portal.notifications.v1:${cachedPortalUser?.account_id || cachedPortalUser?.id || 'user'}`;
 function renderPortalNotifications(items = []) {
   if (!notificationList) return;
@@ -80,20 +79,22 @@ notificationsButton?.addEventListener('click', () => {
     void markPortalNotificationsRead();
   }
 });
-clearNotificationsButton?.addEventListener('click', async () => {
-  if (!window.confirm('Clear all notifications for everyone?')) return;
-  clearNotificationsButton.disabled = true;
+markAllReadButton?.addEventListener('click', () => { void markPortalNotificationsRead(); });
+// Clears only this account's view of notifications. Other people keep theirs.
+clearMyNotificationsButton?.addEventListener('click', async () => {
+  if (!window.confirm('Clear your notifications? Other people will still see them.')) return;
+  clearMyNotificationsButton.disabled = true;
   try {
-    const response = await fetch('/api/notifications/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const response = await fetch('/api/notifications/clear-mine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.detail || result.error || 'Could not clear notifications.');
+    if (!response.ok) throw new Error(result.detail || result.error || 'Could not clear your notifications.');
     cachedNotifications = [];
     try { localStorage.setItem(notificationStorageKey, '[]'); } catch {}
     renderPortalNotifications([]);
   } catch (error) {
     window.alert(error.message);
   } finally {
-    clearNotificationsButton.disabled = false;
+    clearMyNotificationsButton.disabled = false;
   }
 });
 document.addEventListener('click', event => {
@@ -147,7 +148,6 @@ fetch('/auth/me')
     if (!user) return;
     window.lvfrCacheUser?.(user);
     showAvailableApps(user);
-    clearNotificationsButton?.toggleAttribute('hidden', !canClearNotifications(user));
     void loadPortalSyncStatus();
   })
   .catch(() => {});
