@@ -937,7 +937,11 @@ document.querySelector('#individualPermissionsCustomize')?.addEventListener('cli
     return;
   }
   individualPermissionMode = 'customize';
-  renderIndividualPermissions();
+  try {
+    renderIndividualPermissions();
+  } catch (error) {
+    status.textContent = `Could not show the permissions: ${error.message}`;
+  }
 });
 document.querySelector('#individualPermissionsClose')?.addEventListener('click', () => { document.querySelector('#individualPermissionsDialog').hidden = true; });
 document.querySelector('#individualPermissionsReset')?.addEventListener('click', async event => {

@@ -599,6 +599,8 @@ function notificationVisible(row,user) {
   // Types tied to a permission are visible to anyone who holds that permission.
   const pref=NOTIFICATION_PREFERENCE_KINDS.find(item=>item.kind===row.kind);
   if(pref&&(String(user.role||"").toLowerCase()==="admin"||user.permissions?.[pref.permission]===true)) return true;
+  // A type tied to a permission is never shown to anyone without that permission, not even through a rank rule.
+  if(pref&&pref.permission) return false;
   if(row.kind==="request") return ["admin","commander"].includes(String(user.role||""));
   if(row.kind==="inactive") return isCommandRank(user);
   if(row.kind!=="eligible") return false;
