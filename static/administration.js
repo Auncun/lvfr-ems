@@ -655,6 +655,22 @@ document.addEventListener('click', event => {
 document.querySelectorAll('[data-command-section="history"]').forEach(button => button.addEventListener('click', () => renderPermissionHistory(true)));
 window.addEventListener('hashchange', () => { if (location.hash === '#auditHeading') renderPermissionHistory(true); });
 
+// Delete one entry, or the whole permission log, from D1.
+document.addEventListener('click', async event => {
+    const single = event.target.closest('[data-delete-history]');
+    const all = event.target.closest('[data-clear-history]');
+    if (!single && !all) return;
+    const message = single ? 'Delete this log entry from D1?' : 'Delete logs from D1? This cannot be undone.';
+    if (!window.confirm(message)) return;
+    try {
+        await api(single ? `/api/role-permissions/history/${single.dataset.deleteHistory}` : '/api/role-permissions/history', { method: 'DELETE' });
+        void renderPermissionHistory(true);
+    } catch (error) {
+        console.error('Delete logs from D1 failed:', error);
+        document.querySelector('#permissionHistory')?.insertAdjacentHTML('afterbegin', `<p class="log-error">Could not delete: ${esc(error.message)}</p>`);
+    }
+});
+
 // Account preview: choose an approved account to see what it can do, including its own overrides.
 function renderAccountPreview() {
     const host = document.querySelector('[data-permission-subpanel="personal"]');

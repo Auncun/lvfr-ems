@@ -1113,3 +1113,5 @@ body:has(section[role="dialog"]:not([hidden])) .bottom-app-nav { display:none !i
   .sidebar-nav { overflow:visible }
   .modal-box { padding-bottom:calc(24px + env(safe-area-inset-bottom)) }
 }
+
+.log-error { color:#f87171; font-size:13px; margin:6px 0 }
