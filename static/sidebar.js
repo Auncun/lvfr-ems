@@ -61,7 +61,7 @@
           { label: 'Deactivated accounts', status: 'deactivated' }
         ] },
         { label: 'Access Permissions', anchor: '#permissionsHeading', availability: '#commandPermissionsSection' },
-        { label: 'Recent account activity', anchor: '#auditHeading', availability: '#commandHistorySection' }
+        { label: 'History', anchor: '#auditHeading', availability: '#commandHistorySection' }
       ]
     }
   ];

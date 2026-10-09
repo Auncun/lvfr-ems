@@ -2629,6 +2629,12 @@ function renderMembersLog() {
                 ];
             }
 
+            else if (currentLogType === "do_not_promote") {
+
+                values = [r.log_date, r.callsign, r.member_name, r.action, r.changed_by];
+
+            }
+
             else if (currentLogType === "instructor") {
                 values = [r.log_date, r.callsign, r.member_name, r.instructor_type, r.action, r.changed_by];
             }
@@ -2668,6 +2674,11 @@ function renderMembersLog() {
     // ========================================================
     // PROMOTION LOG
     // ========================================================
+
+    if (currentLogType === "do_not_promote") {
+        container.innerHTML = `<table><thead><tr><th>Date</th><th>Callsign</th><th>Member Name</th><th>Change</th><th>Changed By</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.log_date || "")}</td><td><strong>${esc(r.callsign || "")}</strong></td><td>${esc(r.member_name || "")}</td><td>${String(r.action || "").toUpperCase() === "ADDED" ? "Added to Do Not Promote" : "Removed from Do Not Promote"}</td><td>${esc(r.changed_by || "")}</td></tr>`).join("")}</tbody></table>`;
+        return;
+    }
 
     if (["promotion", "callsign"].includes(currentLogType)) {
 

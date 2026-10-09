@@ -1053,3 +1053,20 @@ table th .th-action { display:block; margin-top:6px; padding:5px 9px; font-size:
 
 .role-start-from { display:flex; align-items:center; gap:6px; font-size:13px }
 .role-start-from select { width:auto; min-width:220px }
+
+/* Access panel: clearer cards, headers, groups and states */
+.permissions-card { padding:20px }
+.permissions-heading h2 { font-size:20px; margin-bottom:6px }
+.role-permission-card { border:1px solid #303945; border-radius:14px; background:#111720; padding:18px; margin-bottom:16px; box-shadow:0 8px 24px #0004 }
+.role-permission-card > header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding-bottom:12px; margin-bottom:6px; border-bottom:1px solid #27303b }
+.role-permission-card h3 { margin:2px 0 0; font-size:18px }
+.role-kicker { font-size:11px; letter-spacing:.06em; color:#7d8794 }
+.permission-count { padding:4px 10px; border-radius:999px; background:#14202e; border:1px solid #2d4a6e; color:#9fc4ff; font-size:12px; white-space:nowrap }
+.permission-group { border:1px solid #27303b; border-radius:10px; margin:8px 0; background:#0d1219 }
+.permission-group > summary { padding:10px 12px; cursor:pointer; font-weight:600 }
+.role-permission-groups { margin-top:6px }
+.role-permission-card > button.primary[data-save-permissions] { margin-top:14px }
+.role-warnings li { border-radius:10px }
+.role-tab-bar { padding-bottom:10px; border-bottom:1px solid #27303b }
+.role-undo { margin-top:6px; padding:6px 10px; font-size:12px }
+.permission-history { margin:16px 0 }

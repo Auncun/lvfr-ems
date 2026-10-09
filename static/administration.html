@@ -5,7 +5,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Operation Command | LVFR EMS</title>
-  <link rel="stylesheet" href="/static/style.css?v=templates-20261009-9">
+  <link rel="stylesheet" href="/static/style.css?v=access-look-20261009-10">
   <style>
     body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:72px 24px 24px}
     .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -73,7 +73,7 @@
       <div class="admin-actions"><button type="button" id="individualPermissionsCustomize" class="primary">Customize permissions</button><button type="button" id="individualPermissionsReset" hidden>Restore to Role</button><button type="button" id="individualPermissionsSave" hidden>Save customization</button></div>
     </section>
     <section id="commandHistorySection" class="admin-card command-section" aria-labelledby="auditHeading" hidden>
-      <div class="admin-header"><h2 id="auditHeading">Recent account activity</h2><div class="admin-actions"><button type="button" id="openFullCleaning" class="danger" hidden>Full Cleaning</button><button type="button" id="clearAllNotifications" class="danger" hidden>Clear notifications for all</button><button type="button" id="clearAccountAuditBtn" class="danger">Clear D1 audit</button></div></div>
+      <div class="admin-header"><h2 id="auditHeading">History</h2><div class="admin-actions"><button type="button" id="openFullCleaning" class="danger" hidden>Full Cleaning</button><button type="button" id="clearAllNotifications" class="danger" hidden>Clear notifications for all</button><button type="button" id="clearAccountAuditBtn" class="danger">Clear D1 audit</button></div></div>
       <div class="toolbar"><input id="auditSearch" type="text" autocomplete="off" placeholder="Search name, callsign, action, or by"></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Date</th><th>Account</th><th>Action</th><th>By</th></tr></thead><tbody id="auditRows"><tr><td colspan="4">Loading history…</td></tr></tbody></table></div>
     </section>
     <dialog id="fullCleaningDialog" aria-labelledby="fullCleaningTitle">
@@ -104,8 +104,8 @@
   <script src="/static/session-auth.js?v=shared-session-7"></script>
   <script src="/static/header-controls.js?v=header-controls-2"></script>
   <script src="/static/account-settings.js?v=notification-look-20261009-5"></script>
-  <script src="/static/administration.js?v=complete-20261009-17"></script>
-  <script src="/static/sidebar.js?v=view-limits-20261009-4"></script>
+  <script src="/static/administration.js?v=history-look-20261009-18"></script>
+  <script src="/static/sidebar.js?v=history-label-20261009-5"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 <script src="/static/search-clear.js?v=2" defer></script>
 </body>
