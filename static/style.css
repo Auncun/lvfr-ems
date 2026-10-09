@@ -1077,3 +1077,18 @@ table th .th-action { display:block; margin-top:6px; padding:5px 9px; font-size:
 .scope-ranks label:has(input:checked) { border-color:#4a86e8; background:#14202e; color:#ffffff }
 .scope-ranks input { accent-color:#4a86e8; margin:0; width:auto }
 .scope-box { background:#0d1219 }
+
+/* Permission log: readable changes */
+.history-log-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:8px 0 12px }
+.permission-log-list { list-style:none; padding:0; margin:0; display:grid; gap:10px }
+.permission-log-item { border:1px solid #303945; border-radius:12px; padding:12px 14px; background:#0d1219 }
+.log-entry-head { display:flex; flex-wrap:wrap; gap:10px; align-items:baseline }
+.log-entry-summary { margin:6px 0; font-size:13px }
+.log-entry-details { margin:8px 0 }
+.log-entry-details > summary { cursor:pointer; color:#9fc4ff; font-size:13px }
+.log-entry-actions { display:flex; gap:8px; flex-wrap:wrap }
+.permission-change-table { width:100%; border-collapse:collapse; margin-top:8px; font-size:13px }
+.permission-change-table th, .permission-change-table td { text-align:left; padding:6px 8px; border-bottom:1px solid #27303b }
+.change-badge { padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid }
+.change-badge.is-on { color:#4ade80; border-color:#1f6b3a; background:#0f2e1c }
+.change-badge.is-off { color:#f87171; border-color:#6b2a2a; background:#2a1414 }

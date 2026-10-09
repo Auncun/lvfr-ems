@@ -966,6 +966,14 @@ export async function handleD1(context) {
       order.sort((a,b)=>a.sort_order-b.sort_order||a.role.localeCompare(b.role));
       return json({profiles,scopes,ranks:Object.keys(RANK_LEVEL),keys:visibleKeys,actor_permissions:Object.fromEntries(visibleKeys.map(key=>[key,true])),order});
     }
+    const historyDelete=route.match(/^\/api\/role-permissions\/history(?:\/(\d+))?$/);
+    if(historyDelete&&method==="DELETE") {
+      const actor=session.account;
+      if(actor.role!=="admin") throw Object.assign(new Error("Only the admin account can delete the permission log."),{status:403});
+      if(historyDelete[1]) await db.prepare("DELETE FROM role_permission_history WHERE id=?").bind(Number(historyDelete[1])).run();
+      else await db.prepare("DELETE FROM role_permission_history").run();
+      return json({ok:true});
+    }
     if(route==="/api/role-permissions/history"&&method==="GET") {
       const actor=session.account;
       if(actor.role!=="admin"&&actor.role!=="commander"&&actor.permissions?.operation_command_access!==true) throw Object.assign(new Error("You cannot view the permission history."),{status:403});

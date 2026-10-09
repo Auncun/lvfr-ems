@@ -5,7 +5,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Operation Command | LVFR EMS</title>
-  <link rel="stylesheet" href="/static/style.css?v=rank-chips-20261009-11">
+  <link rel="stylesheet" href="/static/style.css?v=permission-log-20261009-12">
   <style>
     body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:72px 24px 24px}
     .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -67,14 +67,14 @@
       </div>
       <div class="permission-subpanel" data-permission-subpanel="rank">
       <div class="role-editor-layout"><nav id="permissionRoleNav" class="permission-role-nav" aria-label="Permission profiles"></nav><div class="role-editor-main"><div id="rolePermissionsPanel" class="role-permissions-panel"><div class="empty">Loading role permissions...</div></div><div class="custom-role-tools"><label>New role <input id="newPermissionRole" maxlength="32" placeholder="e.g. training_lead"><label class="role-start-from">Start from <select id="newPermissionRoleFrom" aria-label="Start from"></select></label></label><button type="button" id="createPermissionRole">Create role</button></div></div></div>
-      </div>
-      <p id="permissionStatus" class="permission-status" role="status" aria-live="polite"></p>
-    </section>
-    <section id="individualPermissionsDialog" class="admin-card individual-permissions-dialog" role="dialog" aria-modal="true" aria-labelledby="individualPermissionsTitle" hidden>
+      <section id="individualPermissionsDialog" class="admin-card individual-permissions-dialog" role="dialog" aria-modal="true" aria-labelledby="individualPermissionsTitle" hidden>
       <div class="admin-header"><div><h2 id="individualPermissionsTitle">Individual permissions</h2><p id="individualPermissionsStatus" class="muted" aria-live="polite"></p></div><button type="button" id="individualPermissionsClose">Close</button></div>
       <label class="permission-search" for="individualPermissionMode"><span>Permission mode</span><select id="individualPermissionMode"><option value="role">Role default</option><option value="customize">Customize</option></select></label>
       <div id="individualPermissionsList" class="role-permission-groups"></div>
       <div class="admin-actions"><button type="button" id="individualPermissionsCustomize" class="primary">Customize permissions</button><button type="button" id="individualPermissionsReset" hidden>Restore to Role</button><button type="button" id="individualPermissionsSave" hidden>Save customization</button></div>
+      </section>
+      </div>
+      <p id="permissionStatus" class="permission-status" role="status" aria-live="polite"></p>
     </section>
     <section id="commandHistorySection" class="admin-card command-section" aria-labelledby="auditHeading" hidden>
       <div class="admin-header"><h2 id="auditHeading">History</h2><div class="admin-actions"><button type="button" id="openFullCleaning" class="danger" hidden>Full Cleaning</button><button type="button" id="clearAllNotifications" class="danger" hidden>Clear notifications for all</button><button type="button" id="clearAccountAuditBtn" class="danger">Clear D1 audit</button></div></div>
@@ -112,7 +112,7 @@
   <script src="/static/session-auth.js?v=shared-session-7"></script>
   <script src="/static/header-controls.js?v=header-controls-2"></script>
   <script src="/static/account-settings.js?v=clean-20261009-21"></script>
-  <script src="/static/administration.js?v=customize-list-20261009-26"></script>
+  <script src="/static/administration.js?v=permission-log-20261009-27"></script>
   <script src="/static/sidebar.js?v=history-label-20261009-5"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 <script src="/static/search-clear.js?v=2" defer></script>
