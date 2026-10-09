@@ -988,3 +988,7 @@ button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: no
 /* Portal notification panel actions */
 .notification-panel-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end }
 .notification-panel-actions button { padding:6px 9px; font-size:12px }
+
+/* Training toolbars: a select beside the search, and the add button */
+.toolbar select { flex:0 0 190px; width:auto }
+.toolbar button { white-space:nowrap }

@@ -704,6 +704,23 @@ onlineCountButton?.addEventListener("click", async () => {
     if (!panel.hidden) await refreshOnlineCount();
 });
 $("#markNotificationsRead")?.addEventListener("click", () => markNotificationsRead());
+// Clears only this account's view of notifications. Other people keep theirs.
+$("#clearMyNotifications")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+        await api("/api/notifications/clear-mine", { method: "POST", body: "{}" });
+        notificationItems = [];
+        try {
+            if (currentUserAccountId) localStorage.setItem(`lvfr.portal.notifications.v1:${currentUserAccountId}`, "[]");
+        } catch {}
+        renderNotifications();
+    } catch (error) {
+        toast(`Could not clear notifications: ${error.message}`);
+    } finally {
+        button.disabled = false;
+    }
+});
 document.addEventListener("click", event => {
     const panel = $("#notificationPanel");
     if (panel && !event.target.closest(".notification-control")) {
@@ -1197,7 +1214,7 @@ function renderTrainingDirectory(members = allMembersCache || []) {
     render("FORT", "instructor", "#fortInstructorSearch", "#fortInstructorTable");
 }
 
-document.querySelectorAll(".training-directory-search input").forEach(input => input.addEventListener("input", () => renderTrainingDirectory()));
+document.querySelectorAll("#trainingDirectory .toolbar input[type='text']").forEach(input => input.addEventListener("input", () => renderTrainingDirectory()));
 $("#fortTrainingFilter")?.addEventListener("change", () => renderTrainingDirectory());
 document.querySelectorAll("[data-training-view]").forEach(button => button.addEventListener("click", () => {
     document.querySelectorAll("[data-training-view]").forEach(item => {

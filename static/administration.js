@@ -140,12 +140,15 @@ function renderAccounts() {
       <td data-label="Created">${esc(account.requested_at || '—')}</td><td data-label="Actions"><div class="admin-actions">${accountActions(account)}</div></td></tr>`).join('');
 }
 function renderAudit() {
-  const rows = overview.audit || [];
+  const query = String(document.querySelector('#auditSearch')?.value || '').trim().toLocaleLowerCase();
+  const rows = (overview.audit || []).filter(entry => !query || [entry.created_at, entry.name, entry.callsign, entry.action, entry.actor_name]
+    .join(' ').toLocaleLowerCase().includes(query));
   auditRows.innerHTML = rows.length ? rows.map(entry => `
     <tr><td data-label="Date">${esc(entry.created_at || '—')}</td><td data-label="Account">${esc(entry.name || 'N/A')}${entry.callsign ? ` (${esc(entry.callsign)})` : ''}</td>
       <td data-label="Action">${esc(String(entry.action || '—').replace(/\bAdmin\b/g, 'Operation'))}</td><td data-label="By">${esc(String(entry.actor_name || '—').replace(/\bWeb Admin\b/g, 'Web Operation'))}</td></tr>`).join('')
-    : '<tr><td colspan="4">No account history yet.</td></tr>';
+    : `<tr><td colspan="4">${query ? 'No matching history.' : 'No account history yet.'}</td></tr>`;
 }
+document.querySelector('#auditSearch')?.addEventListener('input', renderAudit);
 document.querySelector('#clearAccountAuditBtn')?.addEventListener('click', async event => {
   const button = event.currentTarget;
   if (!currentUser?.is_admin) return;
