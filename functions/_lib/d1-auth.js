@@ -4,9 +4,9 @@ const nowSeconds = () => Math.floor(Date.now() / 1000);
 // Notification types a person can choose to receive, each tied to the permission that allows it.
 const NOTIFICATION_PREFERENCE_KINDS=[
   {kind:"termination",label:"Termination",permission:"termination_log_view"},
-  {kind:"inactive",label:"Can be terminated",permission:"inactive_view"},
+  {kind:"inactive",label:"Can be Terminated",permission:"inactive_view"},
   {kind:"promotion",label:"Promotion",permission:"promotion_log_view"},
-  {kind:"eligible",label:"Eligible for promotion",permission:"eligible_view"},
+  {kind:"eligible",label:"Can be promoted",permission:"eligible_view"},
   {kind:"callsign",label:"Callsign",permission:"callsign_log_view"},
   {kind:"training",label:"Training",permission:"training_log_view"},
   {kind:"training_time",label:"Training Hours",permission:"training_hours_log_view"},
@@ -15,8 +15,11 @@ const NOTIFICATION_PREFERENCE_KINDS=[
   {kind:"note",label:"Note",permission:"note_log_view"},
   {kind:"activity",label:"Activity",permission:"activity_log_view"},
   {kind:"instructor",label:"Instructor",permission:"instructor_log_view"},
-  {kind:"do_not_promote",label:"Do Not Promote",permission:"do_not_promote_log_view"}
+  {kind:"do_not_promote",label:"Do Not Promote",permission:"do_not_promote_log_view"},
+  {kind:"request",label:"Account is pending",permission:null,roles:["admin","commander"]}
 ];
+// Types that are on for everyone until they change them. All other types start off.
+const DEFAULT_ON_NOTIFICATION_KINDS=["eligible","inactive","request"];
 const LOG_VIEW_PERMISSIONS = ["promotion_log_view","callsign_log_view","termination_log_view","training_log_view","training_hours_log_view","loi_log_view","exam_log_view","note_log_view","activity_log_view","instructor_log_view"];
 const TRAINING_VIEW_PERMISSIONS = ["hert_certified_view","hert_instructor_view","hert_loi_view","fort_training_view","fort_instructor_view","fort_loi_view"];
 const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
@@ -25,6 +28,40 @@ const DEFAULT_ROLE_PERMISSIONS = {
   leader: { portal_access:true,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,promotion_access:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,loi_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true },
   commander: Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,!['logs_delete_d1','logs_clean_full','notifications_clear_all'].includes(key)]))
 };
+// Rank limits for a role. A limit that is not set means the role is not restricted by it.
+async function roleScopes(db,role){
+  const row=await db.prepare("SELECT scopes_json FROM role_permissions WHERE role=?").bind(String(role||"").toLowerCase()).first();
+  try { return JSON.parse(row?.scopes_json||"{}")||{}; } catch { return {}; }
+}
+async function assertRankScope(db,actor,scope,fromRank,toRank){
+  if(String(actor.role||"").toLowerCase()==="admin") return;
+  const rule=(await roleScopes(db,actor.role))[scope];
+  if(!rule) return;
+  if(Array.isArray(rule.from)&&!rule.from.includes(fromRank)) throw Object.assign(new Error("Your role cannot change members of rank "+fromRank+"."),{status:403});
+  if(toRank&&Array.isArray(rule.to)&&!rule.to.includes(toRank)) throw Object.assign(new Error("Your role cannot move a member to "+toRank+"."),{status:403});
+}
+function sanitizeScopes(input){
+  const out={};
+  for(const scope of ["promote","demote","terminate"]) {
+    const rule=input?.[scope];
+    if(!rule||typeof rule!=="object") continue;
+    const clean={};
+    for(const field of (scope==="terminate"?["from"]:["from","to"])) {
+      if(!Array.isArray(rule[field])) continue;
+      clean[field]=[...new Set(rule[field].map(String).filter(rank=>Object.hasOwn(RANK_LEVEL,rank)))];
+    }
+    if(Object.keys(clean).length) out[scope]=clean;
+  }
+  return out;
+}
+// Instructor requirement: the acting member must hold one of the listed instructor types. Admins are exempt.
+async function assertInstructorType(db,user,types,message){
+  if(String(user.role||"").toLowerCase()==="admin") return;
+  const row=await db.prepare("SELECT instructor_type FROM members WHERE upper(callsign)=upper(?)").bind(String(user.callsign||"")).first();
+  const held=String(row?.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(Boolean);
+  if(!types.some(type=>held.includes(type))) throw Object.assign(new Error(message),{status:403});
+}
+
 async function rolePermissions(db, role) {
   const normalized=String(role||"").toLowerCase();
   const base=DEFAULT_ROLE_PERMISSIONS[normalized]||{};
@@ -326,6 +363,7 @@ async function applyRosterMutationD1(db, route, data, actor) {
   }
   else if(route==="/api/do-not-promote") cols.do_not_promote=data.blocked?1:0;
   else if(route==="/api/terminate") {
+    await assertRankScope(db,actor,"terminate",String(old.rank||"").trim());
     await db.batch([
       db.prepare("DELETE FROM members WHERE callsign=?").bind(old.callsign),
       db.prepare("DELETE FROM training_hours WHERE upper(callsign)=upper(?)").bind(old.callsign),
@@ -336,6 +374,8 @@ async function applyRosterMutationD1(db, route, data, actor) {
   }
   else if(["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign"].includes(route)) {
     const nextRank=route==="/api/promote"?(rankEligibility(memberFromRow(old)).next_rank):String(data.new_rank||old.rank).trim();
+    if(route==="/api/promote"||route==="/api/force-promote") await assertRankScope(db,actor,"promote",String(old.rank||"").trim(),String(nextRank||"").trim());
+    if(route==="/api/demote") await assertRankScope(db,actor,"demote",String(old.rank||"").trim(),String(nextRank||"").trim());
     let nextCs=String(data.d1_target_callsign||data.new_callsign||"").trim().toUpperCase();
     let slot;
     if(route!=="/api/change-callsign") {
@@ -888,10 +928,12 @@ export async function handleD1(context) {
         const profile=await rolePermissions(db,role);
         profiles[role]=Object.fromEntries(visibleKeys.map(key=>[key,Boolean(profile[key])]));
       }
+      const scopes={};
+      for(const role of roles) if(role!=="admin"&&role!==actor.role) scopes[role]=await roleScopes(db,role);
       const order=[{role:"admin",sort_order:1,display_name:"Operation"},...rows.filter(row=>row.role!=="admin").map(row=>({role:String(row.role).toLowerCase(),sort_order:Number(row.sort_order)||100,display_name:String(row.display_name||"")}))];
       for(const [role,sort_order,display_name] of [["commander",2,"Commander"],["leader",3,"Leader"],["member",4,"Member"]]) if(!order.some(row=>row.role===role)) order.push({role,sort_order,display_name});
       order.sort((a,b)=>a.sort_order-b.sort_order||a.role.localeCompare(b.role));
-      return json({profiles,keys:visibleKeys,actor_permissions:Object.fromEntries(visibleKeys.map(key=>[key,true])),order});
+      return json({profiles,scopes,ranks:Object.keys(RANK_LEVEL),keys:visibleKeys,actor_permissions:Object.fromEntries(visibleKeys.map(key=>[key,true])),order});
     }
     if(route==="/api/role-permissions/order"&&method==="POST") {
       const actor=session.account; requireRankPermission(actor,"rank_reorder");
@@ -956,6 +998,7 @@ export async function handleD1(context) {
       await db.prepare(`INSERT INTO role_permissions(role,permissions_json,updated_at,updated_by) VALUES(?,?,?,?)
         ON CONFLICT(role) DO UPDATE SET permissions_json=excluded.permissions_json,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
         .bind(role,JSON.stringify(permissions),now,actor.name).run();
+      if(data.scopes&&typeof data.scopes==="object") await db.prepare("UPDATE role_permissions SET scopes_json=? WHERE role=?").bind(JSON.stringify(sanitizeScopes(data.scopes)),role).run();
       // A role-level revocation must also remove conflicting personal grants;
       // otherwise account overrides would keep the revoked capability active.
       const affected=(await db.prepare("SELECT account_id,permissions_override_json FROM accounts WHERE role=? AND permissions_override_json!='{}'").bind(role).all()).results||[];
@@ -973,7 +1016,7 @@ export async function handleD1(context) {
     requireRolePermission(user,user.permissions,permissionForRequest(route,method,{...data,log_type:data.log_type||url.searchParams.get("log_type")}));
     if(route==="/api/notifications" && method==="GET") {
       await refreshD1Notifications(db,user);
-      const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? LEFT JOIN notification_hidden h ON h.notification_id=n.id AND h.account_id=? LEFT JOIN notification_preferences p ON p.account_id=? AND p.kind=n.kind WHERE h.notification_id IS NULL AND COALESCE(p.enabled,1)=1 ORDER BY n.id DESC LIMIT 250").bind(user.account_id,user.account_id,user.account_id).all()).results||[];
+      const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? LEFT JOIN notification_hidden h ON h.notification_id=n.id AND h.account_id=? LEFT JOIN notification_preferences p ON p.account_id=? AND p.kind=n.kind WHERE h.notification_id IS NULL AND COALESCE(p.enabled, CASE WHEN n.kind IN ('eligible','inactive','request') THEN 1 ELSE 0 END)=1 ORDER BY n.id DESC LIMIT 250").bind(user.account_id,user.account_id,user.account_id).all()).results||[];
       const items=recent.filter(item=>notificationVisible(item,user)).slice(0,100);
       const response=json({items,unread_count:items.filter(item=>!Number(item.is_read)).length});
       // Keep the legacy notification sheet in sync without delaying the D1 response.
@@ -988,7 +1031,8 @@ export async function handleD1(context) {
       const rows=(await db.prepare("SELECT kind,enabled FROM notification_preferences WHERE account_id=?").bind(user.account_id).all()).results||[];
       const saved=new Map(rows.map(row=>[row.kind,Number(row.enabled)===1]));
       const isAdmin=String(user.role||"").toLowerCase()==="admin";
-      const options=NOTIFICATION_PREFERENCE_KINDS.map(item=>({kind:item.kind,label:item.label,allowed:isAdmin||user.permissions?.[item.permission]===true,enabled:saved.has(item.kind)?saved.get(item.kind):true}));
+      const role=String(user.role||"").toLowerCase();
+      const options=NOTIFICATION_PREFERENCE_KINDS.map(item=>({kind:item.kind,label:item.label,allowed:isAdmin||(item.roles||[]).includes(role)||user.permissions?.[item.permission]===true,enabled:saved.has(item.kind)?saved.get(item.kind):DEFAULT_ON_NOTIFICATION_KINDS.includes(item.kind)}));
       return json({options});
     }
     if(route==="/api/account/notification-preferences" && method==="POST") {
@@ -996,7 +1040,7 @@ export async function handleD1(context) {
       const requested=data.preferences&&typeof data.preferences==="object"?data.preferences:{};
       const statements=[];
       for(const item of NOTIFICATION_PREFERENCE_KINDS) {
-        if(!(isAdmin||user.permissions?.[item.permission]===true)) continue;
+        if(!(isAdmin||(item.roles||[]).includes(String(user.role||"").toLowerCase())||user.permissions?.[item.permission]===true)) continue;
         if(!Object.hasOwn(requested,item.kind)) continue;
         statements.push(db.prepare("INSERT INTO notification_preferences(account_id,kind,enabled) VALUES(?,?,?) ON CONFLICT(account_id,kind) DO UPDATE SET enabled=excluded.enabled").bind(user.account_id,item.kind,requested[item.kind]?1:0));
       }
@@ -1097,6 +1141,7 @@ export async function handleD1(context) {
       const percent=rawPercent==null||String(rawPercent).trim()===""?null:Number(rawPercent);
       if(action==="add"&&type==="FORT"&&(!Number.isFinite(percent)||percent<0||percent>100)) throw new Error("FORT LOI % on test must be a number from 0 to 100.");
       if(action==="add"&&type==="HERT"&&Number(member.has_hert)) throw new Error("Already HERT certified");
+      if(action==="add") await assertInstructorType(db,user,[type],"You must be a "+type+" instructor to add "+type+" LOI.");
       if(action==="add"&&type==="FORT"&&Number(member.has_basic_firefighting)&&Number(member.has_advanced_firefighting)) throw new Error("Already FORT certified");
       // Validate the passed training before the LOI row is removed, so a bad request changes nothing.
       let passedTrainings=[];
@@ -1168,6 +1213,7 @@ export async function handleD1(context) {
       if(!callsign) throw new Error("Choose a roster member.");
       const member=await db.prepare("SELECT callsign,name FROM members WHERE upper(callsign)=upper(?)").bind(callsign).first();
       if(!member) throw Object.assign(new Error("Member was not found on the current roster."),{status:404});
+      if(action==="add") await assertInstructorType(db,user,["HERT","FORT"],"You must be a HERT or FORT instructor to add Training Hours.");
       const recordId=Number(data.id)||0;
       const existing=recordId?await db.prepare("SELECT id,source_row,callsign,name,training_date,time FROM training_hours WHERE id=?").bind(recordId).first():null;
       if(action!=="add"&&!existing) throw Object.assign(new Error("Training Hours record was not found."),{status:404});
