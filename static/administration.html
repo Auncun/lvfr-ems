@@ -64,15 +64,15 @@
       <nav class="role-tab-bar permission-subtabs" aria-label="Permission type"><button type="button" class="role-tab active" data-permission-subtab="rank">Rank Permission</button><button type="button" class="role-tab" data-permission-subtab="personal">Personal Permission</button></nav>
       <div class="permission-subpanel" data-permission-subpanel="personal" hidden>
       <div class="permission-member-picker"><label>Find a member <input id="permissionMemberSearch" type="search" placeholder="Search name or callsign"></label><div id="permissionMemberResults" class="permission-member-results" hidden></div></div>
-      </div>
-      <div class="permission-subpanel" data-permission-subpanel="rank">
-      <div class="role-editor-layout"><nav id="permissionRoleNav" class="permission-role-nav" aria-label="Permission profiles"></nav><div class="role-editor-main"><div id="rolePermissionsPanel" class="role-permissions-panel"><div class="empty">Loading role permissions...</div></div><div class="custom-role-tools"><label>New role <input id="newPermissionRole" maxlength="32" placeholder="e.g. training_lead"><label class="role-start-from">Start from <select id="newPermissionRoleFrom" aria-label="Start from"></select></label></label><button type="button" id="createPermissionRole">Create role</button></div></div></div>
       <section id="individualPermissionsDialog" class="admin-card individual-permissions-dialog" role="dialog" aria-modal="true" aria-labelledby="individualPermissionsTitle" hidden>
       <div class="admin-header"><div><h2 id="individualPermissionsTitle">Individual permissions</h2><p id="individualPermissionsStatus" class="muted" aria-live="polite"></p></div><button type="button" id="individualPermissionsClose">Close</button></div>
       <label class="permission-search" for="individualPermissionMode"><span>Permission mode</span><select id="individualPermissionMode"><option value="role">Role default</option><option value="customize">Customize</option></select></label>
       <div id="individualPermissionsList" class="role-permission-groups"></div>
       <div class="admin-actions"><button type="button" id="individualPermissionsCustomize" class="primary">Customize permissions</button><button type="button" id="individualPermissionsReset" hidden>Restore to Role</button><button type="button" id="individualPermissionsSave" hidden>Save customization</button></div>
       </section>
+      </div>
+      <div class="permission-subpanel" data-permission-subpanel="rank">
+      <div class="role-editor-layout"><nav id="permissionRoleNav" class="permission-role-nav" aria-label="Permission profiles"></nav><div class="role-editor-main"><div id="rolePermissionsPanel" class="role-permissions-panel"><div class="empty">Loading role permissions...</div></div><div class="custom-role-tools"><label>New role <input id="newPermissionRole" maxlength="32" placeholder="e.g. training_lead"><label class="role-start-from">Start from <select id="newPermissionRoleFrom" aria-label="Start from"></select></label></label><button type="button" id="createPermissionRole">Create role</button></div></div></div>
       </div>
       <p id="permissionStatus" class="permission-status" role="status" aria-live="polite"></p>
     </section>
