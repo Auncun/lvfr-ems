@@ -3,26 +3,43 @@ const json = (body, status = 200, headers = {}) => Response.json(body, { status,
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 // Notification types a person can choose to receive, each tied to the permission that allows it.
 const NOTIFICATION_PREFERENCE_KINDS=[
-  {kind:"termination",label:"Termination",permission:"termination_log_view"},
-  {kind:"inactive",label:"Can be Terminated",permission:"inactive_view"},
-  {kind:"promotion",label:"Promotion",permission:"promotion_log_view"},
-  {kind:"eligible",label:"Can be promoted",permission:"eligible_view"},
-  {kind:"callsign",label:"Callsign",permission:"callsign_log_view"},
-  {kind:"training",label:"Training",permission:"training_log_view"},
-  {kind:"training_time",label:"Training Hours",permission:"training_hours_log_view"},
-  {kind:"loi",label:"LOI",permission:"loi_log_view"},
-  {kind:"exam",label:"Exam",permission:"exam_log_view"},
-  {kind:"note",label:"Note",permission:"note_log_view"},
-  {kind:"activity",label:"Activity",permission:"activity_log_view"},
-  {kind:"instructor",label:"Instructor",permission:"instructor_log_view"},
-  {kind:"do_not_promote",label:"Do Not Promote",permission:"do_not_promote_log_view"},
-  {kind:"request",label:"Account is pending",permission:null,roles:["admin","commander"]}
+  {kind:"termination",label:"Termination",key:"notif_termination",bases:["termination_manage"]},
+  {kind:"inactive",label:"Can be Terminated",key:"notif_inactive",bases:["inactive_view"]},
+  {kind:"promotion",label:"Promotion",key:"notif_promotion",bases:["promotion_manage","rank_manage"]},
+  {kind:"eligible",label:"Can be promoted",key:"notif_eligible",bases:["eligible_view","promotion_access"]},
+  {kind:"callsign",label:"Callsign",key:"notif_callsign",bases:["callsign_manage"]},
+  {kind:"training",label:"Training",key:"notif_training",bases:["training_hert_manage","training_fort_manage"]},
+  {kind:"training_time",label:"Training Hours",key:"notif_training_time",bases:["training_hours_manage"]},
+  {kind:"loi",label:"LOI",key:"notif_loi",bases:["loi_manage"]},
+  {kind:"exam",label:"Exam",key:"notif_exam",bases:["exam_manage"]},
+  {kind:"note",label:"Note",key:"notif_note",bases:["notes_manage"]},
+  {kind:"activity",label:"Activity",key:"notif_activity",bases:["activity_manage"]},
+  {kind:"instructor",label:"Instructor",key:"notif_instructor",bases:["instructor_manage"]},
+  {kind:"do_not_promote",label:"Do Not Promote",key:"notif_do_not_promote",bases:["do_not_promote_manage"]},
+  {kind:"request",label:"Account is pending",key:null,bases:[],roles:["admin","commander"]}
 ];
-// Types that are on for everyone until they change them. All other types start off.
+// A notification type is allowed only if its own key AND one of its base permissions are on.
+function notifAllowed(user,item){
+  const role=String(user.role||"").toLowerCase();
+  if(role==="admin") return true;
+  if((item.roles||[]).includes(role)) return true;
+  if(!item.key) return false;
+  const perms=user.permissions||{};
+  return perms[item.key]===true&&item.bases.some(key=>perms[key]===true);
+}
+// Keeps notification keys consistent with their base permissions. Unsaved keys default to on when a base is on.
+function enforceNotificationKeys(result,saved={}){
+  for(const item of NOTIFICATION_PREFERENCE_KINDS) {
+    if(!item.key) continue;
+    if(typeof saved[item.key]!=="boolean") result[item.key]=item.bases.some(key=>result[key]===true);
+    result[item.key]=result[item.key]===true&&item.bases.some(key=>result[key]===true);
+  }
+  return result;
+}
 const DEFAULT_ON_NOTIFICATION_KINDS=["eligible","inactive","request"];
 const LOG_VIEW_PERMISSIONS = ["promotion_log_view","callsign_log_view","termination_log_view","training_log_view","training_hours_log_view","loi_log_view","exam_log_view","note_log_view","activity_log_view","instructor_log_view"];
 const TRAINING_VIEW_PERMISSIONS = ["hert_certified_view","hert_instructor_view","hert_loi_view","fort_training_view","fort_instructor_view","fort_loi_view"];
-const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
+const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","notif_termination","notif_inactive","notif_promotion","notif_eligible","notif_callsign","notif_training","notif_training_time","notif_loi","notif_exam","notif_note","notif_activity","notif_instructor","notif_do_not_promote","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
 const DEFAULT_ROLE_PERMISSIONS = {
   member: { portal_access:false,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:false,eligible_view:false,promotion_access:false,profile_view:false,inactive_view:false,logs_view:false,training_view:false,training_fort_manage:false,training_hert_manage:false,training_hours_view:false,training_hours_manage:false,loi_manage:false,statistics_view:false,notes_manage:false,promotion_manage:false,callsign_manage:false,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:false,sync_manage:false },
   leader: { portal_access:true,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,promotion_access:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,loi_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true },
@@ -80,6 +97,7 @@ async function rolePermissions(db, role) {
   const row=await db.prepare("SELECT permissions_json FROM role_permissions WHERE role=?").bind(normalized).first();
   let saved={}; try { saved=JSON.parse(row?.permissions_json||"{}"); } catch {}
   const result=Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,typeof saved[key]==="boolean"?saved[key]:Boolean(base[key])]));
+  enforceNotificationKeys(result,saved);
   // Existing role profiles used the two parent capabilities for every child list.
   for(const key of LOG_VIEW_PERMISSIONS) if(typeof saved[key]!=="boolean") result[key]=typeof saved.logs_view==="boolean"?saved.logs_view:Boolean(base.logs_view);
   for(const key of TRAINING_VIEW_PERMISSIONS) if(typeof saved[key]!=="boolean") result[key]=typeof saved.training_view==="boolean"?saved.training_view:Boolean(base.training_view);
@@ -113,6 +131,7 @@ async function accountPermissions(db, account) {
   for(const key of TRAINING_VIEW_PERMISSIONS) if(!Object.hasOwn(overrides,key)&&Object.hasOwn(overrides,"training_view")) result[key]=overrides.training_view;
   result.logs_view=LOG_VIEW_PERMISSIONS.every(key=>result[key]);
   result.training_view=TRAINING_VIEW_PERMISSIONS.every(key=>result[key]);
+  enforceNotificationKeys(result);
   return result;
 }
 function permissionForRequest(route, method, data={}) {
@@ -598,9 +617,7 @@ function isCommandRank(user) {
 function notificationVisible(row,user) {
   // Types tied to a permission are visible to anyone who holds that permission.
   const pref=NOTIFICATION_PREFERENCE_KINDS.find(item=>item.kind===row.kind);
-  if(pref&&(String(user.role||"").toLowerCase()==="admin"||user.permissions?.[pref.permission]===true)) return true;
-  // A type tied to a permission is never shown to anyone without that permission, not even through a rank rule.
-  if(pref&&pref.permission) return false;
+  if(pref) return notifAllowed(user,pref);
   if(row.kind==="request") return ["admin","commander"].includes(String(user.role||""));
   if(row.kind==="inactive") return isCommandRank(user);
   if(row.kind!=="eligible") return false;
@@ -1053,6 +1070,7 @@ export async function handleD1(context) {
         for(const key of ROLE_PERMISSION_KEYS) if(effective[key]===true&&Object.hasOwn(incoming,key)) permissions[key]=Boolean(incoming[key]);
       }
       permissions.logs_view=LOG_VIEW_PERMISSIONS.every(key=>permissions[key]===true);
+      enforceNotificationKeys(permissions);
       permissions.training_view=TRAINING_VIEW_PERMISSIONS.every(key=>permissions[key]===true);
       const now=new Date().toISOString();
       const beforeSnapshot={permissions:await rolePermissions(db,role),scopes:await roleScopes(db,role)};
@@ -1100,7 +1118,7 @@ export async function handleD1(context) {
       const saved=new Map(rows.map(row=>[row.kind,Number(row.enabled)===1]));
       const isAdmin=String(user.role||"").toLowerCase()==="admin";
       const role=String(user.role||"").toLowerCase();
-      const options=NOTIFICATION_PREFERENCE_KINDS.map(item=>({kind:item.kind,label:item.label,allowed:isAdmin||(item.roles||[]).includes(role)||user.permissions?.[item.permission]===true,enabled:saved.has(item.kind)?saved.get(item.kind):DEFAULT_ON_NOTIFICATION_KINDS.includes(item.kind)}));
+      const options=NOTIFICATION_PREFERENCE_KINDS.map(item=>({kind:item.kind,label:item.label,allowed:notifAllowed(user,item),enabled:saved.has(item.kind)?saved.get(item.kind):DEFAULT_ON_NOTIFICATION_KINDS.includes(item.kind)}));
       return json({options});
     }
     if(route==="/api/account/notification-preferences" && method==="POST") {
@@ -1108,7 +1126,7 @@ export async function handleD1(context) {
       const requested=data.preferences&&typeof data.preferences==="object"?data.preferences:{};
       const statements=[];
       for(const item of NOTIFICATION_PREFERENCE_KINDS) {
-        if(!(isAdmin||(item.roles||[]).includes(String(user.role||"").toLowerCase())||user.permissions?.[item.permission]===true)) continue;
+        if(!notifAllowed(user,item)) continue;
         if(!Object.hasOwn(requested,item.kind)) continue;
         statements.push(db.prepare("INSERT INTO notification_preferences(account_id,kind,enabled) VALUES(?,?,?) ON CONFLICT(account_id,kind) DO UPDATE SET enabled=excluded.enabled").bind(user.account_id,item.kind,requested[item.kind]?1:0));
       }
