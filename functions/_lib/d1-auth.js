@@ -51,7 +51,7 @@ async function accountPermissions(db, account) {
   return result;
 }
 function permissionForRequest(route, method, data={}) {
-  if(route==="/api/members"&&method==="GET") return ["members_view",...TRAINING_VIEW_PERMISSIONS,"training_view","statistics_view","loi_manage","training_fort_manage","training_hert_manage","training_hours_manage","instructor_manage"];
+  if((route==="/api/members"||route==="/api/members/version")&&method==="GET") return ["members_view",...TRAINING_VIEW_PERMISSIONS,"training_view","statistics_view","loi_manage","training_fort_manage","training_hert_manage","training_hours_manage","instructor_manage"];
   if(route==="/api/eligible"&&method==="GET") return ["eligible_view","promotion_access"];
   if(route==="/api/inactive"&&method==="GET") return "inactive_view";
   if(route==="/api/members-log"&&method==="GET") return logViewPermission(data.log_type);
@@ -1160,6 +1160,14 @@ export async function handleD1(context) {
       })();
       context.waitUntil(mirrorTask);
       return json({ok:true,changed:true,id:savedId,message:"Training Hours record updated."});
+    }
+    if(route==="/api/members/version" && method==="GET") {
+      // Small fingerprint of the roster. The browser compares it before
+      // downloading and re-rendering the full member list.
+      const packed=await db.prepare("SELECT group_concat(line,char(10)) AS packed FROM (SELECT callsign||'|'||name||'|'||rank||'|'||date||'|'||rank_assigned_date||'|'||days_in_rank||'|'||notes||'|'||has_basic_firefighting||has_advanced_firefighting||has_supervisor_exam||has_hert||'|'||activity||'|'||instructor_type||'|'||do_not_promote AS line FROM members ORDER BY callsign)").first();
+      const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(String(packed?.packed||"")));
+      const version=[...new Uint8Array(digest)].slice(0,12).map(b=>b.toString(16).padStart(2,"0")).join("");
+      return json({version});
     }
     if(route==="/api/members" && method==="GET") {
       return json(await readMembers(db,url.searchParams.get("search")||"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET)));
