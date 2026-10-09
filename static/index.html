@@ -394,7 +394,7 @@
   </section>
   <section class="training-directory-view" data-training-panel="FORT" hidden>
     <div class="training-directory-tabs"><button type="button" class="log-tab active" id="fortTrainingSectionTab" data-training-section="FORT_TRAINING">FORT Training</button><button type="button" class="log-tab" id="fortInstructorTab" data-training-section="FORT_INSTRUCTOR">Instructor</button><button type="button" class="log-tab" id="fortLoiTab" data-training-section="FORT_LOI">LOI</button></div>
-    <section data-training-subpanel="FORT_TRAINING"><div class="toolbar"><input type="text" autocomplete="off" id="fortTrainingSearch" aria-label="Search FORT members" placeholder="Search callsign or member"><label>Show<select id="fortTrainingFilter" aria-label="Filter FORT training"><option value="all">All</option><option value="basic">Only Basic</option><option value="advanced">Only Advanced</option></select></label></div><div id="fortTrainingTable" class="table-wrap"></div></section>
+    <section data-training-subpanel="FORT_TRAINING"><div class="toolbar"><input type="text" autocomplete="off" id="fortTrainingSearch" aria-label="Search FORT members" placeholder="Search callsign or member"><select id="fortTrainingFilter" aria-label="Filter FORT training"><option value="all">All</option><option value="basic">Only Basic</option><option value="advanced">Only Advanced</option></select></div><div id="fortTrainingTable" class="table-wrap"></div></section>
     <section data-training-subpanel="FORT_INSTRUCTOR" hidden><div class="toolbar"><input type="text" autocomplete="off" id="fortInstructorSearch" aria-label="Search FORT instructors" placeholder="Search callsign or member"></div><div id="fortInstructorTable" class="table-wrap"></div></section>
     <section data-training-subpanel="FORT_LOI" hidden><div class="toolbar"><input id="fortLoiSearch" type="text" autocomplete="off" placeholder="Search member"></div><div id="fortLoiTable" class="table-wrap"></div></section>
   </section>
@@ -850,6 +850,7 @@
 <script src="/static/mobile-popovers.js?v=portal-controls-20261004-1"></script>
 
 
+<script src="/static/search-clear.js?v=2" defer></script>
 </body>
 
 </html>

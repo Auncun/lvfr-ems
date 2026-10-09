@@ -995,3 +995,8 @@ button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: no
 
 /* Add buttons placed inside table headers, under the column title */
 table th .th-action { display:block; margin-top:6px; padding:5px 9px; font-size:12px; white-space:nowrap }
+
+/* Search bar with a Clear button on its right */
+.search-field { display:flex; align-items:center; gap:6px; flex:1; min-width:0; width:100% }
+.search-field > input { flex:1; min-width:0 }
+.search-clear { flex:0 0 auto; padding:7px 11px; font-size:12px; white-space:nowrap }
