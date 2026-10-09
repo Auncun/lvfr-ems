@@ -1,52 +1,88 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="color-scheme" content="dark">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#101720">
-  <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
-  <title>Account access · LVFR EMS</title>
-  <link rel="stylesheet" href="/static/style.css?v=command-permissions-20261004-1">
-  <style>
-    body{min-height:100vh;display:grid;place-items:center;padding:72px 18px 18px;background:#0b1017}
-    .auth-card{width:min(430px,100%);padding:28px;background:#111720;border:1px solid #303945;border-radius:14px;text-align:center}
-    .auth-logo{display:block;width:92px;height:92px;object-fit:contain;margin:0 auto 14px}
-    .auth-card h1{margin:0 0 8px}.auth-card>p{color:#9aa4b2;margin:0 0 20px}
-    .auth-links{display:flex;justify-content:center;gap:16px;margin-top:14px;font-size:13px}.auth-links a{color:#8cc8ff}
-    .auth-tabs{display:flex;gap:8px;margin-bottom:18px}.auth-tabs button{flex:1}
-    .auth-form{display:grid;gap:12px}.auth-form label{display:grid;gap:6px;text-align:left}
-    .auth-form[hidden]{display:none!important}
-    .auth-form input{width:100%;box-sizing:border-box}.auth-form .check{display:flex;align-items:center;gap:8px}
-    .auth-form .check input{width:auto}.auth-message{min-height:20px;color:#ff8178;font-size:13px}
-    .auth-message.success{color:#56d364}.auth-message.notice{padding:10px 12px;border:1px solid #8d6b18;border-radius:8px;background:#2a210c;color:#ffd866}.auth-note{font-size:12px;color:#8b949e;line-height:1.4}
-  </style>
-</head>
-<body>
-  <main class="auth-card">
-    <img class="auth-logo" src="/static/image0.webp" alt="LVFR logo">
-    <h1>LVFR EMS Operations</h1>
-    <p>For authorized LVFR EMS personnel. Use only the password created for this portal; never enter a password from another service.</p>
-    <form id="loginForm" class="auth-form">
-      <label>Name<input name="name" minlength="2" maxlength="48" autocomplete="username" required></label>
-      <label>Password<input name="password" type="password" minlength="4" maxlength="20" pattern="[A-Za-z0-9]{4,20}" autocomplete="current-password" required></label>
-      <label class="check"><input type="checkbox" data-show-password> Show password</label>
-      <label class="check"><input type="checkbox" name="remember_me"> Remember me on this device</label>
-      <button type="submit" class="primary">Sign in</button>
-    </form>
-    <div class="auth-links"><a href="/about.html">About this portal</a><a href="/privacy.html">Privacy policy</a></div>
-    <details class="auth-note" style="margin-top:18px">
-      <summary>Request a new LVFR account</summary>
-      <form id="signupForm" class="auth-form" style="margin-top:12px">
-        <label>Name<input name="name" minlength="2" maxlength="48" autocomplete="name" required></label>
-        <label>Password<input name="password" type="password" minlength="4" maxlength="20" pattern="[A-Za-z0-9]{4,20}" autocomplete="new-password" required></label>
-        <label class="check"><input type="checkbox" data-show-password> Show password</label>
-        <button type="submit">Create account and request access</button>
-      </form>
-    </details>
-    <div id="authMessage" class="auth-message" role="status"></div>
-  </main>
-  <script src="/static/session-auth.js?v=shared-session-7"></script>
-  <script src="/static/login.js?v=command-permissions-20261004-1"></script>
-</body>
-</html>
+const message = document.querySelector('#authMessage');
+const loginForm = document.querySelector('#loginForm');
+const signupForm = document.querySelector('#signupForm');
+try {
+  const diagnostic = JSON.parse(localStorage.getItem('lvfr.auth.last-error') || 'null');
+  if (diagnostic && Date.now() - Number(diagnostic.saved_at || 0) < 10 * 60 * 1000) {
+    message.textContent = 'Your session ended. Please sign in again.';
+    message.className = 'auth-message notice';
+    localStorage.removeItem('lvfr.auth.last-error');
+  }
+} catch {}
+
+async function checkAccount() {
+  const response = await fetch('/auth/me');
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.detail || 'Session expired. Sign in again.');
+  if (payload.status !== 'approved') {
+    message.textContent = 'Your account is waiting for Commander approval.';
+    return;
+  }
+  routeForUser(payload);
+}
+
+function routeForUser(user) {
+  if (user.status !== 'approved') {
+    message.textContent = 'Your account is waiting for Commander approval.';
+    return;
+  }
+  location.replace(user.role === 'member' && !user.permissions?.portal_access ? '/watch-command' : '/portal');
+}
+
+async function submitAuth(form, route) {
+  const button = form.querySelector('button[type="submit"]');
+  const fields = Object.fromEntries(new FormData(form));
+  if (fields.name) fields.name = String(fields.name).trim().replace(/\s+/g, ' ');
+  const remember = fields.remember_me === 'on';
+  fields.remember_me = remember;
+  fields.stay_logged_in = remember;
+  button.disabled = true;
+  message.className = 'auth-message';
+  message.textContent = route === '/auth/login' ? 'Signing in…' : 'Submitting account request…';
+  try {
+    const response = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.detail || 'Could not complete the request.');
+    localStorage.removeItem('lvfr.auth.last-error');
+    if (route === '/auth/signup') {
+      form.reset();
+      if (result.status === 'saving' && result.request_id) {
+        message.textContent = 'Request received. Saving it securely…';
+        message.className = 'auth-message success';
+        location.assign('/verification-pending?request_id=' + encodeURIComponent(result.request_id));
+      } else {
+        message.textContent = `Your account request was received. A Commander must approve it before sign-in.`;
+        message.className = 'auth-message success';
+      }
+      return;
+    }
+    window.lvfrSetSession(result.token, remember);
+    await checkAccount();
+  } catch (error) {
+    message.textContent = error.message;
+  } finally { button.disabled = false; }
+}
+
+loginForm.addEventListener('submit', event => { event.preventDefault(); submitAuth(loginForm, '/auth/login'); });
+signupForm.addEventListener('submit', event => { event.preventDefault(); submitAuth(signupForm, '/auth/signup'); });
+// The sign-up form is a separate panel so a new user can find it immediately.
+const signupPanel = document.querySelector('#signupPanel');
+const authSwitch = document.querySelector('.auth-switch');
+function showAuthPanel(panel) {
+  const signingUp = panel === 'signup';
+  loginForm.hidden = signingUp;
+  authSwitch.hidden = signingUp;
+  signupPanel.hidden = !signingUp;
+  message.textContent = '';
+  message.className = 'auth-message';
+  (signingUp ? signupForm.querySelector('input[name="name"]') : loginForm.querySelector('input[name="name"]'))?.focus();
+}
+document.querySelector('#showSignup').addEventListener('click', () => showAuthPanel('signup'));
+document.querySelector('#showLogin').addEventListener('click', () => showAuthPanel('login'));
+document.querySelectorAll('[data-show-password]').forEach(toggle => {
+  toggle.addEventListener('change', () => {
+    const password = toggle.closest('form').querySelector('input[name="password"]');
+    password.type = toggle.checked ? 'text' : 'password';
+  });
+});
+if (window.lvfrSessionToken()) checkAccount().catch(() => {});
