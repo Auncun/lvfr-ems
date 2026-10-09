@@ -1097,3 +1097,19 @@ table th .th-action { display:block; margin-top:6px; padding:5px 9px; font-size:
 .log-actions { display:flex; gap:6px; flex-wrap:wrap }
 .log-actions button { padding:5px 9px; font-size:12px }
 tr.log-detail > td { background:#0d1219; padding:10px 12px }
+
+/* Mobile: the bottom bar must not cover open views, and the navigation menu must scroll fully */
+.bottom-app-nav { z-index:8 }
+body:has(.modal:not(.hidden)) .bottom-app-nav,
+body:has(dialog[open]) .bottom-app-nav,
+body:has(section[role="dialog"]:not([hidden])) .bottom-app-nav { display:none !important }
+@media (max-width: 820px) {
+  body:has(.bottom-app-nav) { padding-bottom:calc(64px + env(safe-area-inset-bottom)) }
+  .app-sidebar {
+    top:0; bottom:0; height:100vh; height:100dvh; max-height:100dvh;
+    overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
+    padding-bottom:calc(120px + env(safe-area-inset-bottom));
+  }
+  .sidebar-nav { overflow:visible }
+  .modal-box { padding-bottom:calc(24px + env(safe-area-inset-bottom)) }
+}
