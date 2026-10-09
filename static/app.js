@@ -5459,7 +5459,20 @@ async function loadAccount() {
 })();
 
 refreshOnlineCount();
-setInterval(refreshOnlineCount, 30000);
+setInterval(() => { if (!document.hidden) void refreshOnlineCount(); }, 30000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) void refreshOnlineCount(); });
+
+// Compare a small roster fingerprint first. The full member list is downloaded
+// and re-rendered only when the roster has actually changed.
+let membersVersion = "";
+async function refreshMembersIfChanged() {
+    try {
+        const result = await api(`/api/members/version?_fresh=${Date.now()}`);
+        if (!result?.version || result.version === membersVersion) return;
+        await loadMembers(true, true);
+        membersVersion = result.version;
+    } catch {}
+}
 
 // A Sheet edit syncs into D1 without a push channel to already-open browsers.
 // Refresh only the visible roster view so external activity changes appear
@@ -5467,7 +5480,7 @@ setInterval(refreshOnlineCount, 30000);
 function refreshVisibleRosterView() {
     if (document.hidden) return;
     const activeTab = $(".tab.active")?.dataset.tab;
-    if (activeTab === "members" && currentUserHasPermission("members_view")) void loadMembers(true, true);
+    if (activeTab === "members" && currentUserHasPermission("members_view")) void refreshMembersIfChanged();
     else if (activeTab === "eligible" && (currentUserHasPermission("eligible_view") || currentUserHasPermission("promotion_access"))) void loadEligible(true);
     else if (activeTab === "inactive" && currentUserHasPermission("inactive_view")) void loadInactive(true);
     else if (activeTab === "trainingDirectory") {
@@ -5478,7 +5491,7 @@ function refreshVisibleRosterView() {
             apiReadCache.delete("/api/loi");
             void loadLoiLists(true);
         }
-        else if (["hert_certified_view","hert_instructor_view","fort_training_view","fort_instructor_view"].some(key=>currentUserHasPermission(key))) void loadMembers(true, true);
+        else if (["hert_certified_view","hert_instructor_view","fort_training_view","fort_instructor_view"].some(key=>currentUserHasPermission(key))) void refreshMembersIfChanged();
     }
 }
 setInterval(refreshVisibleRosterView, 3000);
