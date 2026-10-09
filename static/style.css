@@ -978,3 +978,6 @@ button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: no
 .fort-pass-option-text small { color:#9aa4b2; font-size:12px }
 .fort-pass-owned { font-style:normal; font-size:12px; padding:3px 9px; border-radius:999px; background:#0f2e1c; color:#4ade80; border:1px solid #1f6b3a; white-space:nowrap }
 .fort-pass-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:22px }
+
+#accountSettingsPassword[hidden] { display:none }
+.account-password-section > .primary { margin-top:16px; width:100% }

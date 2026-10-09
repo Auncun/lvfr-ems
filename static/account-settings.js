@@ -19,19 +19,24 @@
         <dt>Training</dt><dd id="accountSettingsTraining"></dd>
         <dt>Supervisor exam</dt><dd id="accountSettingsExam"></dd>
       </dl>
-      <details class="account-password-section">
-        <summary>Change password</summary>
-        <form id="accountSettingsPassword" class="form-grid">
+      <div class="account-password-section">
+        <button type="button" class="primary" id="accountTogglePassword">Change password</button>
+        <form id="accountSettingsPassword" class="form-grid" hidden>
           <label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label>
           <label>New password<input name="new_password" type="password" minlength="4" maxlength="20" pattern="[A-Za-z0-9]{4,20}" autocomplete="new-password" required></label>
-          <button type="submit" class="primary">Change password</button>
+          <button type="submit" class="primary">Save new password</button>
           <p id="accountSettingsMessage" role="status" aria-live="polite"></p>
         </form>
-      </details>
+      </div>
     </div>`;
   document.body.append(dialog);
 
   const field = id => dialog.querySelector(`#${id}`);
+  field('accountTogglePassword').addEventListener('click', () => {
+    const form = field('accountSettingsPassword');
+    form.hidden = !form.hidden;
+    if (!form.hidden) form.querySelector('input[name="current_password"]').focus();
+  });
   let accountProfile = null;
   const profileCacheKey = accountId => `lvfr.account.profile.v1:${accountId || ''}`;
   const readRosterSnapshot = callsign => {

@@ -1169,6 +1169,7 @@ function renderTrainingDirectory(members = allMembersCache || []) {
         const allowed = field === "instructor" ? currentUserHasPermission("instructor_manage") : canManageTraining(group);
         return allowed ? `<div class="training-header-actions"><button type="button" class="primary" data-training-open data-group="${group}" data-field="${field}" data-skill="${skill}" data-remove="false">Add</button><button type="button" class="danger" data-training-open data-group="${group}" data-field="${field}" data-skill="${skill}" data-remove="true">Remove</button></div>` : "";
     };
+    const fortFilter = $("#fortTrainingFilter")?.value || "all";
     const render = (type, mode, searchId, tableId) => {
         const container = $(tableId);
         if (!container) return;
@@ -1176,7 +1177,7 @@ function renderTrainingDirectory(members = allMembersCache || []) {
         const rows = members.filter(member => {
             const matchesTraining = type === "HERT"
                 ? mode === "certified" ? has(member.has_hert) : instructorHas(member, "HERT")
-                : mode === "training" ? has(member.has_basic_firefighting) || has(member.has_advanced_firefighting) : instructorHas(member, "FORT");
+                : mode === "training" ? fortTrainingMatches(member, fortFilter) : instructorHas(member, "FORT");
             return matchesTraining && (!query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query));
         });
         const isInstructor = mode === "instructor";
@@ -1197,6 +1198,7 @@ function renderTrainingDirectory(members = allMembersCache || []) {
 }
 
 document.querySelectorAll(".training-directory-search input").forEach(input => input.addEventListener("input", () => renderTrainingDirectory()));
+$("#fortTrainingFilter")?.addEventListener("change", () => renderTrainingDirectory());
 document.querySelectorAll("[data-training-view]").forEach(button => button.addEventListener("click", () => {
     document.querySelectorAll("[data-training-view]").forEach(item => {
         const active = item === button;
@@ -1264,11 +1266,26 @@ function renderLoiLists() {
 $("#hertLoiSearch")?.addEventListener("input", renderLoiLists);
 $("#fortLoiSearch")?.addEventListener("input", renderLoiLists);
 let loiAddType = "HERT";
+function isTrainingHeld(value) {
+    return value === true || Number(value) === 1;
+}
+
+function fortTrainingMatches(member, filter) {
+    const basic = isTrainingHeld(member.has_basic_firefighting), advanced = isTrainingHeld(member.has_advanced_firefighting);
+    if (filter === "basic") return basic && !advanced;
+    if (filter === "advanced") return advanced && !basic;
+    return basic || advanced;
+}
+
 function renderLoiAddChoices() {
     const choices = $("#loiAddChoices");
     if (!choices) return;
     const query = String($("#loiAddSearch")?.value || "").trim().toLocaleLowerCase();
-    const members = (allMembersCache || []).filter(member => !query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query));
+    // Members who already hold this LOI's training are not offered: HERT holders for HERT, and members with both Basic and Advanced FORT for FORT.
+    const alreadyHeld = member => loiAddType === "HERT"
+        ? isTrainingHeld(member.has_hert)
+        : isTrainingHeld(member.has_basic_firefighting) && isTrainingHeld(member.has_advanced_firefighting);
+    const members = (allMembersCache || []).filter(member => !alreadyHeld(member) && (!query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query)));
     choices.innerHTML = members.length ? members.map(member => `<div class="training-action-choice"><span>${esc(member.name)} / ${esc(member.callsign)}</span>${loiAddType === "FORT" ? `<label>% on test <input type="number" min="0" max="100" step="any" data-loi-percent placeholder="Enter percent"></label>` : ""}<button type="button" class="primary" data-loi-add data-loi-type="${loiAddType}" data-loi-name="${esc(member.name)}" data-loi-callsign="${esc(member.callsign)}">Add</button></div>`).join("") : '<div class="empty">No members match this search.</div>';
 }
 document.querySelectorAll("[data-open-loi-add]").forEach(button => button.addEventListener("click", async () => {

@@ -925,6 +925,17 @@ function instructorDirectory_(spreadsheet) {
 }
 
 // FORT instructors are marked with a blue status cell in column C.
+// Run once from the Apps Script editor to set font size 14 on existing names in HERT Certified.
+function formatHertNamesFontSize() {
+  const sheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID')).getSheetByName('HERT Certified');
+  if (!sheet) throw new Error('HERT Certified sheet was not found.');
+  const last = Math.max(2, sheet.getMaxRows());
+  sheet.getRange(2, 2, last - 1, 1).setFontSize(14);
+  const config = LOI_SHEET_CONFIG.HERT;
+  sheet.getRange(config.startRow, config.nameColumn, Math.max(1, sheet.getMaxRows() - config.startRow + 1), 1).setFontSize(14);
+  SpreadsheetApp.flush();
+}
+
 function isFortInstructorMarked_(color) {
   return String(color || '').toLowerCase() === '#4a86e8';
 }
@@ -2088,7 +2099,8 @@ function mutateLoiSheet_(data) {
       }
       const row = config.startRow + offset;
       if (type === 'FORT') writePercent(row, percent);
-      config.sheet.getRange(row, config.nameColumn).setValue(name).setHorizontalAlignment('left');
+      const loiNameCell = config.sheet.getRange(row, config.nameColumn).setValue(name).setHorizontalAlignment('left');
+      if (type === 'HERT') loiNameCell.setFontSize(14);
       SpreadsheetApp.flush();
       const written = String(config.sheet.getRange(row, config.nameColumn).getDisplayValue() || '').trim();
       if (sheetNameKey_(written) !== sheetNameKey_(name)) throw new Error(config.sheet.getName() + ' row ' + row + ' did not keep the name. Check protection, data validation or formulas on that cell.');
@@ -2416,7 +2428,9 @@ function changeTraining_(data, user) {
       SpreadsheetApp.flush();
       clearHertNameIfUnqualified_(sheet, member.name);
     } else {
-      if (String(sheet.getRange(row, 2).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, 2).setValue(member.name);
+      const hertNameCell = sheet.getRange(row, 2);
+      if (String(hertNameCell.getDisplayValue() || '').trim() !== member.name) hertNameCell.setValue(member.name);
+      hertNameCell.setFontSize(14);
       const cell = sheet.getRange(row, 4);
       if (hasColor_(cell.getBackground())) return { ok: false, changed: false, status: 'already_certified', message: 'Already certified' };
       cell.setBackground('#00ff00');
@@ -2478,7 +2492,9 @@ function changeInstructor_(callsign, data, user) {
     return { ok: true, changed: true, assigned: false, instructor_type: type, status: 'removed' };
   }
   const row = matchingRows[0] || findOrCreateNamedSheetRow_(sheet, nameColumn, member.name, true, type === 'HERT' ? [3] : []);
-  if (String(sheet.getRange(row, nameColumn).getDisplayValue() || '').trim() !== member.name) sheet.getRange(row, nameColumn).setValue(member.name);
+  const instructorNameCell = sheet.getRange(row, nameColumn);
+  if (String(instructorNameCell.getDisplayValue() || '').trim() !== member.name) instructorNameCell.setValue(member.name);
+  if (type === 'HERT') instructorNameCell.setFontSize(14);
   const cell = sheet.getRange(row, statusColumn);
   // FORT: column B green AND column C blue must both be present.
   const current = type === 'FORT'
