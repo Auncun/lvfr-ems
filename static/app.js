@@ -1277,7 +1277,7 @@ function renderLoiLists() {
         const query = String($(searchSelector)?.value || "").trim().toLocaleLowerCase();
         const rows = loiLists[key].filter(item => `${item.name} ${memberByName.get(String(item.name).toLocaleLowerCase())?.callsign || ""} ${item.test_percent || ""}`.toLocaleLowerCase().includes(query));
         const callsign = name => memberByName.get(String(name).trim().toLocaleLowerCase())?.callsign || "";
-        table.innerHTML = rows.length ? `<table><thead><tr><th>Callsign</th><th>Member</th>${type === "FORT" ? "<th>% on test</th>" : ""}${canManage ? "<th>Result</th>" : ""}</tr></thead><tbody>${rows.map(item => `<tr><td><strong>${esc(callsign(item.name))}</strong></td><td>${esc(item.name)}</td>${type === "FORT" ? `<td>${esc(item.test_percent)}%</td>` : ""}${canManage ? `<td><button type="button" data-loi-result="passed" data-loi-type="${type}" data-loi-row="${Number(item.row)}" data-loi-name="${esc(item.name)}" data-loi-callsign="${esc(callsign(item.name))}" data-loi-percent="${esc(item.test_percent || "")}">Passed</button> <button type="button" class="danger" data-loi-result="failed" data-loi-type="${type}" data-loi-row="${Number(item.row)}" data-loi-name="${esc(item.name)}" data-loi-callsign="${esc(callsign(item.name))}" data-loi-percent="${esc(item.test_percent || "")}">Failed</button></td>` : ""}</tr>`).join("")}</tbody></table>` : `<div class="empty">No ${type} LOI entries match this search.</div>`;
+        table.innerHTML = `<table><thead><tr><th>Callsign</th><th>Member${canManage ? `<button type="button" class="primary th-action" data-open-loi-add="${type}">Add ${type} LOI</button>` : ""}</th>${type === "FORT" ? "<th>% on test</th>" : ""}${canManage ? "<th>Result</th>" : ""}</tr></thead><tbody>${rows.map(item => `<tr><td><strong>${esc(callsign(item.name))}</strong></td><td>${esc(item.name)}</td>${type === "FORT" ? `<td>${esc(item.test_percent)}%</td>` : ""}${canManage ? `<td><button type="button" data-loi-result="passed" data-loi-type="${type}" data-loi-row="${Number(item.row)}" data-loi-name="${esc(item.name)}" data-loi-callsign="${esc(callsign(item.name))}" data-loi-percent="${esc(item.test_percent || "")}">Passed</button> <button type="button" class="danger" data-loi-result="failed" data-loi-type="${type}" data-loi-row="${Number(item.row)}" data-loi-name="${esc(item.name)}" data-loi-callsign="${esc(callsign(item.name))}" data-loi-percent="${esc(item.test_percent || "")}">Failed</button></td>` : ""}</tr>`).join("")}${rows.length ? "" : `<tr><td colspan="${2 + (type === "FORT" ? 1 : 0) + (canManage ? 1 : 0)}">No ${type} LOI entries match this search.</td></tr>`}</tbody></table>`;
     });
 }
 $("#hertLoiSearch")?.addEventListener("input", renderLoiLists);
@@ -1305,7 +1305,9 @@ function renderLoiAddChoices() {
     const members = (allMembersCache || []).filter(member => !alreadyHeld(member) && (!query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query)));
     choices.innerHTML = members.length ? members.map(member => `<div class="training-action-choice"><span>${esc(member.name)} / ${esc(member.callsign)}</span>${loiAddType === "FORT" ? `<label>% on test <input type="number" min="0" max="100" step="any" data-loi-percent placeholder="Enter percent"></label>` : ""}<button type="button" class="primary" data-loi-add data-loi-type="${loiAddType}" data-loi-name="${esc(member.name)}" data-loi-callsign="${esc(member.callsign)}">Add</button></div>`).join("") : '<div class="empty">No members match this search.</div>';
 }
-document.querySelectorAll("[data-open-loi-add]").forEach(button => button.addEventListener("click", async () => {
+document.addEventListener("click", async event => {
+    const button = event.target.closest("[data-open-loi-add]");
+    if (!button) return;
     if (!currentUserHasPermission("loi_manage")) return;
     loiAddType = button.dataset.openLoiAdd;
     if (!allMembersCache?.length) await loadMembers(true, true);
@@ -1313,7 +1315,7 @@ document.querySelectorAll("[data-open-loi-add]").forEach(button => button.addEve
     $("#loiAddSearch").value = "";
     renderLoiAddChoices();
     $("#loiAddDialog")?.classList.remove("hidden");
-}));
+});
 $("#loiAddSearch")?.addEventListener("input", renderLoiAddChoices);
 $("#closeLoiAdd")?.addEventListener("click", () => $("#loiAddDialog")?.classList.add("hidden"));
 $("#loiAddDialog")?.addEventListener("click", event => { if (event.target.id === "loiAddDialog") event.currentTarget.classList.add("hidden"); });
@@ -1505,11 +1507,11 @@ function renderTrainingHours() {
         return byRank || String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" }) || String(b.date || "").localeCompare(String(a.date || ""));
     });
     const canEdit = currentUserHasPermission("training_hours_manage");
-    table.innerHTML = rows.length ? `<table><thead><tr><th>Callsign</th><th><button type="button" id="trainingHoursNameSort" class="table-sort-button" aria-label="Sort Training Hours by name">Name${trainingHoursSortByName ? trainingHoursNameSortDescending ? " ↓" : " ↑" : ""}</button></th><th>Date</th><th>Training Hours</th>${canEdit ? "<th>Actions</th>" : ""}</tr></thead><tbody>${rows.map(row => {
+    table.innerHTML = `<table><thead><tr><th>Callsign</th><th><button type="button" id="trainingHoursNameSort" class="table-sort-button" aria-label="Sort Training Hours by name">Name${trainingHoursSortByName ? trainingHoursNameSortDescending ? " ↓" : " ↑" : ""}</button>${canEdit ? `<button type="button" class="primary th-action" id="openTrainingHoursAdd">Add Training Record</button>` : ""}</th><th>Date</th><th>Training Hours</th>${canEdit ? "<th>Actions</th>" : ""}</tr></thead><tbody>${rows.map(row => {
         const member = memberByName.get(String(row.name || "").trim().toLocaleLowerCase());
         const timeCell = canEdit ? `<div class="training-hours-time-edit"><input type="text" data-training-hours-time value="${esc(row.time)}" aria-label="Training hours for ${esc(row.name)} on ${esc(row.date)}"><button type="button" class="primary" data-training-hours-save data-id="${esc(row.id)}" data-name="${esc(row.name)}" data-callsign="${esc(row.callsign || member?.callsign || "")}">Save</button></div>` : esc(row.time);
         return `<tr><td><strong>${esc(row.callsign || member?.callsign || "")}</strong></td><td>${esc(row.name)}</td><td>${esc(row.date)}</td><td>${timeCell}</td>${canEdit ? `<td><button type="button" class="danger" data-training-hours-remove data-id="${esc(row.id)}" data-name="${esc(row.name)}" data-callsign="${esc(row.callsign || member?.callsign || "")}">Remove</button></td>` : ""}</tr>`;
-    }).join("")}</tbody></table>` : '<div class="empty">No Training Hours records match this search.</div>';
+    }).join("")}${rows.length ? "" : `<tr><td colspan="${canEdit ? 5 : 4}">No Training Hours records match this search.</td></tr>`}</tbody></table>`;
     table.querySelector("#trainingHoursNameSort")?.addEventListener("click", () => {
         if (trainingHoursSortByName) trainingHoursNameSortDescending = !trainingHoursNameSortDescending;
         else { trainingHoursSortByName = true; trainingHoursNameSortDescending = false; }
@@ -1525,7 +1527,8 @@ function renderTrainingHoursAddChoices() {
 }
 $("#trainingHoursSearch")?.addEventListener("input", renderTrainingHours);
 $("#trainingHoursAddSearch")?.addEventListener("input", renderTrainingHoursAddChoices);
-$("#openTrainingHoursAdd")?.addEventListener("click", () => {
+document.addEventListener("click", event => {
+    if (!event.target.closest("#openTrainingHoursAdd")) return;
     if (!currentUserHasPermission("training_hours_manage")) return;
     if (!allMembersCache?.length) void loadMembers(true);
     renderTrainingHoursAddChoices();
