@@ -984,8 +984,8 @@ function renderIndividualPermissions() {
 async function openIndividualPermissions(account) {
   const dialog = document.querySelector('#individualPermissionsDialog');
   const status = document.querySelector('#individualPermissionsStatus');
-  if (currentUser?.role !== 'admin') {
-    setMessage('Only the admin account can customize individual permissions.', 'error');
+  if (!canManageRoleProfiles()) {
+    setMessage('Operation Command access is required to customize personal permissions.', 'error');
     return;
   }
   individualPermissionTarget = account;

@@ -949,12 +949,22 @@ export async function handleD1(context) {
     user.permissions=await accountPermissions(db,user);
     const individualPermissionRoute=route.match(/^\/api\/leaders\/([^/]+)\/permissions$/);
     if(individualPermissionRoute&&(method==="GET"||method==="POST")) {
-      const actor=await requireOperation(db,token), id=decodeURIComponent(individualPermissionRoute[1]);
+      const actor=await accountForToken(db,token);
+      if(!actor||actor.status!=="approved") throw Object.assign(new Error("Sign in again."),{status:401});
+      const actorRights=actor.role==="admin"?null:await accountPermissions(db,actor);
+      if(actorRights&&actor.role!=="commander"&&actorRights.operation_command_access!==true) throw Object.assign(new Error("Operation Command access is required."),{status:403});
+      const id=decodeURIComponent(individualPermissionRoute[1]);
       const target=await db.prepare("SELECT account_id,name,role,permissions_override_json FROM accounts WHERE account_id=?").bind(id).first();
       if(!target||target.role==="admin") throw Object.assign(new Error("That account's permissions cannot be changed."),{status:404});
       const defaults=await rolePermissions(db,target.role);
       if(method==="GET") return json({account_id:id,role:target.role,defaults,overrides:expandLegacyPermissionOverrides(parsePermissionOverrides(target.permissions_override_json))});
+      const currentOverrides=expandLegacyPermissionOverrides(parsePermissionOverrides(target.permissions_override_json));
       const overrides=data.reset===true?{}:expandLegacyPermissionOverrides(parsePermissionOverrides(JSON.stringify(data.overrides||{})));
+      // A non-admin changes only the permissions they hold; the rest keep their current state.
+      if(actorRights) for(const key of ROLE_PERMISSION_KEYS) {
+        if(actorRights[key]===true) continue;
+        if(Object.hasOwn(currentOverrides,key)) overrides[key]=currentOverrides[key]; else delete overrides[key];
+      }
       const now=new Date().toISOString();
       await db.prepare("UPDATE accounts SET permissions_override_json=?,updated_at=? WHERE account_id=?").bind(JSON.stringify(overrides),now,id).run();
       await appendAudit(db,{account_id:id,name:target.name,callsign:target.callsign||""},data.reset===true?"Reset individual permissions":"Updated individual permissions",actor.name);
