@@ -13,4 +13,4 @@ CREATE TABLE IF NOT EXISTS promotion_confirmations (
   discord_done INTEGER NOT NULL DEFAULT 0,
   confirmed_at TEXT,
   confirmed_by TEXT NOT NULL DEFAULT ''
-);
+); 

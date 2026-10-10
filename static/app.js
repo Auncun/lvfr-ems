@@ -392,6 +392,102 @@ function rosterMatchesMutation(rows, detail) {
     return true;
 }
 
+// Promotions waiting for confirmation in the NARCOS Portal and Discord. Shown to everyone until Save.
+let pendingPromotions = [];
+function renderPromotionBanner() {
+    let banner = document.querySelector('#promotionConfirmBanner');
+    if (!pendingPromotions.length) { banner?.remove(); return; }
+    if (!banner) {
+        banner = document.createElement('button');
+        banner.type = 'button';
+        banner.id = 'promotionConfirmBanner';
+        banner.className = 'promotion-banner';
+        document.body.prepend(banner);
+    }
+    banner.textContent = `Portal and Discord Confirmation Needed (${pendingPromotions.length})`;
+}
+async function loadPromotionConfirmations() {
+    try {
+        const result = await api('/api/promotion-confirmations');
+        pendingPromotions = result.items || [];
+    } catch {
+        pendingPromotions = [];
+    }
+    renderPromotionBanner();
+}
+async function recordPromotionConfirmation(detail, result, newCallsign) {
+    const payload = detail?.payload || {};
+    try {
+        await api('/api/promotion-confirmations', {
+            method: 'POST',
+            body: JSON.stringify({
+                callsign: newCallsign,
+                name: result.name || payload.name || '',
+                old_rank: result.old_rank || '',
+                new_rank: result.new_rank || '',
+                old_callsign: result.old_callsign || payload.callsign || '',
+                new_callsign: newCallsign,
+            }),
+        });
+        await loadPromotionConfirmations();
+    } catch (error) {
+        toast(`Could not record the confirmation: ${error.message}`);
+    }
+}
+function openPromotionDialog() {
+    let dialog = document.querySelector('#promotionConfirmDialog');
+    if (!dialog) {
+        dialog = document.createElement('div');
+        dialog.id = 'promotionConfirmDialog';
+        dialog.className = 'promotion-overlay';
+        document.body.append(dialog);
+    }
+    dialog.innerHTML = `<div class="promotion-box">
+        <button type="button" class="promotion-close" data-promotion-close aria-label="Close">×</button>
+        <h2>Portal and Discord Confirmation</h2>
+        ${pendingPromotions.map(item => `
+            <section class="promotion-item" data-promotion-id="${item.id}">
+                <h3>${esc(item.name || item.new_callsign)}</h3>
+                <table class="promotion-table">
+                    <tr><th>Previous rank</th><td>${esc(item.old_rank)}</td><th>New rank</th><td>${esc(item.new_rank)}</td></tr>
+                    <tr><th>Previous callsign</th><td>${esc(item.old_callsign)}</td><th>New callsign</th><td>${esc(item.new_callsign)}</td></tr>
+                </table>
+                <p class="muted">Please make these changes in the NARCOS Portal and in Discord. Then tick both boxes and press Save.</p>
+                <label class="promotion-check"><input type="checkbox" data-promotion-check="portal"> Done in PORTAL</label>
+                <label class="promotion-check"><input type="checkbox" data-promotion-check="discord"> Done in Discord</label>
+                <button type="button" class="primary" data-promotion-save="${item.id}">Save</button>
+            </section>`).join('')}
+    </div>`;
+    dialog.hidden = false;
+}
+document.addEventListener('click', async event => {
+    if (event.target.closest('#promotionConfirmBanner')) { openPromotionDialog(); return; }
+    if (event.target.closest('[data-promotion-close]') || event.target.id === 'promotionConfirmDialog') {
+        document.querySelector('#promotionConfirmDialog')?.setAttribute('hidden', '');
+        return;
+    }
+    const save = event.target.closest('[data-promotion-save]');
+    if (!save) return;
+    const section = save.closest('[data-promotion-id]');
+    const portal = section.querySelector('[data-promotion-check="portal"]').checked;
+    const discord = section.querySelector('[data-promotion-check="discord"]').checked;
+    if (!portal || !discord) { toast('Tick both boxes before saving.'); return; }
+    save.disabled = true;
+    try {
+        await api('/api/promotion-confirmations/confirm', { method: 'POST', body: JSON.stringify({ id: Number(save.dataset.promotionSave), portal, discord }) });
+        pendingPromotions = pendingPromotions.filter(item => String(item.id) !== save.dataset.promotionSave);
+        renderPromotionBanner();
+        if (pendingPromotions.length) openPromotionDialog();
+        else document.querySelector('#promotionConfirmDialog')?.setAttribute('hidden', '');
+    } catch (error) {
+        toast(`Could not save: ${error.message}`);
+        save.disabled = false;
+    }
+});
+setInterval(loadPromotionConfirmations, 60000);
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadPromotionConfirmations);
+else loadPromotionConfirmations();
+
 function paintCachedMemberRow(member, oldCallsign) {
     const button = [...document.querySelectorAll('#membersTable [data-action="profile"]')]
         .find(item => item.dataset.callsign?.toUpperCase() === String(oldCallsign || "").toUpperCase()
@@ -415,6 +511,7 @@ window.addEventListener("lvfr:background-updated", event => {
     const predictedCallsign = String(event.detail?.optimisticCallsign || "").trim().toUpperCase();
     if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(route)) {
         if (!predictedCallsign) toast(`${route === "/api/promote" ? "Promoted" : route === "/api/demote" ? "Demoted" : "Changed"} to ${result.new_rank} - ${actualCallsign}`);
+        if (route === "/api/promote") recordPromotionConfirmation(event.detail, result, actualCallsign);
         else if (actualCallsign && predictedCallsign !== actualCallsign) toast(`Callsign confirmed as ${actualCallsign}`);
     }
     const callsign = String(event.detail?.callsign || "").trim().toUpperCase();

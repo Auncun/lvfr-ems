@@ -1118,3 +1118,15 @@ body:has(section[role="dialog"]:not([hidden])) .bottom-app-nav { display:none !i
 
 .show-password { display:flex; align-items:center; gap:8px; font-size:13px; margin:4px 0 8px }
 .show-password input { width:auto; margin:0 }
+
+/* Promotion confirmation: banner and window */
+.promotion-banner { position:sticky; top:0; z-index:60; display:block; width:100%; background:#2a2410; border:0; border-bottom:1px solid #6b5a2a; color:#f3e7b3; padding:10px 14px; font-size:14px; font-weight:600; cursor:pointer; text-align:center }
+.promotion-overlay { position:fixed; inset:0; z-index:90; background:#000b; display:flex; align-items:center; justify-content:center; padding:16px }
+.promotion-overlay[hidden] { display:none }
+.promotion-box { position:relative; width:min(560px,100%); max-height:90vh; overflow:auto; background:#111720; border:1px solid #303945; border-radius:14px; padding:22px }
+.promotion-close { position:absolute; top:10px; right:12px; background:none; border:0; color:#c9d1d9; font-size:22px; cursor:pointer }
+.promotion-item { border-top:1px solid #27303b; padding-top:14px; margin-top:14px }
+.promotion-table { width:100%; border-collapse:collapse; font-size:13px; margin:8px 0 }
+.promotion-table th, .promotion-table td { text-align:left; padding:5px 6px; border-bottom:1px solid #27303b }
+.promotion-check { display:flex; align-items:center; gap:8px; margin:6px 0; font-size:14px }
+.promotion-check input { width:auto; margin:0 }
