@@ -34,6 +34,7 @@
         <form id="accountSettingsPassword" class="form-grid" hidden>
           <label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label>
           <label>New password<input name="new_password" type="password" minlength="4" maxlength="20" pattern="[A-Za-z0-9]{4,20}" autocomplete="new-password" required></label>
+          <label class="show-password"><input type="checkbox" id="accountShowPassword"> Show password</label>
           <button type="submit" class="primary">Save new password</button>
           <p id="accountSettingsMessage" role="status" aria-live="polite"></p>
         </form>
@@ -146,6 +147,12 @@
   });
   field('closeAccountSettings').addEventListener('click', close);
   dialog.addEventListener('click', event => { if (event.target === dialog) close(); });
+  field('accountShowPassword').addEventListener('change', event => {
+    const visible = event.target.checked;
+    field('accountSettingsPassword').querySelectorAll('input[name="current_password"], input[name="new_password"]').forEach(input => {
+      input.type = visible ? 'text' : 'password';
+    });
+  });
   field('accountSettingsPassword').addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.currentTarget;

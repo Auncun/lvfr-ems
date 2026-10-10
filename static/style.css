@@ -1115,3 +1115,6 @@ body:has(section[role="dialog"]:not([hidden])) .bottom-app-nav { display:none !i
 }
 
 .log-error { color:#f87171; font-size:13px; margin:6px 0 }
+
+.show-password { display:flex; align-items:center; gap:8px; font-size:13px; margin:4px 0 8px }
+.show-password input { width:auto; margin:0 }
