@@ -442,21 +442,28 @@ function openPromotionDialog() {
         dialog.className = 'promotion-overlay';
         document.body.append(dialog);
     }
-    dialog.innerHTML = `<div class="promotion-box">
-        <button type="button" class="promotion-close" data-promotion-close aria-label="Close">×</button>
-        <h2>Portal and Discord Confirmation</h2>
-        ${pendingPromotions.map(item => `
-            <section class="promotion-item" data-promotion-id="${item.id}">
-                <h3>${esc(item.name || item.new_callsign)}</h3>
-                <table class="promotion-table">
-                    <tr><th>Previous rank</th><td>${esc(item.old_rank)}</td><th>New rank</th><td>${esc(item.new_rank)}</td></tr>
-                    <tr><th>Previous callsign</th><td>${esc(item.old_callsign)}</td><th>New callsign</th><td>${esc(item.new_callsign)}</td></tr>
-                </table>
-                <p class="muted">Please make these changes in the NARCOS Portal and in Discord. Then tick both boxes and press Save.</p>
-                <label class="promotion-check"><input type="checkbox" data-promotion-check="portal"> Done in PORTAL</label>
-                <label class="promotion-check"><input type="checkbox" data-promotion-check="discord"> Done in Discord</label>
-                <button type="button" class="primary" data-promotion-save="${item.id}">Save</button>
-            </section>`).join('')}
+    dialog.innerHTML = `<div class="promotion-box" role="dialog" aria-modal="true" aria-labelledby="promotionTitle">
+        <div class="promotion-head">
+            <h2 id="promotionTitle">Portal and Discord Confirmation</h2>
+            <button type="button" class="promotion-close" data-promotion-close aria-label="Close">×</button>
+        </div>
+        <div class="promotion-body">
+            ${pendingPromotions.length ? "" : '<p class="promotion-empty">Nothing is waiting for confirmation.</p>'}
+            ${pendingPromotions.map(item => `
+                <section class="promotion-item" data-promotion-id="${item.id}">
+                    <h3>${esc(item.name || item.new_callsign)}</h3>
+                    <table class="promotion-table">
+                        <tr><th>Rank</th><td>${esc(item.old_rank)} → ${esc(item.new_rank)}</td></tr>
+                        <tr><th>Callsign</th><td>${esc(item.old_callsign)} → ${esc(item.new_callsign)}</td></tr>
+                    </table>
+                    <p class="promotion-note">Make these changes in the NARCOS Portal and in Discord. Then tick both boxes and press Save.</p>
+                    <div class="promotion-checks">
+                        <label class="promotion-check"><input type="checkbox" data-promotion-check="portal"> Done in PORTAL</label>
+                        <label class="promotion-check"><input type="checkbox" data-promotion-check="discord"> Done in Discord</label>
+                    </div>
+                    <button type="button" class="promotion-save" data-promotion-save="${item.id}">Save</button>
+                </section>`).join("")}
+        </div>
     </div>`;
     dialog.hidden = false;
 }
