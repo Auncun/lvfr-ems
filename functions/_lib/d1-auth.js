@@ -428,8 +428,14 @@ async function applyRosterMutationD1(db, route, data, actor) {
       slot=await db.prepare("SELECT rank,callsign,sheet_row FROM callsign_slots WHERE lower(trim(rank))=lower(trim(?)) ORDER BY CASE WHEN sheet_row IS NULL THEN 1 ELSE 0 END,sheet_row,callsign LIMIT 1").bind(nextRank).first();
       const firstCallsign=String(slot?.callsign||"").trim().toUpperCase();
       if(!firstCallsign) throw new Error("No empty Callsign slot is recorded for " + nextRank + ". Please run Sync now.");
-      if(nextCs && nextCs!==firstCallsign) throw new Error("The first empty Callsign in the roster has changed. Please run Sync now and retry.");
-      nextCs=firstCallsign;
+      if(nextCs){
+        // Accept the Callsign that was chosen, as long as D1 has it as an empty slot for this rank.
+        const chosen=await db.prepare("SELECT rank,callsign,sheet_row FROM callsign_slots WHERE upper(callsign)=? AND lower(trim(rank))=lower(trim(?))").bind(nextCs,nextRank).first();
+        if(!chosen) throw new Error("Callsign " + nextCs + " is not an empty " + nextRank + " slot now. Please run Sync now and retry.");
+        slot=chosen;
+      } else {
+        nextCs=firstCallsign;
+      }
     }
     if(!nextCs||nextCs===old.callsign) throw new Error("No empty Callsign slot is available for " + nextRank + ". Run Sync now to refresh the available slots.");
     if(!slot) slot=await db.prepare("SELECT rank,callsign,sheet_row FROM callsign_slots WHERE upper(callsign)=?").bind(nextCs).first();
@@ -837,6 +843,8 @@ export async function handleD1(context) {
         else statements.push(db.prepare("INSERT INTO training_hours(source_row,callsign,name,training_date,time,updated_at,updated_by) VALUES(?,?,?,?,?,?,?) ON CONFLICT(source_row) DO UPDATE SET callsign=excluded.callsign,name=excluded.name,training_date=excluded.training_date,time=excluded.time,updated_at=excluded.updated_at,updated_by=excluded.updated_by")
           .bind(sourceRow,member.callsign,member.name,trainingDate,time,timestamp,"Sheet sync"));
       }
+      // An empty sheet read must never delete every Training Hours record. This usually means the wrong spreadsheet or tab was read.
+      if(data.reconcile===true&&data.records.length===0&&existingRows.length>0) return json({detail:"The Training Hours sheet returned no rows, so D1 was not changed. Check LVFR_ROSTER_SPREADSHEET_ID and the Sheet1 tab."},400);
       if(data.reconcile===true) {
         for(const row of existingRows) {
           if(row.source_row===null||row.source_row===undefined||!liveSourceRows.has(Number(row.source_row))) statements.push(db.prepare("DELETE FROM training_hours WHERE id=?").bind(row.id));
@@ -1045,6 +1053,27 @@ export async function handleD1(context) {
         return {key:item.key,label:item.label,allowed:true,reason:ranks?"Ranks: "+ranks.join(", "):"All ranks"};
       });
       return json({name:account.name,callsign:account.callsign,role:account.role,actions});
+    }
+    if(route==="/api/promotion-confirmations"&&method==="GET") {
+      if(!session.account) throw Object.assign(new Error("Sign in again."),{status:401});
+      // Only people who can promote see the banner and the confirmation window.
+      const canPromote=session.account.role==="admin"||session.account.permissions?.promotion_manage===true||session.account.permissions?.rank_manage===true;
+      if(!canPromote) return json({items:[]});
+      const rows=(await db.prepare("SELECT id,callsign,name,old_rank,new_rank,old_callsign,new_callsign,created_at,created_by,portal_done,discord_done FROM promotion_confirmations WHERE confirmed_at IS NULL ORDER BY id DESC LIMIT 50").all()).results||[];
+      return json({items:rows});
+    }
+    if(route==="/api/promotion-confirmations"&&method==="POST") {
+      if(!session.account) throw Object.assign(new Error("Sign in again."),{status:401});
+      await db.prepare("INSERT INTO promotion_confirmations(callsign,name,old_rank,new_rank,old_callsign,new_callsign,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)")
+        .bind(String(data.callsign||""),String(data.name||""),String(data.old_rank||""),String(data.new_rank||""),String(data.old_callsign||""),String(data.new_callsign||""),new Date().toISOString(),String(session.account.name||"")).run();
+      return json({ok:true});
+    }
+    if(route==="/api/promotion-confirmations/confirm"&&method==="POST") {
+      if(!session.account) throw Object.assign(new Error("Sign in again."),{status:401});
+      if(data.portal!==true||data.discord!==true) throw Object.assign(new Error("Both PORTAL and Discord must be ticked."),{status:400});
+      await db.prepare("UPDATE promotion_confirmations SET portal_done=1,discord_done=1,confirmed_at=?,confirmed_by=? WHERE id=? AND confirmed_at IS NULL")
+        .bind(new Date().toISOString(),String(session.account.name||""),Number(data.id)||0).run();
+      return json({ok:true});
     }
     if(route==="/api/role-preview"&&method==="GET") {
       const actor=session.account;
