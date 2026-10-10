@@ -492,7 +492,7 @@ document.addEventListener('click', async event => {
         save.disabled = false;
     }
 });
-setInterval(loadPromotionConfirmations, 60000);
+setInterval(loadPromotionConfirmations, 20000);
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadPromotionConfirmations);
 else loadPromotionConfirmations();
 
@@ -514,6 +514,8 @@ function paintCachedMemberRow(member, oldCallsign) {
 
 window.addEventListener("lvfr:background-updated", event => {
     const route = String(event.detail?.route || "");
+    // Show the confirmation banner at once after a promotion.
+    if (route === "/api/promote" || route === "/api/force-promote") void loadPromotionConfirmations();
     const result = event.detail?.result || {};
     const actualCallsign = String(result.new_callsign || "").trim().toUpperCase();
     const predictedCallsign = String(event.detail?.optimisticCallsign || "").trim().toUpperCase();
