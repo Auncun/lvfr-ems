@@ -408,7 +408,8 @@ function renderPromotionBanner() {
 }
 async function loadPromotionConfirmations() {
     try {
-        const result = await api('/api/promotion-confirmations');
+        // A unique address skips the page's short read cache, so the banner shows the new promotion at once.
+        const result = await api(`/api/promotion-confirmations?t=${Date.now()}`);
         pendingPromotions = result.items || [];
     } catch {
         pendingPromotions = [];
