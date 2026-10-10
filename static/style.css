@@ -1148,7 +1148,9 @@ body:has(section[role="dialog"]:not([hidden])) .bottom-app-nav { display:none !i
   color:#c9d1d9; font-size:20px; line-height:1; cursor:pointer;
 }
 .promotion-close:hover { border-color:#4a86e8; color:#fff }
-.promotion-body { overflow-y:auto; overflow-x:hidden; padding:16px 20px 20px; display:grid; gap:14px; min-width:0 }
+.promotion-body { overflow-y:auto; overflow-x:hidden; padding:16px 20px 20px; display:grid; grid-template-columns:minmax(0,1fr); gap:14px; min-width:0 }
+.promotion-body > * { min-width:0; max-width:100% }
+.promotion-checks, .promotion-check, .promotion-save { box-sizing:border-box; max-width:100% }
 .promotion-empty { margin:0; color:#9aa4b2; text-align:center; padding:24px 0 }
 .promotion-item { background:#0d1219; border:1px solid #27303b; border-radius:12px; padding:16px }
 .promotion-item h3 { margin:0 0 10px; font-size:16px; font-weight:700 }

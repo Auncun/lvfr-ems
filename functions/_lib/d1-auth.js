@@ -1061,7 +1061,8 @@ export async function handleD1(context) {
       // Only people who can promote see the banner and the confirmation window.
       const canPromote=session.account.role==="admin"||session.account.permissions?.promotion_manage===true||session.account.permissions?.rank_manage===true;
       if(!canPromote) return json({items:[]});
-      const rows=(await db.prepare("SELECT id,callsign,name,old_rank,new_rank,old_callsign,new_callsign,created_at,created_by,portal_done,discord_done FROM promotion_confirmations WHERE confirmed_at IS NULL ORDER BY id DESC LIMIT 50").all()).results||[];
+      // Older entries may lack the name; fill it from the roster under the new callsign.
+      const rows=(await db.prepare("SELECT p.id,p.callsign,COALESCE(NULLIF(p.name,''),(SELECT m.name FROM members m WHERE upper(m.callsign)=upper(p.new_callsign) LIMIT 1),'') AS name,p.old_rank,p.new_rank,p.old_callsign,p.new_callsign,p.created_at,p.created_by,p.portal_done,p.discord_done FROM promotion_confirmations p WHERE p.confirmed_at IS NULL ORDER BY p.id DESC LIMIT 50").all()).results||[];
       return json({items:rows});
     }
     if(route==="/api/promotion-confirmations"&&method==="POST") {

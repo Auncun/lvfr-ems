@@ -453,8 +453,8 @@ function openPromotionDialog() {
                 <section class="promotion-item" data-promotion-id="${item.id}">
                     <h3>${esc(item.name || item.new_callsign)}</h3>
                     <table class="promotion-table">
-                        <tr><th>Rank</th><td>${esc(item.old_rank)} → ${esc(item.new_rank)}</td></tr>
-                        <tr><th>Callsign</th><td>${esc(item.old_callsign)} → ${esc(item.new_callsign)}</td></tr>
+                        <tr><th>Rank</th><td>${esc(item.old_rank || "Not recorded")} → ${esc(item.new_rank)}</td></tr>
+                        <tr><th>Callsign</th><td>${esc(item.old_callsign || "Not recorded")} → ${esc(item.new_callsign)}</td></tr>
                         <tr><th>Done by</th><td>${esc(item.created_by || "Unknown")}</td></tr>
                     </table>
                     <p class="promotion-note">Make these changes in the NARCOS Portal and in Discord. Then tick both boxes and press Save.</p>
