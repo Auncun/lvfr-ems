@@ -452,6 +452,8 @@ async function applyRosterMutationD1(db, route, data, actor) {
     const finalRank=route==="/api/change-callsign"?(admin?slot.rank:old.rank):nextRank;
     const date=route==="/api/change-callsign"?old.date:now.slice(0,10);
     await db.batch([db.prepare("DELETE FROM callsign_slots WHERE callsign=?").bind(nextCs),db.prepare("DELETE FROM members WHERE callsign=?").bind(old.callsign),db.prepare(`INSERT INTO members(callsign,name,rank,date,rank_assigned_date,days_in_rank,discord_id,notes,has_basic_firefighting,has_advanced_firefighting,has_supervisor_exam,has_hert,activity,instructor_type,do_not_promote,sheet_row,synced_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(nextCs,old.name,finalRank,date,date,0,old.discord_id,old.notes,old.has_basic_firefighting,old.has_advanced_firefighting,old.has_supervisor_exam,old.has_hert,old.activity,old.instructor_type,old.do_not_promote,slot.sheet_row||null,now),db.prepare("INSERT OR IGNORE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(rankForCallsign(old.callsign),old.callsign,old.sheet_row,now)]);
+    // Record the promotion for PORTAL and Discord confirmation, with the person who made it.
+    if(route==="/api/promote"||route==="/api/force-promote") await db.prepare("INSERT INTO promotion_confirmations(callsign,name,old_rank,new_rank,old_callsign,new_callsign,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)").bind(nextCs,String(old.name||""),String(old.rank||""),String(finalRank||nextRank||""),String(old.callsign||""),nextCs,now,String(actor.name||"")).run();
     return {ok:true,new_callsign:nextCs,new_rank:finalRank};
   }
   const assignments=Object.keys(cols).filter(k=>k!=="callsign").map(k=>`${k}=?`).join(",");

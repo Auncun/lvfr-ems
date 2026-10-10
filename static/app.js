@@ -455,6 +455,7 @@ function openPromotionDialog() {
                     <table class="promotion-table">
                         <tr><th>Rank</th><td>${esc(item.old_rank)} → ${esc(item.new_rank)}</td></tr>
                         <tr><th>Callsign</th><td>${esc(item.old_callsign)} → ${esc(item.new_callsign)}</td></tr>
+                        <tr><th>Done by</th><td>${esc(item.created_by || "Unknown")}</td></tr>
                     </table>
                     <p class="promotion-note">Make these changes in the NARCOS Portal and in Discord. Then tick both boxes and press Save.</p>
                     <div class="promotion-checks">
@@ -518,7 +519,6 @@ window.addEventListener("lvfr:background-updated", event => {
     const predictedCallsign = String(event.detail?.optimisticCallsign || "").trim().toUpperCase();
     if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(route)) {
         if (!predictedCallsign) toast(`${route === "/api/promote" ? "Promoted" : route === "/api/demote" ? "Demoted" : "Changed"} to ${result.new_rank} - ${actualCallsign}`);
-        if (route === "/api/promote") recordPromotionConfirmation(event.detail, result, actualCallsign);
         else if (actualCallsign && predictedCallsign !== actualCallsign) toast(`Callsign confirmed as ${actualCallsign}`);
     }
     const callsign = String(event.detail?.callsign || "").trim().toUpperCase();
