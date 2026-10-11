@@ -391,6 +391,24 @@
     if (view.log) document.querySelector(`[data-log="${view.log}"]`)?.click();
     if (view.leader) document.querySelector(`[data-leader-view="${view.leader}"]`)?.click();
   };
+  // Remember the section the person opens from the top tabs too. Only real clicks count, so the page's own startup selection cannot overwrite the saved section.
+  document.addEventListener('click', event => {
+    if (!event.isTrusted) return;
+    if (!event.target.closest('.tabs, .log-tabs, .training-directory-tabs, .admin-tabs')) return;
+    requestAnimationFrame(() => {
+      if (currentPath !== '/') return;
+      const tab = document.querySelector('.tabs .tab.active')?.dataset.tab;
+      if (!tab) return;
+      rememberSidebarView({
+        page: currentPath,
+        tab,
+        training: document.querySelector('[data-training-view].active')?.dataset.trainingView || '',
+        trainingSection: document.querySelector('[data-training-section].active')?.dataset.trainingSection || '',
+        log: tab === 'membersLog' ? (document.querySelector('.log-tabs .log-tab.active[data-log]')?.dataset.log || '') : '',
+        leader: document.querySelector('[data-leader-view].active')?.dataset.leaderView || '',
+      });
+    });
+  });
   let restoreChecks = 0;
   const restoreTimer = window.setInterval(() => {
     restoreChecks += 1;
