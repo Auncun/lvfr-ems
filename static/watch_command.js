@@ -312,8 +312,26 @@ function setMessage(target, text, kind = '') {
   target.textContent = text;
   target.className = kind;
 }
+// Watch Command is local: each person's log is kept in their own browser, not on the server.
+const LOCAL_WATCH_KEY = 'lvfr.watch.local.v1';
+function readLocalWatch() {
+  try { return JSON.parse(localStorage.getItem(LOCAL_WATCH_KEY) || '[]'); } catch (_) { return []; }
+}
+function writeLocalWatch(list) {
+  try { localStorage.setItem(LOCAL_WATCH_KEY, JSON.stringify(list.slice(0, 200))); } catch (_) {}
+}
+function localWatchRequest(method, body) {
+  if (method === 'GET') return readLocalWatch();
+  const record = typeof body === 'string' ? JSON.parse(body || '{}') : (body || {});
+  const id = String(record.draft_id || record.id || ('local-' + Date.now()));
+  const saved = { ...record, id, created_at: new Date().toISOString(), created_by: 'This browser' };
+  writeLocalWatch([saved, ...readLocalWatch().filter(item => String(item.id || item.draft_id) !== id)]);
+  setTimeout(() => { void loadHistory(); }, 0);
+  return saved;
+}
 async function request(url, options = {}) {
   const method = String(options.method || 'GET').toUpperCase();
+  if (new URL(url, location.href).pathname === '/api/watch-command') return localWatchRequest(method, options.body);
   if (method === 'POST' && new URL(url, location.href).pathname === '/api/watch-command') {
     const pending = watchCommandSaveQueue.then(async () => {
       const response = await fetch(url, {
@@ -2232,7 +2250,9 @@ form.addEventListener('submit', async event => {
   }
 });
 document.querySelector('#clearWatchCommand').addEventListener('click', () => {
-  if (!window.confirm('Clear the current unsaved Watch Command form? Saved watch logs will not be deleted.')) return;
+  const skipConfirm = window.__watchDeleteConfirmed === true;
+  window.__watchDeleteConfirmed = false;
+  if (!skipConfirm && !window.confirm('Clear the current unsaved Watch Command form? Saved watch logs will not be deleted.')) return;
   form.reset();
   watchTimeZonePicker.value = preferredTimeZone;
   refreshStartTimeLabel();
@@ -2296,3 +2316,10 @@ request('/api/watch-command/current-user')
     loadHistory();
   })
   .catch(error => setMessage(quickMessage, `Could not load account name: ${error.message}`, 'error'));
+
+// Delete log: removes the log on screen and its browser draft. Logs are not stored, so nothing else is deleted.
+document.querySelector('#deleteWatchLog').addEventListener('click', () => {
+  if (!window.confirm('Delete the current Watch Command log from this screen? Logs are not stored, so this cannot be undone.')) return;
+  window.__watchDeleteConfirmed = true;
+  document.querySelector('#clearWatchCommand').click();
+});
