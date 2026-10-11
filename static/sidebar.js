@@ -143,6 +143,10 @@
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && !sidebar.hidden) close(); });
 
   const savedViewKey = 'lvfr.sidebar.current-view';
+  // A normal visit starts at Members. Only a browser refresh returns to the last sidebar choice,
+  // and a choice made on purpose from another page (pending navigation) still applies.
+  const isRefresh = performance.getEntriesByType?.('navigation')?.[0]?.type === 'reload';
+  if (!isRefresh && !sessionStorage.getItem('lvfr.sidebar.pending-navigation')) sessionStorage.removeItem(savedViewKey);
   const viewFromItem = item => ({
     page: item.dataset.page || '', tab: item.dataset.tab || '', training: item.dataset.training || '',
     trainingSection: item.dataset.trainingSection || '', log: item.dataset.log || '', leader: item.dataset.leader || ''
@@ -405,6 +409,14 @@
     refreshActiveNavigation();
   };
   refreshAccess();
+  // Permissions and tabs finish loading after the menu is drawn, so re-check the menu for a few seconds and when the window regains focus.
+  let accessChecks = 0;
+  const accessTimer = window.setInterval(() => {
+    accessChecks += 1;
+    refreshAccess();
+    if (accessChecks >= 30) window.clearInterval(accessTimer);
+  }, 500);
+  window.addEventListener('focus', refreshAccess);
   document.addEventListener('click', event => {
     if (event.target.closest('.tabs, .log-tabs, .training-directory-tabs, .admin-tabs')) requestAnimationFrame(refreshActiveNavigation);
   });

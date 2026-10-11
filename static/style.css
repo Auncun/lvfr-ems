@@ -1191,3 +1191,6 @@ body:has(section[role="dialog"]:not([hidden])) .bottom-app-nav { display:none !i
   .promotion-check input { width:22px; height:22px }
   .promotion-save { min-height:50px; font-size:16px }
 }
+
+/* Dialogs and views sit above the navigation toggle and the side menu */
+.modal, .promotion-overlay, .individual-permissions-dialog { z-index:1400 }
