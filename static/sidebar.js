@@ -395,7 +395,9 @@
   const restoreTimer = window.setInterval(() => {
     restoreChecks += 1;
     restoreSidebarView();
-    if (restoreChecks >= 40 || userActed) window.clearInterval(restoreTimer);
+    // Keep restoring for up to 30 seconds, because the page can finish its own default selection late on a slow connection.
+    // It only clicks when the saved section is not already showing, and it stops as soon as the user clicks.
+    if (restoreChecks >= 150 || userActed) window.clearInterval(restoreTimer);
   }, 200);
 
   const refreshAccess = () => {
