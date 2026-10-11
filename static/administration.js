@@ -1011,15 +1011,15 @@ function renderIndividualPermissions() {
   }).join('').replace(/data-permission-key=/g, 'data-individual-permission=');
 }
 async function openIndividualPermissions(account) {
+  // Switch to Access Permissions → Personal Permission immediately, before any check or loading.
+  showCommandSection('permissions', true);
+  document.querySelector('[data-permission-subtab="personal"]')?.click();
   const dialog = document.querySelector('#individualPermissionsDialog');
   const status = document.querySelector('#individualPermissionsStatus');
   if (!canManageRoleProfiles()) {
     setMessage('Operation Command access is required to customize personal permissions.', 'error');
     return;
   }
-  // Show Access Permissions → Personal Permission first, so the dialog is visible even when opened from Accounts.
-  showCommandSection('permissions', true);
-  document.querySelector('[data-permission-subtab="personal"]')?.click();
   individualPermissionTarget = account;
   document.querySelector('#individualPermissionsTitle').textContent = `Permissions: ${account.display_name || account.name}`;
   dialog.hidden = false;
