@@ -1017,6 +1017,9 @@ async function openIndividualPermissions(account) {
     setMessage('Operation Command access is required to customize personal permissions.', 'error');
     return;
   }
+  // Show Access Permissions → Personal Permission first, so the dialog is visible even when opened from Accounts.
+  showCommandSection('permissions', true);
+  document.querySelector('[data-permission-subtab="personal"]')?.click();
   individualPermissionTarget = account;
   document.querySelector('#individualPermissionsTitle').textContent = `Permissions: ${account.display_name || account.name}`;
   dialog.hidden = false;
