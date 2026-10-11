@@ -2524,6 +2524,9 @@ async function loadMembersLog(
         }
 
 
+        // A slower answer for another log must not replace the log the person has selected now.
+        if (currentLogType !== type) return;
+
         currentLogRows =
             Array.isArray(rows)
                 ? rows
