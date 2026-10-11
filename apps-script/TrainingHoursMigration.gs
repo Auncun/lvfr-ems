@@ -43,13 +43,17 @@ function migrateTrainingHoursToD1() {
     return result;
   }, []) : [];
 
+  const hoursPayload = JSON.stringify({ records, reconcile: true });
+  const hoursDigest = snapshotDigest_(hoursPayload);
+  if (PropertiesService.getScriptProperties().getProperty('LVFR_D1_TRAINING_HOURS_SHA256') === hoursDigest) return { ok: true, skipped: true, message: 'Training Hours unchanged' };
   const response = UrlFetchApp.fetch(workerUrl + '/internal/training-hours/import', {
     method: 'post',
     contentType: 'application/json',
     headers: { 'X-LVFR-Worker-Secret': workerSecret },
-    payload: JSON.stringify({ records, reconcile: true }),
+    payload: hoursPayload,
     muteHttpExceptions: true
   });
+  if (response.getResponseCode() >= 200 && response.getResponseCode() < 300) PropertiesService.getScriptProperties().setProperty('LVFR_D1_TRAINING_HOURS_SHA256', hoursDigest);
   let result = null;
   try { result = JSON.parse(response.getContentText()); } catch (ignored) {}
   if (response.getResponseCode() < 200 || response.getResponseCode() >= 300 || !result || result.ok !== true) {
@@ -160,4 +164,9 @@ function migrateLogsAndNotificationsToD1(reconcile) {
   }
   console.log('D1 history import complete: ' + JSON.stringify(totals));
   return { ok: true, ...totals, message: reconcile ? 'Logs and notifications reconciled from Sheets.' : 'Existing logs and notifications copied to D1. The Sheets were not changed.' };
+}
+
+// Fingerprint of a sync payload, so an unchanged sheet is not sent to D1 again.
+function snapshotDigest_(text) {
+  return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text));
 }

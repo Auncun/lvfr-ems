@@ -666,6 +666,7 @@ async function refreshD1Notifications(db,user) {
   const rows=(await db.prepare("SELECT * FROM members").all()).results||[];
   const stateRows=(await db.prepare("SELECT state_key,state_value FROM notification_state").all()).results||[];
   const state=new Map(stateRows.map(row=>[row.state_key,row.state_value]));
+  const storedState=new Map(state);
   const additions=[],now=new Date().toISOString();
   for(const member of rows) {
     const eligible=rankEligibility(memberFromRow(member));
@@ -701,7 +702,8 @@ async function refreshD1Notifications(db,user) {
   const existing=new Set(lastState.map(row=>row.state_key));
   const writes=[];
   for(const key of existing) if(!state.has(key)) writes.push(db.prepare("DELETE FROM notification_state WHERE state_key=?").bind(key));
-  for(const [key,value] of state) writes.push(db.prepare("INSERT INTO notification_state(state_key,state_value) VALUES(?,?) ON CONFLICT(state_key) DO UPDATE SET state_value=excluded.state_value").bind(key,value));
+  // Write only the rows whose value changed, so polling does not rewrite the whole table.
+  for(const [key,value] of state) if(storedState.get(key)!==value) writes.push(db.prepare("INSERT INTO notification_state(state_key,state_value) VALUES(?,?) ON CONFLICT(state_key) DO UPDATE SET state_value=excluded.state_value").bind(key,value));
   if(writes.length) await db.batch(writes);
 }
 async function writeOperationalLog(db,old,route,data,result,user) {

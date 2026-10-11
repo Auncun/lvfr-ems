@@ -5106,6 +5106,23 @@ if (syncButton) {
 
 }
 
+// Log sync: copies operational logs from the Sheet into D1. Only for operation rank, and separate from sync.
+const logSyncButton = $("#logSyncBtn");
+logSyncButton?.addEventListener("click", async () => {
+    if (!window.confirm("Log sync copies logs from the Google Sheet into D1. Continue?")) return;
+    logSyncButton.disabled = true;
+    logSyncButton.textContent = "Syncing logs...";
+    try {
+        const result = await api("/api/logs-sync", { method: "POST" });
+        apiReadCache.clear();
+        toast(result.message || "Logs synchronized");
+    } catch (error) {
+        toast(`Log sync failed: ${error.message}`);
+    } finally {
+        logSyncButton.disabled = false;
+        logSyncButton.textContent = "Log sync";
+    }
+});
 const fullSyncButton = $("#fullSyncBtn");
 fullSyncButton?.addEventListener("click", async () => {
     if (!currentUserCanFullSync || !window.confirm("Full Sync will replace the D1 roster and Callsign slots from the current Google Sheet. Continue?")) return;
@@ -5473,6 +5490,7 @@ function applyAccountUser(user) {
     if (commandSyncPanel) commandSyncPanel.hidden = !currentUserHasPermission("portal_access");
     const fullSyncButton = $("#fullSyncBtn");
     if (fullSyncButton) fullSyncButton.hidden = !currentUserCanFullSync;
+    if (logSyncButton) logSyncButton.hidden = !currentUserCanFullSync;
     currentInstructorTypes = String(user.instructor_type || "")
         .split("/").map(value => value.trim().toUpperCase()).filter(Boolean);
     const account = $("#accountName");

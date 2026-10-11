@@ -156,17 +156,20 @@ function dispatch_(route, method, params, data, user) {
     const result = syncRosterSnapshotToD1_('manual');
     return Object.assign({}, result, { message: result.skipped ? 'Roster already synchronized' : 'Roster synchronized' });
   }
+  if (route === '/api/logs-sync' && method === 'POST') {
+    if (user._d1Bridge) requireRolePermission_(user, 'full_sync_manage');
+    else requireAdmin_(user);
+    const logs = migrateLogsAndNotificationsToD1(false);
+    return Object.assign({ ok: true, message: 'Logs synchronized' }, logs);
+  }
   if (route === '/api/full-sync' && method === 'POST') {
     if (user._d1Bridge) requireRolePermission_(user, 'full_sync_manage');
     else requireAdmin_(user);
     const result = syncRosterSnapshotToD1_('full-manual', true);
     // Full Sync also restores the operational logs (termination, promotion, ...)
     // from the Sheet, so logs removed with "Delete this log from D1" come back.
-    let logs;
-    try { logs = migrateLogsAndNotificationsToD1(true); }
-    catch (error) {
-      throw new Error('Roster was synchronized, but restoring logs from Google Sheets failed: ' + (error && error.message ? error.message : error));
-    }
+    // Full Sync does not touch logs. Use the Log sync button for logs.
+    const logs = { operational_logs: 0, account_audit: 0, notifications: 0, training_hours_log: 0 };
     let accounts;
     try { accounts = syncAccountsSnapshotToD1_(); }
     catch (error) { throw new Error('Roster and logs were synchronized, but Accounts import from Sheets failed: ' + (error && error.message ? error.message : error)); }
@@ -984,7 +987,7 @@ function invalidateRosterCache_() {
   const cacheKey = 'roster:members:v2';
   cache.remove('roster:watch-member-directory:v1');
   cache.remove('roster:name-index:v1');
-  cache.remove('roster:available-callsigns:v1');
+  cache.remove('roster:available-callsigns:v2');
   cache.remove('leader-overview:v1');
   cache.remove('leader-overview:v2');
   const index = cache.get(cacheKey);
@@ -1221,9 +1224,9 @@ function installRosterD1SyncTriggers() {
     const builder = ScriptApp.newTrigger(item.handler).forSpreadsheet(item.spreadsheetId);
     (item.event === 'edit' ? builder.onEdit() : builder.onChange()).create();
   });
-  if (!existing.some(trigger => trigger.getHandlerFunction() === 'syncSheetSnapshotsFallback_')) {
-    ScriptApp.newTrigger('syncSheetSnapshotsFallback_').timeBased().everyMinutes(5).create();
-  }
+  // Automatic sync runs every 30 minutes. Replace any older fallback trigger so the interval is current.
+  existing.filter(trigger => trigger.getHandlerFunction() === 'syncSheetSnapshotsFallback_').forEach(trigger => ScriptApp.deleteTrigger(trigger));
+  ScriptApp.newTrigger('syncSheetSnapshotsFallback_').timeBased().everyMinutes(30).create();
   if (!PropertiesService.getScriptProperties().getProperty('LVFR_D1_ACCOUNTS_SHEET_IDS')) saveAccountsSheetIds_();
   return diagnoseRosterD1Sync();
 }
@@ -1485,7 +1488,7 @@ function initializeRosterD1Sync() {
 }
 
 function availableCallsignInventory_() {
-  const sheet=rosterSheet_(), count=Math.max(0,sheet.getLastRow()-1);
+  const sheet=rosterSheet_(), count=Math.max(0,sheet.getMaxRows()-1);
   if(!count) return [];
   return sheet.getRange(2,2,count,2).getDisplayValues().reduce((out,row,index)=>{
     const callsign=String(row[0]||'').trim().toUpperCase();
@@ -1774,7 +1777,7 @@ function nextEmptyCallsign_(rank) {
   };
   const prefix = prefixes[rank];
   if (!prefix) throw new Error('Unknown rank: ' + rank);
-  const sheet = rosterSheet_(), count = Math.max(0, sheet.getLastRow() - 1);
+  const sheet = rosterSheet_(), count = Math.max(0, sheet.getMaxRows() - 1);
   const rows = count ? sheet.getRange(2, 2, count, 2).getDisplayValues() : [];
   const candidates = rows.map((row, i) => ({ callsign: String(row[0] || '').trim().toUpperCase(), name: String(row[1] || '').trim(), row: i + 2 }))
     .filter(item => item.callsign.startsWith(prefix + '-') && !item.name && rankFromCallsign_(item.callsign) === (rank === 'Advanced EMT' ? 'AEMT' : rank))
@@ -2200,10 +2203,14 @@ function syncLoiSheetToD1_() {
     type: item.type, name: item.name, callsign: callsignByName.get(sheetNameKey_(item.name)) || '',
     test_percent: item.test_percent, source_row: item.row
   })));
+  const loiPayload = JSON.stringify({ records, reconcile: true });
+  const loiDigest = snapshotDigest_(loiPayload);
+  if (PropertiesService.getScriptProperties().getProperty('LVFR_D1_LOI_SHA256') === loiDigest) return { ok: true, skipped: true, message: 'LOI unchanged' };
   const response = UrlFetchApp.fetch(workerUrl + '/internal/loi/import', {
     method: 'post', contentType: 'application/json', headers: { 'X-LVFR-Worker-Secret': workerSecret },
-    payload: JSON.stringify({ records, reconcile: true }), muteHttpExceptions: true
+    payload: loiPayload, muteHttpExceptions: true
   });
+  if (response.getResponseCode() >= 200 && response.getResponseCode() < 300) PropertiesService.getScriptProperties().setProperty('LVFR_D1_LOI_SHA256', loiDigest);
   let result = null;
   try { result = JSON.parse(response.getContentText()); } catch (ignored) {}
   if (response.getResponseCode() < 200 || response.getResponseCode() >= 300 || !result || result.ok !== true) {
@@ -2523,10 +2530,10 @@ function accountRows_(spreadsheet) {
 }
 
 function availableCallsigns_() {
-  const cache = CacheService.getScriptCache(), key = 'roster:available-callsigns:v1';
+  const cache = CacheService.getScriptCache(), key = 'roster:available-callsigns:v2';
   const cached = cache.get(key);
   if (cached) { try { return JSON.parse(cached); } catch (ignored) {} }
-  const sheet = rosterSheet_(), count = Math.max(0, sheet.getLastRow() - 1);
+  const sheet = rosterSheet_(), count = Math.max(0, sheet.getMaxRows() - 1);
   const rows = count ? sheet.getRange(2, 2, count, 2).getDisplayValues() : [];
   const prefixes = {
     'Commissioners': 'COM', 'Chief': 'CHIEF', 'County Command': 'B', 'Division Commander': 'DIV',
@@ -2813,6 +2820,8 @@ function watchSheet_() {
 }
 
 function listWatchLogs_() {
+  // Watch logs are not stored, so there is no previous-watch list.
+  return [];
   const sheet = watchSheet_();
   if (sheet.getLastRow() < 2) return [];
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, WATCH_HEADERS.length).getValues();
@@ -2842,6 +2851,13 @@ function saveWatchLog_(input, user) {
   catch (error) { throw new Error('Choose a valid time zone.'); }
   Object.keys(record).forEach(key => { if (typeof record[key] === 'string' && record[key].length > 5000) throw new Error('Each field must be 5,000 characters or fewer.'); });
 
+  // Watch logs are not stored in the sheet. The page shows the log so it can be copied into Discord.
+  return {
+    id: record.draft_id || ('local-' + Date.now()), draft_id: record.draft_id, finalized: record.finalized,
+    created_at: new Date().toISOString(), created_by: String(user && user.name || ''),
+    ...record,
+    active_unit: String(input.active_unit || ''), active_ems: String(input.active_ems || ''), active_merged: String(input.active_merged || ''),
+  };
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
