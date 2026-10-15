@@ -404,7 +404,8 @@ function renderPromotionBanner() {
         banner.className = 'promotion-banner';
         document.body.prepend(banner);
     }
-    banner.textContent = `Portal and Discord Confirmation Needed (${pendingPromotions.length})`;
+    const needsDiscord = pendingPromotions.some(item => Number(item.needs_discord) === 1);
+    banner.textContent = `${needsDiscord ? 'Portal and Discord' : 'Portal'} Confirmation Needed (${pendingPromotions.length})`;
 }
 async function loadPromotionConfirmations() {
     try {
@@ -456,12 +457,13 @@ function openPromotionDialog() {
                     <table class="promotion-table">
                         <tr><th>Rank</th><td>${esc(item.old_rank || "Not recorded")} → ${esc(item.new_rank)}</td></tr>
                         <tr><th>Callsign</th><td>${esc(item.old_callsign || "Not recorded")} → ${esc(item.new_callsign)}</td></tr>
+                        <tr><th>Action</th><td>${esc(item.action || "Promotion")}</td></tr>
                         <tr><th>Done by</th><td>${esc(item.created_by || "Unknown")}</td></tr>
                     </table>
                     <p class="promotion-note">Make these changes in the NARCOS Portal and in Discord. Then tick both boxes and press Save.</p>
                     <div class="promotion-checks">
                         <label class="promotion-check"><input type="checkbox" data-promotion-check="portal"> Done in PORTAL</label>
-                        <label class="promotion-check"><input type="checkbox" data-promotion-check="discord"> Done in Discord</label>
+                        ${Number(item.needs_discord) === 1 ? '<label class="promotion-check"><input type="checkbox" data-promotion-check="discord"> Done in Discord</label>' : ""}
                     </div>
                     <button type="button" class="promotion-save" data-promotion-save="${item.id}">Save</button>
                 </section>`).join("")}
@@ -479,7 +481,8 @@ document.addEventListener('click', async event => {
     if (!save) return;
     const section = save.closest('[data-promotion-id]');
     const portal = section.querySelector('[data-promotion-check="portal"]').checked;
-    const discord = section.querySelector('[data-promotion-check="discord"]').checked;
+    const discordBox = section.querySelector('[data-promotion-check="discord"]');
+    const discord = discordBox ? discordBox.checked : true;
     if (!portal || !discord) { toast('Tick both boxes before saving.'); return; }
     save.disabled = true;
     try {

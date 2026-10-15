@@ -594,6 +594,26 @@ async function requireOperation(db, token) {
 }
 // Position of a role in the hierarchy (RANK 1 is the top). Admin is always 1.
 const DEFAULT_ROLE_ORDER={admin:1,commander:2,leader:3,member:4};
+// Records what must be confirmed in PORTAL (and in Discord when required) for an action.
+async function recordActionConfirmation(db,route,data,oldMember,result,actor){
+  if(!oldMember||result?.changed===false) return;
+  const callsign=String(oldMember.callsign||""), name=String(oldMember.name||"");
+  const rank=String(oldMember.rank||"");
+  let action="", needsDiscord=0, perms="", newRank=rank, newCallsign=callsign;
+  if(route==="/api/demote"){ action="Demotion"; needsDiscord=1; perms="rank_manage"; newRank=String(result.new_rank||rank); }
+  else if(route==="/api/change-callsign"){ action="Callsign change"; needsDiscord=1; perms="callsign_manage"; newCallsign=String(result.new_callsign||data.new_callsign||callsign); }
+  else if(route==="/api/terminate"){ action="Termination"; needsDiscord=1; perms="termination_manage"; newRank="Terminated"; }
+  else if(route==="/api/exam"&&!data.remove){ action="Supervisor exam"; needsDiscord=0; perms="exam_manage"; }
+  else if(route==="/api/training"&&!data.remove){
+    const training=String(data.training||"");
+    const hadNone=!(Number(oldMember.has_hert)===1||Number(oldMember.has_basic_firefighting)===1);
+    action="Training added: "+training;
+    needsDiscord=(hadNone&&(training==="Hert"||training==="Basic Firefighting"))?1:0;
+    perms=training==="Hert"?"training_hert_manage":"training_fort_manage";
+  } else return;
+  await db.prepare("INSERT INTO promotion_confirmations(callsign,name,old_rank,new_rank,old_callsign,new_callsign,created_at,created_by,action,needs_discord,required_permissions) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
+    .bind(callsign,name,rank,newRank,callsign,newCallsign,new Date().toISOString(),String(actor.name||""),action,needsDiscord,perms).run();
+}
 async function roleOrderOf(db,role){
   const r=String(role||"").toLowerCase();
   if(r==="admin") return 1;
@@ -1060,12 +1080,11 @@ export async function handleD1(context) {
     }
     if(route==="/api/promotion-confirmations"&&method==="GET") {
       if(!session.account) throw Object.assign(new Error("Sign in again."),{status:401});
-      // Only people who can promote see the banner and the confirmation window.
-      const canPromote=session.account.role==="admin"||session.account.permissions?.promotion_manage===true||session.account.permissions?.rank_manage===true;
-      if(!canPromote) return json({items:[]});
-      // Older entries may lack the name; fill it from the roster under the new callsign.
-      const rows=(await db.prepare("SELECT p.id,p.callsign,COALESCE(NULLIF(p.name,''),(SELECT m.name FROM members m WHERE upper(m.callsign)=upper(p.new_callsign) LIMIT 1),'') AS name,p.old_rank,p.new_rank,p.old_callsign,p.new_callsign,p.created_at,p.created_by,p.portal_done,p.discord_done FROM promotion_confirmations p WHERE p.confirmed_at IS NULL ORDER BY p.id DESC LIMIT 50").all()).results||[];
-      return json({items:rows});
+      // Each person sees only the confirmations for permissions they hold.
+      const viewer=session.account, viewerAdmin=viewer.role==="admin";
+      const rows=(await db.prepare("SELECT p.id,p.callsign,COALESCE(NULLIF(p.name,''),(SELECT m.name FROM members m WHERE upper(m.callsign)=upper(p.new_callsign) LIMIT 1),'') AS name,p.old_rank,p.new_rank,p.old_callsign,p.new_callsign,p.created_at,p.created_by,p.action,p.needs_discord,p.required_permissions,p.portal_done,p.discord_done FROM promotion_confirmations p WHERE p.confirmed_at IS NULL ORDER BY p.id DESC LIMIT 50").all()).results||[];
+      const visible=rows.filter(row=>viewerAdmin||String(row.required_permissions||"").split(",").some(key=>viewer.permissions?.[key.trim()]===true));
+      return json({items:visible});
     }
     if(route==="/api/promotion-confirmations"&&method==="POST") {
       if(!session.account) throw Object.assign(new Error("Sign in again."),{status:401});
@@ -1075,7 +1094,11 @@ export async function handleD1(context) {
     }
     if(route==="/api/promotion-confirmations/confirm"&&method==="POST") {
       if(!session.account) throw Object.assign(new Error("Sign in again."),{status:401});
-      if(data.portal!==true||data.discord!==true) throw Object.assign(new Error("Both PORTAL and Discord must be ticked."),{status:400});
+      const confirmRow=await db.prepare("SELECT needs_discord,required_permissions FROM promotion_confirmations WHERE id=? AND confirmed_at IS NULL").bind(Number(data.id)||0).first();
+      if(!confirmRow) throw Object.assign(new Error("This confirmation is already saved."),{status:404});
+      const saver=session.account;
+      if(saver.role!=="admin"&&!String(confirmRow.required_permissions||"").split(",").some(key=>saver.permissions?.[key.trim()]===true)) throw Object.assign(new Error("You do not have the permission for this confirmation."),{status:403});
+      if(data.portal!==true||(Number(confirmRow.needs_discord)===1&&data.discord!==true)) throw Object.assign(new Error("PORTAL (and Discord, when required) must be ticked."),{status:400});
       await db.prepare("UPDATE promotion_confirmations SET portal_done=1,discord_done=1,confirmed_at=?,confirmed_by=? WHERE id=? AND confirmed_at IS NULL")
         .bind(new Date().toISOString(),String(session.account.name||""),Number(data.id)||0).run();
       return json({ok:true});
@@ -1363,6 +1386,7 @@ export async function handleD1(context) {
         const oldMember=await db.prepare("SELECT * FROM members WHERE upper(callsign)=upper(?)").bind(member.callsign).first();
         const trainingData={callsign:member.callsign,training,remove:false};
         const trainingResult=await applyRosterMutationD1(db,"/api/training",trainingData,user);
+        if(oldMember) await recordActionConfirmation(db,"/api/training",trainingData,oldMember,trainingResult,user);
         if(trainingResult.changed!==false) {
           trainingAdded.push(training);
           if(oldMember) await writeOperationalLog(db,oldMember,"/api/training",trainingData,trainingResult,user);
@@ -1571,6 +1595,7 @@ export async function handleD1(context) {
       const oldMember=await db.prepare("SELECT * FROM members WHERE upper(callsign)=upper(?)").bind(mutationData.callsign).first();
       const result=await applyRosterMutationD1(db,route,mutationData,user);
       if(result.changed!==false && oldMember) await writeOperationalLog(db,oldMember,route,mutationData,result,user);
+      if(oldMember) await recordActionConfirmation(db,route,mutationData,oldMember,result,user);
       // Sheets can be out of sync with D1 (for example after a manual edit or
       // a prior background write failure). Always mirror instructor changes,
       // even when D1 already has the requested instructor state. Wait for the
