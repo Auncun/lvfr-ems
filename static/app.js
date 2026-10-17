@@ -3411,7 +3411,7 @@ async function profile(
 
                 <h2>
 
-                    ${rankBadgeHtml(m.rank, m.callsign)}${esc(m.name)}
+                    <span class="profile-name">${rankBadgeHtml(m.rank, m.callsign)}${esc(m.name)}</span>
 
                     <small>
                         ${esc(m.callsign)}
