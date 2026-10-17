@@ -1192,4 +1192,5 @@ body:has(section[role="dialog"]:not([hidden])) .bottom-app-nav { display:none !i
   .promotion-save { min-height:50px; font-size:16px }
 }
 
-.rank-badge { width:1.2em; height:1.2em; object-fit:contain; vertical-align:-0.22em; margin-right:0.35em }
+/* Dialogs and views sit above the navigation toggle and the side menu */
+.modal, .promotion-overlay, .individual-permissions-dialog { z-index:1400 }

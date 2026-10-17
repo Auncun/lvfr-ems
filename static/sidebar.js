@@ -452,3 +452,13 @@
   }, { passive: true });
   window.addEventListener('pageshow', refreshAccess);
 })();
+
+// Marks the page while any dialog is open, so the navigation button steps behind it.
+(() => {
+  const check = () => {
+    const open = !!document.querySelector('.modal:not(.hidden), dialog[open], [role="dialog"]:not([hidden])');
+    document.body?.classList.toggle('dialog-open', open);
+  };
+  new MutationObserver(check).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'hidden', 'open'] });
+  check();
+})();
