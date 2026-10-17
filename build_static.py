@@ -1,6 +1,4 @@
-"""Prepare the public static files for a Cloudflare Pages deployment."""
-
-from pathlib import Path
+﻿from pathlib import Path
 import shutil
 
 
@@ -41,6 +39,11 @@ def main():
     for asset in SOURCE.iterdir():
         if asset.is_file() and asset.suffix.lower() not in {".html", ".exe", ".db"}:
             shutil.copy2(asset, public_assets / asset.name)
+
+    # Subfolders such as static/badges are not copied by the loop above, so copy them too.
+    badges = SOURCE / "badges"
+    if badges.is_dir():
+        shutil.copytree(badges, public_assets / "badges", dirs_exist_ok=True)
 
     print(f"Cloudflare Pages output prepared at {OUTPUT}")
 
