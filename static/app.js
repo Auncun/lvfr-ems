@@ -394,6 +394,38 @@ function rosterMatchesMutation(rows, detail) {
 
 // Promotions waiting for confirmation in the NARCOS Portal and Discord. Shown to everyone until Save.
 let pendingPromotions = [];
+// Rank badges. Each rank's image is a file in static/badges. Only ranks with a file are shown.
+const RANK_BADGE_RULES = [
+    { match: /^commissioners?$/i, file: '01-commissioner.png' },
+    { match: /^chief$/i, file: '02-chief.png' },
+    { match: /^assistant\s+deputy\s+chief$/i, file: '03-assistant-deputy-chief.png' },
+    { match: /^(chief-?02\s+)?deputy\s+chief$/i, file: '04-deputy-chief.png' },
+    { match: /^division\s+commander$/i, file: '05-division-commander.png' },
+    { match: /^captain$|^captin$/i, file: '06-captain.png' },
+    { match: /^lieutenant$/i, file: '07-lieutenant.png' },
+    { match: /^lead\s+paramedic$/i, file: '08-lead-paramedic.png' },
+    { match: /^paramedic$/i, file: '09-paramedic.png' },
+    { match: /^aemt$/i, file: '10-aemt.png' },
+    { match: /^emt$/i, file: '11-emt.png' },
+    { match: /^senior\s+volunteer$/i, file: '12-senior-volunteer.png' },
+    { match: /^volunteer$/i, file: '13-volunteer.png' },
+    { match: /^probationary/i, file: '14-probationary.png' },
+];
+// Callsign first: CHIEF-02 is Deputy Chief, B-03 is Assistant Deputy Chief, DIV-X is Division Commander, C-X is Captain.
+const CALLSIGN_BADGE_RULES = [
+    { match: /^CHIEF-02$/i, file: '04-deputy-chief.png' },
+    { match: /^CHIEF-/i, file: '02-chief.png' },
+    { match: /^B-03$/i, file: '03-assistant-deputy-chief.png' },
+    { match: /^DIV-/i, file: '05-division-commander.png' },
+    { match: /^C-/i, file: '06-captain.png' },
+    { match: /^COM-/i, file: '01-commissioner.png' },
+];
+function rankBadgeHtml(rank, callsign) {
+    const byCallsign = CALLSIGN_BADGE_RULES.find(item => item.match.test(String(callsign || '').trim()));
+    const byRank = RANK_BADGE_RULES.find(item => item.match.test(String(rank || '').trim()));
+    const rule = byCallsign || byRank;
+    return rule ? `<img class="rank-badge" src="/static/badges/${rule.file}" alt="" width="28" height="28"> ` : '';
+}
 function renderPromotionBanner() {
     let banner = document.querySelector('#promotionConfirmBanner');
     if (!pendingPromotions.length) { banner?.remove(); return; }
@@ -436,6 +468,22 @@ async function recordPromotionConfirmation(detail, result, newCallsign) {
         toast(`Could not record the confirmation: ${error.message}`);
     }
 }
+function promotionDetails(item) {
+    if (/^(Training|Supervisor exam|Instructor)/.test(item.action || "")) {
+        return `<table class="promotion-table">
+            <tr><th>Name</th><td>${esc(item.name || "Unknown")}</td></tr>
+            <tr><th>Callsign</th><td>${esc(item.callsign || item.new_callsign)}</td></tr>
+            <tr><th>Action</th><td>${esc(item.action)}</td></tr>
+            <tr><th>Done by</th><td>${esc(item.created_by || "Unknown")}</td></tr>
+        </table>`;
+    }
+    return `<table class="promotion-table">
+            <tr><th>Rank</th><td>${esc(item.old_rank || "Not recorded")} → ${esc(item.new_rank)}</td></tr>
+            <tr><th>Callsign</th><td>${esc(item.old_callsign || "Not recorded")} → ${esc(item.new_callsign)}</td></tr>
+            <tr><th>Action</th><td>${esc(item.action || "Promotion")}</td></tr>
+            <tr><th>Done by</th><td>${esc(item.created_by || "Unknown")}</td></tr>
+        </table>`;
+}
 function openPromotionDialog() {
     let dialog = document.querySelector('#promotionConfirmDialog');
     if (!dialog) {
@@ -454,12 +502,7 @@ function openPromotionDialog() {
             ${pendingPromotions.map(item => `
                 <section class="promotion-item" data-promotion-id="${item.id}">
                     <h3>${esc(item.name || item.new_callsign)}</h3>
-                    <table class="promotion-table">
-                        <tr><th>Rank</th><td>${esc(item.old_rank || "Not recorded")} → ${esc(item.new_rank)}</td></tr>
-                        <tr><th>Callsign</th><td>${esc(item.old_callsign || "Not recorded")} → ${esc(item.new_callsign)}</td></tr>
-                        <tr><th>Action</th><td>${esc(item.action || "Promotion")}</td></tr>
-                        <tr><th>Done by</th><td>${esc(item.created_by || "Unknown")}</td></tr>
-                    </table>
+                    ${promotionDetails(item)}
                     <p class="promotion-note">Make these changes in the NARCOS Portal and in Discord. Then tick both boxes and press Save.</p>
                     <div class="promotion-checks">
                         <label class="promotion-check"><input type="checkbox" data-promotion-check="portal"> Done in PORTAL</label>
@@ -1478,6 +1521,7 @@ $("#fortPassSave")?.addEventListener("click", () => {
     if (!button) return;
     const trainings = [...document.querySelectorAll("#fortPassOptions input:checked")].map(input => input.value);
     if (!trainings.length) return toast("Select Basic FORT, Advanced FORT, or both.");
+    if (trainings.includes("Advanced Firefighting") && !trainings.includes("Basic Firefighting")) return toast("Advanced FORT can be added only after Basic FORT. Select Basic FORT too.");
     fortPassPending = null;
     $("#fortPassDialog")?.classList.add("hidden");
     void saveLoiChange(button, "passed", { trainings });
@@ -1577,6 +1621,10 @@ document.addEventListener("click", async event => {
     const button = event.target.closest("[data-training-action]");
     if (!button) return;
     const callsign = button.dataset.callsign, kind = button.dataset.kind, remove = button.dataset.remove === "true";
+    if (kind === "Advanced Firefighting" && !remove && button.dataset.type !== "instructor") {
+        const cachedMember = memberCache.get(String(callsign || "").trim().toUpperCase());
+        if (cachedMember && !Number(cachedMember.has_basic_firefighting)) { toast("Advanced FORT can be added only after Basic FORT."); return; }
+    }
     button.disabled = true;
     try {
         if (button.dataset.type === "instructor") {
@@ -3363,7 +3411,7 @@ async function profile(
 
                 <h2>
 
-                    ${esc(m.name)}
+                    ${rankBadgeHtml(m.rank, m.callsign)}${esc(m.name)}
 
                     <small>
                         ${esc(m.callsign)}

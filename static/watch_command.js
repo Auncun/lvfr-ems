@@ -530,6 +530,13 @@ function copyWithFallback(text) {
       fallback.remove();
       if (!copied) throw new Error("Clipboard access is unavailable.");
 }
+// Removes one log from this browser only.
+function deleteWatchLogEntry(log) {
+  if (!window.confirm(`Delete the Watch Command log for ${log.watch_date}? It is removed only from this browser.`)) return;
+  const id = String(log.id || log.draft_id || '');
+  writeLocalWatch(readLocalWatch().filter(item => String(item.id || item.draft_id) !== id));
+  void loadHistory();
+}
 function renderLog(log) {
   const article = document.createElement('article');
   article.className = 'watch-log';
@@ -555,7 +562,12 @@ function renderLog(log) {
   continueButton.addEventListener('click', () => continueWatchLog(log));
   const actions = document.createElement('div');
   actions.className = 'watch-log-actions';
-  actions.append(continueButton, copyButton);
+  const deleteButton = document.createElement('button');
+  deleteButton.type = 'button';
+  deleteButton.className = 'watch-copy-button';
+  deleteButton.textContent = 'Delete';
+  deleteButton.addEventListener('click', () => deleteWatchLogEntry(log));
+  actions.append(continueButton, copyButton, deleteButton);
   titleRow.append(heading, actions);
   const meta = document.createElement('div');
   meta.className = 'watch-log-meta';
@@ -1812,10 +1824,6 @@ function loadMemberDirectory() {
 
 callsignInput.addEventListener('input', () => {
   clearTimeout(memberLookupTimer);
-  const formattedCallsign = addCallsignHyphen(callsignInput.value);
-  if (formattedCallsign !== callsignInput.value.toUpperCase().replace(/\s+/g, '')) {
-    callsignInput.value = formattedCallsign;
-  }
   const callsign = callsignInput.value.trim().toUpperCase();
   updateAvailableChoices();
   if (!callsign) {
@@ -1921,10 +1929,6 @@ document.querySelector('#chooseOnDutyCallsign').addEventListener('click', () => 
   if (!onDutyPicker.hidden) onDutyPicker.focus();
 });
 const transitionCallsignInput = document.querySelector('#transitionCallsign');
-transitionCallsignInput.addEventListener('input', () => {
-  const normalized = addCallsignHyphen(transitionCallsignInput.value);
-  if (normalized !== transitionCallsignInput.value.toUpperCase().replace(/\s+/g, '')) transitionCallsignInput.value = normalized;
-});
 document.querySelector('#transferWatchCommand').addEventListener('click', () => transferWatchCommand(
   transitionCallsignInput,
   document.querySelector('#transferWatchCommand'),
@@ -1980,7 +1984,6 @@ form.elements.start_time.addEventListener('input', refreshRollCallSummary);
 document.querySelector('#formUnitSpecialWrap').hidden = document.querySelector('#formUnitSector').value !== 'Specialised';
 initialCallsignInput.addEventListener('input', () => {
   clearTimeout(initialMemberLookupTimer);
-  initialCallsignInput.value = addCallsignHyphen(initialCallsignInput.value);
   const callsign = initialCallsignInput.value.trim().toUpperCase();
   if (!callsign) {
     initialMemberLookup.textContent = 'Enter a callsign to look up the member name.';

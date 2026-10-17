@@ -386,6 +386,8 @@ async function applyRosterMutationD1(db, route, data, actor) {
     if(!key) throw new Error("Unknown training.");
     const present=Boolean(Number(old[key]||0)), remove=Boolean(data.remove);
     if(present===!remove) return {ok:false,changed:false,status:remove?"already_removed":"already_completed",message:remove?"Training already removed":"Already certified"};
+    // Advanced FORT can be added only to someone who already has Basic FORT.
+    if(!remove&&training==="Advanced Firefighting"&&Number(old.has_basic_firefighting||0)!==1) throw new Error("Advanced FORT can be added only after Basic FORT.");
     cols[key]=remove?0:1;
     result={ok:true,changed:true,status:remove?"removed":"added",message:remove?"Training removed":"Training added"};
   }
@@ -603,13 +605,25 @@ async function recordActionConfirmation(db,route,data,oldMember,result,actor){
   if(route==="/api/demote"){ action="Demotion"; needsDiscord=1; perms="rank_manage"; newRank=String(result.new_rank||rank); }
   else if(route==="/api/change-callsign"){ action="Callsign change"; needsDiscord=1; perms="callsign_manage"; newCallsign=String(result.new_callsign||data.new_callsign||callsign); }
   else if(route==="/api/terminate"){ action="Termination"; needsDiscord=1; perms="termination_manage"; newRank="Terminated"; }
-  else if(route==="/api/exam"&&!data.remove){ action="Supervisor exam"; needsDiscord=0; perms="exam_manage"; }
-  else if(route==="/api/training"&&!data.remove){
-    const training=String(data.training||"");
+  else if(route==="/api/exam"){ action=data.remove?"Supervisor exam removed":"Supervisor exam"; needsDiscord=0; perms="exam_manage"; }
+  else if(route==="/api/training"){
+    const training=String(data.training||""), removing=Boolean(data.remove);
+    const isKey=training==="Hert"||training==="Basic Firefighting";
+    const hertLeft=Number(oldMember.has_hert)===1&&!(removing&&training==="Hert");
+    const basicLeft=Number(oldMember.has_basic_firefighting)===1&&!(removing&&training==="Basic Firefighting");
     const hadNone=!(Number(oldMember.has_hert)===1||Number(oldMember.has_basic_firefighting)===1);
-    action="Training added: "+training;
-    needsDiscord=(hadNone&&(training==="Hert"||training==="Basic Firefighting"))?1:0;
+    // Adding HERT or Basic to someone with neither needs Discord. Removing the last HERT/Basic needs Discord too.
+    needsDiscord=!removing ? ((hadNone&&isKey)?1:0) : ((isKey&&!(hertLeft||basicLeft))?1:0);
+    action=(removing?"Training removed: ":"Training added: ")+training;
     perms=training==="Hert"?"training_hert_manage":"training_fort_manage";
+  } else if(/\/instructor$/.test(route)){
+    // Instructor status: Portal only. Asked when the first instructor type is given, or when the last one is removed.
+    const type=String(data.instructor_type||"").toUpperCase(), assigned=Boolean(data.assigned);
+    const before=String(oldMember.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(Boolean);
+    const afterCount=before.filter(t=>t!==type).length+(assigned?1:0);
+    if(assigned){ if(before.length>0) return; action="Instructor added: "+type; }
+    else { if(afterCount>0) return; action="Instructor removed: "+type; }
+    needsDiscord=0; perms="instructor_manage";
   } else return;
   await db.prepare("INSERT INTO promotion_confirmations(callsign,name,old_rank,new_rank,old_callsign,new_callsign,created_at,created_by,action,needs_discord,required_permissions) VALUES(?,?,?,?,?,?,?,?,?,?,?)")
     .bind(callsign,name,rank,newRank,callsign,newCallsign,new Date().toISOString(),String(actor.name||""),action,needsDiscord,perms).run();
@@ -1360,6 +1374,7 @@ export async function handleD1(context) {
         passedTrainings=[...new Set((Array.isArray(data.trainings)?data.trainings:[]).map(item=>String(item)))];
         if(!passedTrainings.length) throw new Error("Select Basic FORT, Advanced FORT, or both.");
         if(passedTrainings.some(item=>!FORT_PASS_TRAININGS.includes(item))) throw new Error("Choose Basic or Advanced Firefighting.");
+        if(passedTrainings.includes("Advanced Firefighting")&&!passedTrainings.includes("Basic Firefighting")&&Number(member.has_basic_firefighting||0)!==1) throw new Error("Advanced FORT can be added only after Basic FORT.");
       }
       let entryId=Number(data.row)||0, previous=null;
       if(action==="add") {
