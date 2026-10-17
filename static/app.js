@@ -3420,7 +3420,7 @@ async function profile(
                 </h2>
 
 
-                <div class="grid">
+                <div class="grid profile-grid">
 
 
                     <div class="card">

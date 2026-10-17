@@ -1192,5 +1192,28 @@ body:has(section[role="dialog"]:not([hidden])) .bottom-app-nav { display:none !i
   .promotion-save { min-height:50px; font-size:16px }
 }
 
-/* Dialogs and views sit above the navigation toggle and the side menu */
-.modal, .promotion-overlay, .individual-permissions-dialog { z-index:1400 }
+.rank-badge { width:1.2em; height:1.2em; object-fit:contain; vertical-align:-0.22em; margin-right:0.35em }
+
+/* Every dialog sits above the navigation button and the side menu, and the button hides while a dialog is open */
+[role="dialog"], .modal, dialog { z-index:1400 }
+body.dialog-open .sidebar-toggle { visibility:hidden; pointer-events:none }
+
+/* Profile window: badge and name share one aligned line; on phones the details sit two to a row */
+.profile-name { display:inline-flex; align-items:center; gap:.35em }
+.profile-name .rank-badge { width:1.35em; height:1.35em; margin:0; vertical-align:middle }
+@media (max-width: 640px) {
+    .profile-title h2 + .grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px }
+    .profile-title h2 + .grid .card { padding:9px }
+    .profile-title h2 + .grid .card b { font-size:12px }
+}
+
+/* Member profile window: wide on a computer, two details per row on a phone, badge and name centred on one line */
+#modal .modal-box { width:min(980px,96vw); max-width:96vw }
+.profile-title h2 { display:flex; align-items:center; flex-wrap:wrap; gap:0 .4em }
+.profile-grid { grid-template-columns:repeat(auto-fill,minmax(220px,1fr)) !important; gap:10px }
+.profile-grid .card { min-width:0 }
+@media (max-width: 640px) {
+    .profile-grid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:8px }
+    .profile-grid .card { padding:9px }
+    .profile-grid .card b { font-size:12px }
+}
