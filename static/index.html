@@ -18,7 +18,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=account-window-20261019-2"
+    href="/static/style.css?v=tab-count-20261020-1"
 >
 
 <style>
@@ -518,8 +518,8 @@
 
 
     <div class="training-directory-tabs" style="margin-top:14px">
-        <button type="button" class="log-tab active" id="inactiveActivityTab" data-inactive-view="activity" aria-current="page">Due to Activity</button>
-        <button type="button" class="log-tab" id="inactiveOverdueTab" data-inactive-view="overdue">Training Overdue</button>
+        <button type="button" class="log-tab active" id="inactiveActivityTab" data-inactive-view="activity" aria-current="page">Due to Activity <span class="tab-count" data-inactive-count="activity">(0)</span></button>
+        <button type="button" class="log-tab" id="inactiveOverdueTab" data-inactive-view="overdue">Training Overdue <span class="tab-count" data-inactive-count="overdue">(0)</span></button>
     </div>
 
     <section data-inactive-panel="activity">
@@ -865,7 +865,7 @@
 
 <script src="/static/session-auth.js?v=shared-session-7"></script>
 <script src="/static/account-settings.js?v=autosave-20261019-1"></script>
-<script src="/static/app.js?v=terminate-confirm-20261019-1"></script>
+<script src="/static/app.js?v=tab-count-20261020-1"></script>
 <script src="/static/sidebar.js?v=termination-sub-20261019-1"></script>
 <script src="/static/mobile-popovers.js?v=portal-controls-20261004-1"></script>
 

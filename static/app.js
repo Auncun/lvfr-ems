@@ -1979,6 +1979,12 @@ async function loadInactive(forceFresh = false) {
 
 function renderInactive() {
 
+    // Counts show the full size of each list, not the search result.
+    document.querySelectorAll("[data-inactive-count]").forEach(counter => {
+        const count = counter.dataset.inactiveCount === "overdue" ? trainingOverdueRows.length : inactiveRows.length;
+        counter.textContent = `(${count})`;
+    });
+
     const activityContainer = $("#inactiveTable");
     const overdueContainer = $("#trainingOverdueTable");
 
