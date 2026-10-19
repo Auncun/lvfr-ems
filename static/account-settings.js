@@ -44,7 +44,6 @@
       <section class="acct-card">
         <p class="muted">Choose the notifications you want to receive. You only see the types your role allows. Hover over a name to see what it means.</p>
         <div id="accountNotificationOptions" class="account-notification-options"><p class="muted">Loading…</p></div>
-        <div class="acct-actions"><button type="button" class="primary" id="accountSaveNotifications">Save notification settings</button></div>
         <p id="accountNotificationMessage" class="acct-message" role="status" aria-live="polite"></p>
       </section>`);
 
@@ -161,7 +160,6 @@
       list.innerHTML = allowed.length
         ? allowed.map(option => `<label class="account-notification-option" title="${escapeHtml(NOTIFICATION_HINTS[option.kind] || option.label)}"><input type="checkbox" data-notification-kind="${escapeHtml(option.kind)}" ${option.enabled ? 'checked' : ''}><span>${escapeHtml(option.label)}</span></label>`).join('')
         : '<p class="muted">Your role has no notification types to choose from.</p>';
-      $('accountSaveNotifications').hidden = !allowed.length;
     } catch (error) {
       list.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
     }
@@ -207,23 +205,26 @@
     if (event.key === 'Escape') closeAccountWindows();
   });
 
-  $('accountSaveNotifications').addEventListener('click', async () => {
-    const button = $('accountSaveNotifications');
+  // Each change is saved as soon as it is made. A failed save puts the checkbox back.
+  let notificationSaveQueue = Promise.resolve();
+  notificationsDialog.addEventListener('change', event => {
+    const input = event.target.closest?.('[data-notification-kind]');
+    if (!input) return;
     const message = $('accountNotificationMessage');
     const preferences = {};
-    notificationsDialog.querySelectorAll('[data-notification-kind]').forEach(input => { preferences[input.dataset.notificationKind] = input.checked; });
-    button.disabled = true;
+    notificationsDialog.querySelectorAll('[data-notification-kind]').forEach(item => { preferences[item.dataset.notificationKind] = item.checked; });
     message.textContent = 'Saving…';
-    try {
-      const response = await fetch('/api/account/notification-preferences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preferences }) });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.detail || result.error || 'Could not save notification settings.');
-      message.textContent = 'Notification settings saved.';
-    } catch (error) {
-      message.textContent = error.message;
-    } finally {
-      button.disabled = false;
-    }
+    notificationSaveQueue = notificationSaveQueue.then(async () => {
+      try {
+        const response = await fetch('/api/account/notification-preferences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preferences }) });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.detail || result.error || 'Could not save notification settings.');
+        message.textContent = 'Saved.';
+      } catch (error) {
+        input.checked = !input.checked;
+        message.textContent = error.message;
+      }
+    });
   });
 
   $('accountShowPassword').addEventListener('change', event => {

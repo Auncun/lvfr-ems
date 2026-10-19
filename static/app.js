@@ -2017,7 +2017,7 @@ function renderInactive() {
                                 <td>${esc(m.name)}</td>
                                 <td>
                                     ${profileButton(m)}
-                                    <button type="button" class="danger" data-action="terminate" data-callsign="${esc(m.callsign)}">Terminate</button>
+                                    ${currentUserHasPermission("termination_manage") ? `<button type="button" class="danger" data-action="terminate" data-callsign="${esc(m.callsign)}">Terminate</button>` : ""}
                                 </td>
                             </tr>
                         `).join("")}
@@ -4529,11 +4529,16 @@ async function promote(cs) {
 
 async function terminate(cs) {
 
-    if (
-        !confirm(
-            `Terminate ${cs}? This clears the member's active data.`
-        )
-    ) {
+    // Typing the callsign is required, because termination clears the member's active data and cannot be undone here.
+    const typed = prompt(
+        `Terminating ${cs} clears the member's active data and cannot be undone here.\nType the callsign ${cs} to confirm:`,
+        ""
+    );
+    if (typed === null) {
+        return;
+    }
+    if (String(typed).trim().toUpperCase() !== String(cs).trim().toUpperCase()) {
+        toast("The callsign did not match. Termination was cancelled.");
         return;
     }
 
