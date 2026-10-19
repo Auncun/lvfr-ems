@@ -1252,3 +1252,10 @@ body.dialog-open .sidebar-toggle { visibility:hidden; pointer-events:none }
 
 /* Member counts on the Termination sub-tabs */
 .tab-count { display:inline-block; margin-inline-start:4px; font-weight:700; opacity:.85 }
+
+/* Sortable column headings: click once for ascending, again for descending, again for the original order */
+th.sortable-th { cursor:pointer; user-select:none; white-space:nowrap }
+th.sortable-th::after { content:" \2195"; opacity:.35; font-size:11px }
+th.sortable-th:hover::after { opacity:.7 }
+th.sort-asc::after { content:" \25B2"; opacity:1 }
+th.sort-desc::after { content:" \25BC"; opacity:1 }
