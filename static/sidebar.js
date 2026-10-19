@@ -19,7 +19,7 @@
         ] },
         { label: 'Eligible', tab: 'eligible' },
         { label: 'Do not Promote', tab: 'doNotPromote', availability: '#doNotPromoteTab' },
-        { label: 'Inactive', tab: 'inactive' },
+        { label: 'Termination', tab: 'inactive' },
         { label: 'Members Log', tab: 'membersLog', children: [
           { label: 'Promotion Log', tab: 'membersLog', log: 'promotion' },
           { label: 'Callsign Log', tab: 'membersLog', log: 'callsign' },

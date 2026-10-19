@@ -153,6 +153,7 @@ function permissionForRequest(route, method, data={}) {
   if((route==="/api/members"||route==="/api/members/version")&&method==="GET") return ["members_view",...TRAINING_VIEW_PERMISSIONS,"training_view","statistics_view","loi_manage","training_fort_manage","training_hert_manage","training_hours_manage","instructor_manage"];
   if(route==="/api/eligible"&&method==="GET") return ["eligible_view","promotion_access"];
   if(route==="/api/inactive"&&method==="GET") return "inactive_view";
+  if(route==="/api/training-overdue"&&method==="GET") return "inactive_view";
   if(route==="/api/members-log"&&method==="GET") return logViewPermission(data.log_type);
   if(route==="/api/members-log/clear"&&method==="POST") return "logs_delete_d1";
   if(route==="/api/logs/clean"&&method==="POST") return "logs_clean_full";
@@ -707,7 +708,8 @@ async function refreshD1Notifications(db,user) {
     if(eligible.eligible&&eligible.next_rank) additions.push({kind:"eligible",eventKey:"eligible:"+member.callsign+":"+eligible.next_rank,title:"New eligible promotion",message:member.name+" ("+member.callsign+") is eligible for "+eligible.next_rank+".",callsign:member.callsign,targetRank:eligible.next_rank,stateKey:"eligible:"+member.callsign,stateValue:eligible.next_rank});
   }
   const command=isCommandRank(user);
-  if(command) for(const member of rows) if(member.activity==="Can Be Terminated") additions.push({kind:"inactive",eventKey:"inactive:"+member.callsign,title:"Can Be Terminated",message:member.name+" ("+member.callsign+") is marked Can Be Terminated.",callsign:member.callsign,targetRank:"",stateKey:"inactive:"+member.callsign,stateValue:"1"});
+  if(command) for(const member of rows) if(member.activity==="Can Be Terminated") additions.push({kind:"inactive",eventKey:"inactive:"+member.callsign,title:"Can Be Terminated",message:member.name+" ("+member.callsign+") can be terminated for activity.",callsign:member.callsign,targetRank:"",stateKey:"inactive:"+member.callsign,stateValue:"1"});
+  if(command) for(const member of rows) { const m=memberFromRow(member); if(m.rank==="EMT"&&Number(m.days_in_rank||0)>=21&&(!m.has_basic_firefighting||!m.has_advanced_firefighting)) additions.push({kind:"inactive",eventKey:"overdue:"+member.callsign,title:"Training Overdue",message:member.name+" ("+member.callsign+") can be terminated for training overdue.",callsign:member.callsign,targetRank:"",stateKey:"overdue:"+member.callsign,stateValue:"1"}); }
   if(["admin","commander"].includes(String(user.role||""))) {
     const pending=(await db.prepare("SELECT account_id,name,callsign,created_at FROM accounts WHERE status='pending'").all()).results||[];
     for(const account of pending) additions.push({kind:"request",eventKey:"request:"+account.account_id,title:"New account request",message:(account.name||"New account")+" requested an account.",callsign:account.callsign||"",targetRank:"",stateKey:"request:"+account.account_id,stateValue:"1",createdAt:account.created_at});
@@ -728,6 +730,7 @@ async function refreshD1Notifications(db,user) {
   for(const key of [...state.keys()]) {
     if(key.startsWith("eligible:")&&!additions.some(item=>item.stateKey===key)) state.delete(key);
     if(command&&key.startsWith("inactive:")&&!additions.some(item=>item.stateKey===key)) state.delete(key);
+    if(command&&key.startsWith("overdue:")&&!additions.some(item=>item.stateKey===key)) state.delete(key);
   }
   if(!state.has("eligibility_seeded")) state.set("eligibility_seeded","1");
   if(command&&!state.has("inactive_seeded")) state.set("inactive_seeded","1");
@@ -1549,8 +1552,9 @@ export async function handleD1(context) {
         return eligibleRows;
       },[]));
     }
-    const viewableInactive=route==="/api/inactive"&&method==="GET"?await viewRanks(db,user):null;
+    const viewableInactive=(route==="/api/inactive"||route==="/api/training-overdue")&&method==="GET"?await viewRanks(db,user):null;
     if(route==="/api/inactive" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>(!viewableInactive||viewableInactive.includes(row.rank))&&row.activity==="Can Be Terminated").map(({callsign,name})=>({callsign,name})));
+    if(route==="/api/training-overdue" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>(!viewableInactive||viewableInactive.includes(row.rank))&&row.rank==="EMT"&&Number(row.days_in_rank||0)>=21&&(!row.has_basic_firefighting||!row.has_advanced_firefighting)).map(({callsign,name,days_in_rank,has_basic_firefighting,has_advanced_firefighting})=>({callsign,name,days_in_rank,has_basic_firefighting,has_advanced_firefighting})));
     if(route==="/api/do-not-promote" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.do_not_promote).map(({callsign,name})=>({callsign,name,added_at:"",added_by:""})));
     if(route==="/api/instructors" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).flatMap(row=>String(row.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(type=>(type==="HERT"&&user.permissions.hert_instructor_view)||(type==="FORT"&&user.permissions.fort_instructor_view)).map(type=>({name:row.name,type,date:""}))));
     const memberRoute=route.match(/^\/api\/member\/([^/]+)$/);

@@ -288,6 +288,7 @@ function applyOptimisticMutation(route, payload, callsign) {
             void loadMembers();
         }
         inactiveRows = inactiveRows.filter(member => String(member.callsign || "").toUpperCase() !== key);
+        trainingOverdueRows = trainingOverdueRows.filter(member => String(member.callsign || "").toUpperCase() !== key);
         if (updated.activity === "Can Be Terminated") inactiveRows.push({ callsign: updated.callsign, name: updated.name });
         renderInactive();
     }
@@ -347,12 +348,13 @@ function applyOptimisticAccountMutation(route) {
 }
 
 function removeCachedMemberRow(callsign) {
-    ["#membersTable", "#inactiveTable"].forEach(selector => {
+    ["#membersTable", "#inactiveTable", "#trainingOverdueTable"].forEach(selector => {
         const button = [...document.querySelectorAll(`${selector} [data-callsign]`)]
             .find(item => item.dataset.callsign?.toUpperCase() === callsign);
         button?.closest("tr")?.remove();
     });
     inactiveRows = inactiveRows.filter(member => String(member.callsign || "").toUpperCase() !== callsign);
+    trainingOverdueRows = trainingOverdueRows.filter(member => String(member.callsign || "").toUpperCase() !== callsign);
 }
 
 function removeEligibleRow(callsign) {
@@ -1934,13 +1936,26 @@ function renderEligibleRows(loadedRows) {
 // ============================================================
 
 let inactiveRows = [];
+let trainingOverdueRows = [];
+
+
+async function fetchInactiveLists(query = "") {
+
+    const [activity, overdue] = await Promise.all([
+        api(`/api/inactive${query}`),
+        api(`/api/training-overdue${query}`).catch(() => [])
+    ]);
+
+    inactiveRows = Array.isArray(activity) ? activity : [];
+    trainingOverdueRows = Array.isArray(overdue) ? overdue : [];
+}
 
 
 async function loadInactive(forceFresh = false) {
 
     try {
         if (forceFresh) {
-            inactiveRows = await api(`/api/inactive?_fresh=${Date.now()}`);
+            await fetchInactiveLists(`?_fresh=${Date.now()}`);
             renderInactive();
             return;
         }
@@ -1948,10 +1963,10 @@ async function loadInactive(forceFresh = false) {
         if (cachedRows.length) {
             inactiveRows = cachedRows.filter(member => member.activity === "Can Be Terminated");
             renderInactive();
-            api("/api/inactive").then(rows => { inactiveRows = rows; renderInactive(); }).catch(() => {});
+            fetchInactiveLists("").then(renderInactive).catch(() => {});
             return;
         }
-        inactiveRows = await api("/api/inactive");
+        await fetchInactiveLists("");
         renderInactive();
 
     } catch (e) {
@@ -1964,109 +1979,89 @@ async function loadInactive(forceFresh = false) {
 
 function renderInactive() {
 
-    const container =
-        $("#inactiveTable");
+    const activityContainer = $("#inactiveTable");
+    const overdueContainer = $("#trainingOverdueTable");
 
-    if (!container) {
+    if (!activityContainer && !overdueContainer) {
         return;
     }
 
-    const searchElement =
-        $("#inactiveSearch");
+    const search = (($("#inactiveSearch")?.value) || "").trim().toLowerCase();
 
-    const search =
-        (
-            searchElement
-                ? searchElement.value
-                : ""
-        )
-            .trim()
-            .toLowerCase();
+    const matches = m => !search
+        || String(m.callsign || "").toLowerCase().includes(search)
+        || String(m.name || "").toLowerCase().includes(search);
 
+    const canProfile = currentUserHasPermission("profile_view");
+    const profileButton = m => canProfile
+        ? `<button type="button" data-action="profile" data-callsign="${esc(m.callsign)}">View</button>`
+        : "";
 
-    const rows =
-        inactiveRows.filter(m => {
+    if (activityContainer) {
+        const rows = inactiveRows.filter(matches);
+        activityContainer.innerHTML = rows.length
 
-            const callsign =
-                String(
-                    m.callsign || ""
-                ).toLowerCase();
-
-            const name =
-                String(
-                    m.name || ""
-                ).toLowerCase();
-
-            return (
-                !search ||
-                callsign.includes(search) ||
-                name.includes(search)
-            );
-
-        });
-
-
-    container.innerHTML = rows.length
-
-        ? `
-            <table>
-
-                <thead>
-
-                    <tr>
-
-                        <th>Callsign</th>
-                        <th>Name</th>
-                        <th></th>
-
-                    </tr>
-
-                </thead>
-
-                <tbody>
-
-                    ${rows.map(m => `
-
+            ? `
+                <table>
+                    <thead>
                         <tr>
-
-                            <td>
-                                <b>
-                                    ${esc(m.callsign)}
-                                </b>
-                            </td>
-
-                            <td>
-                                ${esc(m.name)}
-                            </td>
-
-                            <td>
-
-                                ${currentUserHasPermission("profile_view") ? `<button type="button" data-action="profile" data-callsign="${esc(m.callsign)}">View</button>` : ""}
-                                <button
-                                    type="button"
-                                    class="danger"
-                                    data-action="terminate"
-                                    data-callsign="${esc(m.callsign)}"
-                                >
-                                    Terminate
-                                </button>
-
-                            </td>
-
+                            <th>Callsign</th>
+                            <th>Name</th>
+                            <th></th>
                         </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map(m => `
+                            <tr>
+                                <td><b>${esc(m.callsign)}</b></td>
+                                <td>${esc(m.name)}</td>
+                                <td>
+                                    ${profileButton(m)}
+                                    <button type="button" class="danger" data-action="terminate" data-callsign="${esc(m.callsign)}">Terminate</button>
+                                </td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            `
 
-                    `).join("")}
+            : empty(search ? "No matching members found." : "No members due to activity.");
+    }
 
-                </tbody>
+    if (overdueContainer) {
+        const rows = trainingOverdueRows.filter(matches);
+        const flag = ok => `<span class="badge ${ok ? "active-status" : "terminate-status"}">${ok ? "Yes" : "No"}</span>`;
+        overdueContainer.innerHTML = rows.length
 
-            </table>
-        `
+            ? `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Callsign</th>
+                            <th>Name</th>
+                            <th>Days in Rank</th>
+                            <th>Basic FORT</th>
+                            <th>Advanced FORT</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows.map(m => `
+                            <tr>
+                                <td><b>${esc(m.callsign)}</b></td>
+                                <td>${esc(m.name)}</td>
+                                <td>${esc(m.days_in_rank)}</td>
+                                <td>${flag(m.has_basic_firefighting)}</td>
+                                <td>${flag(m.has_advanced_firefighting)}</td>
+                                <td>${profileButton(m)}</td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                </table>
+            `
 
-        : empty(
-            search
-                ? "No matching members found."
-                : "No red Can Be Terminated members found."
-        );
+            : empty(search ? "No matching members found." : "No EMT members are overdue for training.");
+    }
 }
 
 

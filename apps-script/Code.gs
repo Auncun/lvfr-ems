@@ -150,6 +150,7 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/do-not-promote' && method === 'GET') { requireRolePermission_(user, 'do_not_promote_view'); return listDoNotPromote_(); }
   if (route === '/api/do-not-promote' && method === 'POST') { requireRolePermission_(user, 'do_not_promote_manage'); return setDoNotPromote_(data, user); }
   if (route === '/api/inactive' && method === 'GET') { requireAdmin_(user); return inactiveMembers_(); }
+  if (route === '/api/training-overdue' && method === 'GET') { requireAdmin_(user); return trainingOverdueMembers_(); }
   if (route === '/api/sync-status' && method === 'GET') { requireRolePermission_(user, 'sync_view'); return syncStatus_(); }
   if (route === '/api/sync' && method === 'POST') {
     requireRolePermission_(user, 'sync_manage');
@@ -705,10 +706,20 @@ function syncNotifications_(user, sheets) {
       inactive.forEach((name, callsign) => {
         const key = 'inactive:' + callsign;
         if (inactiveSeeded && !state.has(key)) appendNotification_(sheets.notifications, 'inactive', 'Can Be Terminated',
-          name + ' (' + callsign + ') is marked Can Be Terminated.', callsign, '', now);
+          name + ' (' + callsign + ') can be terminated for activity.', callsign, '', now);
         state.set(key, '1');
       });
       Array.from(state.keys()).filter(key => key.indexOf('inactive:') === 0 && !inactive.has(key.slice(9)))
+        .forEach(key => state.delete(key));
+      const overdueMembers = trainingOverdueMembers_();
+      const overdueKeys = new Set(overdueMembers.map(member => String(member.callsign).toUpperCase()));
+      overdueMembers.forEach(member => {
+        const key = 'overdue:' + member.callsign;
+        if (inactiveSeeded && !state.has(key)) appendNotification_(sheets.notifications, 'inactive', 'Training Overdue',
+          member.name + ' (' + member.callsign + ') can be terminated for training overdue.', member.callsign, '', now);
+        state.set(key, '1');
+      });
+      Array.from(state.keys()).filter(key => key.indexOf('overdue:') === 0 && !overdueKeys.has(key.slice(8).toUpperCase()))
         .forEach(key => state.delete(key));
       state.set('inactive_seeded', '1');
     }
@@ -732,7 +743,7 @@ function syncNotifications_(user, sheets) {
 function notificationVisibleTo_(row, user) {
   const kind = String(row[1] || '');
   if (kind === 'request') return isAdmin_(user);
-  if (kind === 'inactive') return isCommand_(user);
+  if (kind === 'inactive') return isCommand_(user) || (!!user.permissions && user.permissions.inactive_view === true);
   if (kind !== 'eligible') return false;
   return isAdmin_(user) || isCommand_(user) || ['AEMT', 'Senior Volunteer'].includes(String(row[5] || ''));
 }
@@ -1571,6 +1582,13 @@ function moveDoNotPromoteCallsign_(oldCallsign, newCallsign, name) {
   const index = rows.findIndex(row => String(row[0] || '').trim().toUpperCase() === oldCallsign);
   if (index >= 0) sheet.getRange(index + 2, 1, 1, 2).setValues([[newCallsign, name]]);
   CacheService.getScriptCache().removeAll(['members:do-not-promote:v1', 'members:do-not-promote:list:v1']);
+}
+
+// EMT members who have held the rank for 21+ days and are missing Basic FORT or Advanced FORT.
+function trainingOverdueMembers_() {
+  return listMembers_('').filter(member => member.rank === 'EMT' && Number(member.days_in_rank || 0) >= 21
+      && (!member.has_basic_firefighting || !member.has_advanced_firefighting))
+    .map(({ callsign, name, days_in_rank, has_basic_firefighting, has_advanced_firefighting }) => ({ callsign, name, days_in_rank, has_basic_firefighting, has_advanced_firefighting }));
 }
 
 function inactiveMembers_() {

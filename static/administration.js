@@ -363,7 +363,7 @@ const permissionGroups = [
   { name: 'Notifications', items: [
     ['notifications_clear_all', 'Clear notifications (everyone)', 'Delete all notifications for everyone from D1 and Google Sheets. Button appears in Operation Command.'],
     ['notif_termination', 'Termination notifications', 'Receive termination notifications and view the Termination log.'],
-    ['notif_inactive', 'Can be terminated notifications', 'Receive can-be-terminated notifications and view the Can Be Terminated list.'],
+    ['notif_inactive', 'Termination list notifications', 'Receive notifications when members are Can Be Terminated and view the Termination list.'],
     ['notif_promotion', 'Promotion notifications', 'Receive promotion notifications and view the Promotion log.'],
     ['notif_eligible', 'Eligible notifications', 'Receive eligible-for-promotion notifications and view the Eligible list.'],
     ['notif_callsign', 'Callsign notifications', 'Receive callsign notifications and view the Callsign log.'],
@@ -385,7 +385,7 @@ const permissionGroups = [
   ] },
   { name: 'Lists and records', items: [
     ['members_view', 'Members list', 'View the roster and member list.'], ['eligible_view', 'Eligible list', 'View promotion eligibility.'], ['promotion_access', 'Access Promotion', 'Open the Promotion page and view eligible members.'],
-    ['profile_view', 'Member profiles', 'Open member View / Manage details.'], ['inactive_view', 'Can Be Terminated list', 'View members marked for termination.'],
+    ['profile_view', 'Member profiles', 'Open member View / Manage details.'], ['inactive_view', 'Termination list', 'View the Termination list: members due to activity and EMTs overdue for training.'],
     { key:'logs_view', label:'Members Log (all)', description:'Allow every log tab.', children:[
       ['promotion_log_view','Promotion log','View promotion and rank-change history.'],['callsign_log_view','Callsign log','View callsign-change history.'],['termination_log_view','Termination log','View termination history.'],['training_log_view','Training log','View FORT and HERT training history.'],['training_hours_log_view','Training Hours log','View Training Hours changes.'],['loi_log_view','LOI log','View LOI history.'],['exam_log_view','Exam log','View exam history.'],['note_log_view','Note log','View member-note history.'],['activity_log_view','Activity log','View activity-status history.'],['instructor_log_view','Instructor log','View instructor-assignment history.'],
       ['do_not_promote_log_view','Do Not Promote log','View when members were added to or removed from the Do Not Promote list, and by whom.']
