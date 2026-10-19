@@ -18,7 +18,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=profile-grid-20261010-1"
+    href="/static/style.css?v=account-window-20261019-1"
 >
 
 <style>
@@ -185,7 +185,9 @@
         </button>
         <section id="accountMenu" class="account-menu" hidden>
             <strong id="accountName"></strong>
-            <button type="button" id="manageAccountButton">Settings</button>
+            <button type="button" id="manageAccountButton">Account</button>
+            <button type="button" id="accountNotificationsButton">Notification Settings</button>
+            <button type="button" id="accountSettingsButton">Account Settings</button>
             <form action="/auth/logout" method="post"><button type="submit">Sign out</button></form>
         </section>
         </div>
@@ -862,8 +864,8 @@
      ========================================================= -->
 
 <script src="/static/session-auth.js?v=shared-session-7"></script>
-<script src="/static/account-settings.js?v=show-password-20261010-1"></script>
-<script src="/static/app.js?v=termination-sub-20261019-1"></script>
+<script src="/static/account-settings.js?v=account-window-20261019-1"></script>
+<script src="/static/app.js?v=notif-kinds-20261019-1"></script>
 <script src="/static/sidebar.js?v=termination-sub-20261019-1"></script>
 <script src="/static/mobile-popovers.js?v=portal-controls-20261004-1"></script>
 

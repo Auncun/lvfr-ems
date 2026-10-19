@@ -4,7 +4,8 @@ const nowSeconds = () => Math.floor(Date.now() / 1000);
 // Notification types a person can choose to receive, each tied to the permission that allows it.
 const NOTIFICATION_PREFERENCE_KINDS=[
   {kind:"termination",label:"Termination",key:"notif_termination",bases:["termination_manage"]},
-  {kind:"inactive",label:"Can be Terminated",key:"notif_inactive",bases:["inactive_view"]},
+  {kind:"inactive",label:"Due to Activity",key:"notif_inactive",bases:["inactive_view"]},
+  {kind:"overdue",label:"Training Overdue",key:"notif_inactive",bases:["inactive_view"]},
   {kind:"promotion",label:"Promotion",key:"notif_promotion",bases:["promotion_manage","rank_manage"]},
   {kind:"eligible",label:"Can be promoted",key:"notif_eligible",bases:["eligible_view","promotion_access"]},
   {kind:"callsign",label:"Callsign",key:"notif_callsign",bases:["callsign_manage"]},
@@ -36,7 +37,7 @@ function enforceNotificationKeys(result,saved={}){
   }
   return result;
 }
-const DEFAULT_ON_NOTIFICATION_KINDS=["eligible","inactive","request"];
+const DEFAULT_ON_NOTIFICATION_KINDS=["eligible","inactive","overdue","request"];
 const LOG_VIEW_PERMISSIONS = ["promotion_log_view","callsign_log_view","termination_log_view","training_log_view","training_hours_log_view","loi_log_view","exam_log_view","note_log_view","activity_log_view","instructor_log_view"];
 const TRAINING_VIEW_PERMISSIONS = ["hert_certified_view","hert_instructor_view","hert_loi_view","fort_training_view","fort_instructor_view","fort_loi_view"];
 const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","notif_termination","notif_inactive","notif_promotion","notif_eligible","notif_callsign","notif_training","notif_training_time","notif_loi","notif_exam","notif_note","notif_activity","notif_instructor","notif_do_not_promote","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
@@ -709,7 +710,7 @@ async function refreshD1Notifications(db,user) {
   }
   const command=isCommandRank(user);
   if(command) for(const member of rows) if(member.activity==="Can Be Terminated") additions.push({kind:"inactive",eventKey:"inactive:"+member.callsign,title:"Can Be Terminated",message:member.name+" ("+member.callsign+") can be terminated for activity.",callsign:member.callsign,targetRank:"",stateKey:"inactive:"+member.callsign,stateValue:"1"});
-  if(command) for(const member of rows) { const m=memberFromRow(member); if(m.rank==="EMT"&&Number(m.days_in_rank||0)>=21&&(!m.has_basic_firefighting||!m.has_advanced_firefighting)) additions.push({kind:"inactive",eventKey:"overdue:"+member.callsign,title:"Training Overdue",message:member.name+" ("+member.callsign+") can be terminated for training overdue.",callsign:member.callsign,targetRank:"",stateKey:"overdue:"+member.callsign,stateValue:"1"}); }
+  if(command) for(const member of rows) { const m=memberFromRow(member); if(m.rank==="EMT"&&Number(m.days_in_rank||0)>=21&&(!m.has_basic_firefighting||!m.has_advanced_firefighting)) additions.push({kind:"overdue",eventKey:"overdue:"+member.callsign,title:"Training Overdue",message:member.name+" ("+member.callsign+") can be terminated for training overdue.",callsign:member.callsign,targetRank:"",stateKey:"overdue:"+member.callsign,stateValue:"1"}); }
   if(["admin","commander"].includes(String(user.role||""))) {
     const pending=(await db.prepare("SELECT account_id,name,callsign,created_at FROM accounts WHERE status='pending'").all()).results||[];
     for(const account of pending) additions.push({kind:"request",eventKey:"request:"+account.account_id,title:"New account request",message:(account.name||"New account")+" requested an account.",callsign:account.callsign||"",targetRank:"",stateKey:"request:"+account.account_id,stateValue:"1",createdAt:account.created_at});
@@ -720,7 +721,7 @@ async function refreshD1Notifications(db,user) {
     const isEligible=item.kind==="eligible";
     const shouldNotify=isEligible ? state.get(item.stateKey)!==item.stateValue
       : item.kind==="request" ? !state.has(item.stateKey)
-      : item.kind==="inactive" && state.has("inactive_seeded") && !state.has(item.stateKey);
+      : (item.kind==="inactive"||item.kind==="overdue") && state.has("inactive_seeded") && !state.has(item.stateKey);
     if(shouldNotify) {
       statements.push(db.prepare("INSERT OR IGNORE INTO notifications(kind,event_key,title,message,callsign,target_rank,created_at) VALUES(?,?,?,?,?,?,?)")
         .bind(item.kind,item.eventKey,item.title,item.message,item.callsign,item.targetRank,item.createdAt||now));
@@ -1235,7 +1236,7 @@ export async function handleD1(context) {
     requireRolePermission(user,user.permissions,permissionForRequest(route,method,{...data,log_type:data.log_type||url.searchParams.get("log_type")}));
     if(route==="/api/notifications" && method==="GET") {
       await refreshD1Notifications(db,user);
-      const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? LEFT JOIN notification_hidden h ON h.notification_id=n.id AND h.account_id=? LEFT JOIN notification_preferences p ON p.account_id=? AND p.kind=n.kind WHERE h.notification_id IS NULL AND COALESCE(p.enabled, CASE WHEN n.kind IN ('eligible','inactive','request') THEN 1 ELSE 0 END)=1 ORDER BY n.id DESC LIMIT 250").bind(user.account_id,user.account_id,user.account_id).all()).results||[];
+      const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? LEFT JOIN notification_hidden h ON h.notification_id=n.id AND h.account_id=? LEFT JOIN notification_preferences p ON p.account_id=? AND p.kind=n.kind WHERE h.notification_id IS NULL AND COALESCE(p.enabled, CASE WHEN n.kind IN ('eligible','inactive','overdue','request') THEN 1 ELSE 0 END)=1 ORDER BY n.id DESC LIMIT 250").bind(user.account_id,user.account_id,user.account_id).all()).results||[];
       const viewableNotif=await viewRanks(db,user);
       let visibleItems=recent.filter(item=>notificationVisible(item,user));
       if(viewableNotif){

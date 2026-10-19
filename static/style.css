@@ -1217,3 +1217,35 @@ body.dialog-open .sidebar-toggle { visibility:hidden; pointer-events:none }
     .profile-grid .card { padding:9px }
     .profile-grid .card b { font-size:12px }
 }
+/* Account menu and account window (redesigned) */
+.account-menu { min-width:230px; padding:10px; gap:4px }
+.account-menu strong { padding:6px 8px 8px; color:#8bbcff; font-size:13px; border-bottom:1px solid #303945; margin-bottom:4px }
+.account-menu button { padding:10px 12px; border:1px solid transparent; background:transparent; font-size:14px; font-weight:600 }
+.account-menu button:hover { background:#202b38; border-color:#303945 }
+.account-menu form button { color:#ff938a }
+.account-menu form button:hover { background:#2a1b1f; border-color:#5a2a2e }
+
+#accountSettingsDialog .acct-box { width:min(580px,100%); max-height:90dvh; padding:22px; box-shadow:0 24px 70px #0009 }
+#accountSettingsDialog .acct-head { display:flex; align-items:center; gap:14px; padding:0 40px 16px 0; margin:0 0 4px; border-bottom:1px solid #303945 }
+#accountSettingsDialog .acct-head h2 { margin:0; font-size:19px; line-height:1.2 }
+#accountSettingsDialog .acct-head p { margin:3px 0 0; font-size:13px }
+#accountSettingsDialog .acct-head .close { top:18px; right:18px }
+.acct-avatar { display:grid; place-items:center; flex:none; width:50px; height:50px; border-radius:50%; background:linear-gradient(135deg,#1f6feb,#58a6ff); color:#fff; font-size:17px; font-weight:700; letter-spacing:.5px }
+#accountSettingsDialog .acct-card { margin-top:14px; padding:16px; border:1px solid #303945; border-radius:12px; background:#0d1219; scroll-margin-top:12px }
+#accountSettingsDialog .acct-card h3 { margin:0 0 6px; font-size:15px; color:#f3f6fa }
+#accountSettingsDialog .acct-card > p.muted { margin:0 0 12px; font-size:13px; line-height:1.5 }
+#accountSettingsDialog .account-details { margin:0; border-radius:10px; background:#111821 }
+.acct-actions { margin-top:14px }
+.acct-actions .primary { width:100% }
+.acct-message { min-height:1.2em; margin:10px 0 0; font-size:13px; color:#9aa4b2 }
+.acct-form { display:grid; gap:12px }
+.acct-form label { display:grid; gap:6px; font-size:13px; color:#cbd5e1 }
+.acct-form input[type="password"],.acct-form input[type="text"] { width:100%; box-sizing:border-box; padding:10px 12px; border:1px solid #374454; border-radius:9px; background:#0b1017; color:#f3f6fa }
+.acct-form .show-password { display:flex; align-items:center; gap:8px; font-size:13px; color:#9aa4b2 }
+#accountSettingsDialog .account-notification-options { margin-bottom:0 }
+#accountSettingsDialog .account-notification-option { background:#111821 }
+@media (max-width:640px) {
+  #accountSettingsDialog .acct-box { padding:18px 14px; }
+  #accountSettingsDialog .acct-card { padding:14px 12px; }
+  #accountSettingsDialog .account-details { grid-template-columns:minmax(100px,.8fr) minmax(0,1.2fr) }
+}

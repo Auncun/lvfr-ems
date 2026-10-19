@@ -822,10 +822,10 @@ async function openNotification(id) {
     if (button) button.setAttribute("aria-expanded", "false");
     await markNotificationsRead([id]);
 
-    if (["eligible", "inactive"].includes(item.kind) && item.callsign) {
+    if (["eligible", "inactive", "overdue"].includes(item.kind) && item.callsign) {
         if (currentUserHasPermission("profile_view")) await profile(item.callsign, true);
         else if (item.kind === "eligible" && (currentUserHasPermission("eligible_view") || currentUserHasPermission("promotion_access"))) document.querySelector('.tab[data-tab="eligible"]')?.click();
-        else if (item.kind === "inactive" && currentUserHasPermission("inactive_view")) $("#inactiveTab")?.click();
+        else if ((item.kind === "inactive" || item.kind === "overdue") && currentUserHasPermission("inactive_view")) { $("#inactiveTab")?.click(); setInactiveSubView(item.kind === "overdue" ? "overdue" : "activity"); }
     } else if (item.kind === "request" && currentUserIsAdmin) {
         $("#leadersTab")?.click();
         document.querySelector('.leader-view-tab[data-leader-view="pending"]')?.click();
@@ -5758,11 +5758,11 @@ async function loadAccount() {
         if (notificationId > 0) {
             history.replaceState(null, "", location.pathname);
             await openNotification(notificationId);
-        } else if (notificationCallsign && ["eligible","inactive"].includes(notificationKind)) {
+        } else if (notificationCallsign && ["eligible","inactive","overdue"].includes(notificationKind)) {
             history.replaceState(null, "", location.pathname);
             if (currentUserHasPermission("profile_view")) await profile(notificationCallsign, true);
             else if (notificationKind === "eligible" && (currentUserHasPermission("eligible_view") || currentUserHasPermission("promotion_access"))) document.querySelector('.tab[data-tab="eligible"]')?.click();
-            else if (notificationKind === "inactive" && currentUserHasPermission("inactive_view")) $("#inactiveTab")?.click();
+            else if ((notificationKind === "inactive" || notificationKind === "overdue") && currentUserHasPermission("inactive_view")) { $("#inactiveTab")?.click(); setInactiveSubView(notificationKind === "overdue" ? "overdue" : "activity"); }
         }
         if (currentUserHasPermission("sync_view")) void syncStatus();
     } catch (e) {

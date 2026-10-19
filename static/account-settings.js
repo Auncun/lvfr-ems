@@ -1,53 +1,59 @@
 (() => {
-  const openButton = document.querySelector('#manageAccountButton');
-  if (!openButton) return;
+  const profileMenuItem = document.querySelector('#manageAccountButton');
+  if (!profileMenuItem) return;
 
   const dialog = document.createElement('div');
   dialog.id = 'accountSettingsDialog';
   dialog.className = 'modal hidden';
   dialog.innerHTML = `
-    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="accountSettingsTitle">
-      <button type="button" class="close" id="closeAccountSettings" aria-label="Close">&times;</button>
-      <h2 id="accountSettingsTitle">Manage account</h2>
-      <dl class="account-details">
-        <dt>Name</dt><dd id="accountSettingsName">Loading…</dd>
-        <dt>Callsign</dt><dd id="accountSettingsCallsign"></dd>
-        <dt>Rank</dt><dd id="accountSettingsRank"></dd>
-        <dt>Rank assigned</dt><dd id="accountSettingsDate"></dd>
-        <dt>Activity</dt><dd id="accountSettingsActivity"></dd>
-        <dt>Instructor</dt><dd id="accountSettingsInstructor"></dd>
-        <dt>Training</dt><dd id="accountSettingsTraining"></dd>
-        <dt>Supervisor exam</dt><dd id="accountSettingsExam"></dd>
-      </dl>
-      <div class="account-notifications-section">
-        <button type="button" class="primary" id="accountToggleNotifications" aria-expanded="false">Notification settings</button>
-        <div id="accountNotificationBody" hidden>
-        <h3>Notifications</h3>
+    <div class="modal-box acct-box" role="dialog" aria-modal="true" aria-labelledby="accountSettingsTitle">
+      <div class="acct-head">
+        <span class="acct-avatar" id="accountSettingsAvatar" aria-hidden="true">?</span>
+        <div class="acct-head-text">
+          <h2 id="accountSettingsTitle">My account</h2>
+          <p class="muted" id="accountSettingsSubtitle"></p>
+        </div>
+        <button type="button" class="close" id="closeAccountSettings" aria-label="Close">&times;</button>
+      </div>
+
+      <section class="acct-card" id="accountProfileSection" aria-labelledby="accountProfileTitle">
+        <h3 id="accountProfileTitle">Account</h3>
+        <dl class="account-details">
+          <dt>Name</dt><dd id="accountSettingsName">Loading…</dd>
+          <dt>Callsign</dt><dd id="accountSettingsCallsign"></dd>
+          <dt>Rank</dt><dd id="accountSettingsRank"></dd>
+          <dt>Rank assigned</dt><dd id="accountSettingsDate"></dd>
+          <dt>Activity</dt><dd id="accountSettingsActivity"></dd>
+          <dt>Instructor</dt><dd id="accountSettingsInstructor"></dd>
+          <dt>Training</dt><dd id="accountSettingsTraining"></dd>
+          <dt>Supervisor exam</dt><dd id="accountSettingsExam"></dd>
+        </dl>
+      </section>
+
+      <section class="acct-card" id="accountNotificationsSection" aria-labelledby="accountNotificationsTitle">
+        <h3 id="accountNotificationsTitle">Notification Settings</h3>
         <p class="muted">Choose the notifications you want to receive. You only see the types your role allows.</p>
         <div id="accountNotificationOptions" class="account-notification-options"><p class="muted">Loading…</p></div>
-        <button type="button" class="primary" id="accountSaveNotifications">Save notification settings</button>
-        <p id="accountNotificationMessage" role="status" aria-live="polite"></p>
-        </div>
-      </div>
-      <div class="account-password-section">
-        <button type="button" class="primary" id="accountTogglePassword">Change password</button>
-        <form id="accountSettingsPassword" class="form-grid" hidden>
+        <div class="acct-actions"><button type="button" class="primary" id="accountSaveNotifications">Save notification settings</button></div>
+        <p id="accountNotificationMessage" class="acct-message" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="acct-card" id="accountPasswordSection" aria-labelledby="accountPasswordTitle">
+        <h3 id="accountPasswordTitle">Account Settings</h3>
+        <p class="muted">Change the password you use to sign in.</p>
+        <form id="accountSettingsPassword" class="acct-form">
           <label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label>
           <label>New password<input name="new_password" type="password" minlength="4" maxlength="20" pattern="[A-Za-z0-9]{4,20}" autocomplete="new-password" required></label>
           <label class="show-password"><input type="checkbox" id="accountShowPassword"> Show password</label>
-          <button type="submit" class="primary">Save new password</button>
-          <p id="accountSettingsMessage" role="status" aria-live="polite"></p>
+          <div class="acct-actions"><button type="submit" class="primary">Save new password</button></div>
+          <p id="accountSettingsMessage" class="acct-message" role="status" aria-live="polite"></p>
         </form>
-      </div>
+      </section>
     </div>`;
   document.body.append(dialog);
 
   const field = id => dialog.querySelector(`#${id}`);
-  field('accountTogglePassword').addEventListener('click', () => {
-    const form = field('accountSettingsPassword');
-    form.hidden = !form.hidden;
-    if (!form.hidden) form.querySelector('input[name="current_password"]').focus();
-  });
+  const sectionIds = { profile: 'accountProfileSection', notifications: 'accountNotificationsSection', password: 'accountPasswordSection' };
   let accountProfile = null;
   const profileCacheKey = accountId => `lvfr.account.profile.v1:${accountId || ''}`;
   const readRosterSnapshot = callsign => {
@@ -56,7 +62,10 @@
       return members.find(member => String(member.callsign || '').trim().toUpperCase() === String(callsign || '').trim().toUpperCase()) || null;
     } catch { return null; }
   };
+  const initials = name => String(name || '').trim().split(/\s+/).slice(0, 2).map(part => part[0] || '').join('').toUpperCase() || '?';
   const renderProfile = (user, member) => {
+    field('accountSettingsAvatar').textContent = initials(user?.name || member?.name);
+    field('accountSettingsSubtitle').textContent = [user?.callsign || member?.callsign, member?.rank].filter(Boolean).join(' · ');
     field('accountSettingsName').textContent = user?.name || '';
     field('accountSettingsCallsign').textContent = user?.callsign || member?.callsign || '';
     field('accountSettingsRank').textContent = member?.rank || '';
@@ -66,53 +75,8 @@
     field('accountSettingsTraining').textContent = [member?.has_basic_firefighting && 'Basic Firefighting', member?.has_advanced_firefighting && 'Advanced Firefighting', member?.has_hert && 'HERT'].filter(Boolean).join(', ') || 'None';
     field('accountSettingsExam').textContent = member?.has_supervisor_exam ? 'Passed' : 'Not completed';
   };
-  const close = () => dialog.classList.add('hidden');
-  async function loadNotificationOptions() {
-    const list = field('accountNotificationOptions');
-    field('accountNotificationMessage').textContent = '';
-    try {
-      const response = await fetch('/api/account/notification-preferences');
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.detail || result.error || 'Could not load notification settings.');
-      const allowed = result.options.filter(option => option.allowed);
-      list.innerHTML = allowed.length
-        ? allowed.map(option => `<label class="account-notification-option"><input type="checkbox" data-notification-kind="${option.kind}" ${option.enabled ? 'checked' : ''}><span>${option.label}</span></label>`).join('')
-        : '<p class="muted">Your role has no notification types to choose from.</p>';
-      field('accountSaveNotifications').hidden = !allowed.length;
-    } catch (error) {
-      list.innerHTML = `<p class="muted">${error.message}</p>`;
-    }
-  }
-  field('accountToggleNotifications').addEventListener('click', () => {
-    const body = field('accountNotificationBody');
-    body.hidden = !body.hidden;
-    field('accountToggleNotifications').setAttribute('aria-expanded', String(!body.hidden));
-    if (!body.hidden) void loadNotificationOptions();
-  });
-  field('accountSaveNotifications').addEventListener('click', async () => {
-    const button = field('accountSaveNotifications');
-    const message = field('accountNotificationMessage');
-    const preferences = {};
-    dialog.querySelectorAll('[data-notification-kind]').forEach(input => { preferences[input.dataset.notificationKind] = input.checked; });
-    button.disabled = true;
-    message.textContent = 'Saving…';
-    try {
-      const response = await fetch('/api/account/notification-preferences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preferences }) });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.detail || result.error || 'Could not save notification settings.');
-      message.textContent = 'Notification settings saved.';
-    } catch (error) {
-      message.textContent = error.message;
-    } finally {
-      button.disabled = false;
-    }
-  });
-  openButton.addEventListener('click', async () => {
-    const accountMenu = document.querySelector('#accountMenu');
-    const accountMenuButton = document.querySelector('#accountMenuButton');
-    if (accountMenu) accountMenu.hidden = true;
-    accountMenuButton?.setAttribute('aria-expanded', 'false');
-    dialog.classList.remove('hidden');
+
+  async function loadProfile() {
     const user = window.lvfrCachedUser?.();
     const accountId = user?.account_id || user?.id || '';
     if (!accountProfile && accountId) {
@@ -144,9 +108,69 @@
     } catch (error) {
       if (!cachedMember) field('accountSettingsName').textContent = error.message;
     }
+  }
+
+  async function loadNotificationOptions() {
+    const list = field('accountNotificationOptions');
+    field('accountNotificationMessage').textContent = '';
+    try {
+      const response = await fetch('/api/account/notification-preferences');
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || result.error || 'Could not load notification settings.');
+      const allowed = result.options.filter(option => option.allowed);
+      list.innerHTML = allowed.length
+        ? allowed.map(option => `<label class="account-notification-option"><input type="checkbox" data-notification-kind="${option.kind}" ${option.enabled ? 'checked' : ''}><span>${option.label}</span></label>`).join('')
+        : '<p class="muted">Your role has no notification types to choose from.</p>';
+      field('accountSaveNotifications').hidden = !allowed.length;
+    } catch (error) {
+      list.innerHTML = `<p class="muted">${error.message}</p>`;
+    }
+  }
+
+  const closeMenu = () => {
+    const menu = document.querySelector('#accountMenu');
+    if (menu) menu.hidden = true;
+    document.querySelector('#accountMenuButton')?.setAttribute('aria-expanded', 'false');
+  };
+  const close = () => dialog.classList.add('hidden');
+
+  // Opens the account window at the requested section (profile, notifications or password).
+  function openSection(section) {
+    closeMenu();
+    dialog.classList.remove('hidden');
+    void loadProfile();
+    void loadNotificationOptions();
+    const target = document.getElementById(sectionIds[section] || sectionIds.profile);
+    requestAnimationFrame(() => target?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+    if (section === 'password') field('accountSettingsPassword').querySelector('input[name="current_password"]')?.focus();
+  }
+
+  document.querySelector('#manageAccountButton')?.addEventListener('click', () => openSection('profile'));
+  document.querySelector('#accountNotificationsButton')?.addEventListener('click', () => openSection('notifications'));
+  document.querySelector('#accountSettingsButton')?.addEventListener('click', () => openSection('password'));
+
+  field('accountSaveNotifications').addEventListener('click', async () => {
+    const button = field('accountSaveNotifications');
+    const message = field('accountNotificationMessage');
+    const preferences = {};
+    dialog.querySelectorAll('[data-notification-kind]').forEach(input => { preferences[input.dataset.notificationKind] = input.checked; });
+    button.disabled = true;
+    message.textContent = 'Saving…';
+    try {
+      const response = await fetch('/api/account/notification-preferences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preferences }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || result.error || 'Could not save notification settings.');
+      message.textContent = 'Notification settings saved.';
+    } catch (error) {
+      message.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
   });
+
   field('closeAccountSettings').addEventListener('click', close);
   dialog.addEventListener('click', event => { if (event.target === dialog) close(); });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && !dialog.classList.contains('hidden')) close(); });
   field('accountShowPassword').addEventListener('change', event => {
     const visible = event.target.checked;
     field('accountSettingsPassword').querySelectorAll('input[name="current_password"], input[name="new_password"]').forEach(input => {
