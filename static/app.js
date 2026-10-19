@@ -2053,7 +2053,10 @@ function renderInactive() {
                                 <td>${esc(m.days_in_rank)}</td>
                                 <td>${flag(m.has_basic_firefighting)}</td>
                                 <td>${flag(m.has_advanced_firefighting)}</td>
-                                <td>${profileButton(m)}</td>
+                                <td>
+                                    ${profileButton(m)}
+                                    ${currentUserHasPermission("termination_manage") ? `<button type="button" class="danger" data-action="terminate" data-callsign="${esc(m.callsign)}">Terminate</button>` : ""}
+                                </td>
                             </tr>
                         `).join("")}
                     </tbody>
@@ -5330,6 +5333,22 @@ $("#refreshLeadersBtn")?.addEventListener("click", event => withListRefresh(even
 // ------------------------------------------------------------
 // CAN BE TERMINATED - REAL TIME SEARCH
 // ------------------------------------------------------------
+
+// Switch between the Due to Activity and Training Overdue sub-lists.
+document.addEventListener("click", event => {
+    const tab = event.target.closest?.("[data-inactive-view]");
+    if (!tab) return;
+    const view = tab.dataset.inactiveView;
+    document.querySelectorAll("[data-inactive-view]").forEach(button => {
+        const active = button.dataset.inactiveView === view;
+        button.classList.toggle("active", active);
+        if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
+    });
+    document.querySelectorAll("[data-inactive-panel]").forEach(panel => {
+        panel.hidden = panel.dataset.inactivePanel !== view;
+    });
+});
+
 
 const inactiveSearch =
     $("#inactiveSearch");

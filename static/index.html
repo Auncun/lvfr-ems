@@ -515,17 +515,24 @@
     </div>
 
 
-    <h3 style="margin:18px 0 8px">Due to Activity</h3>
-    <div
-        id="inactiveTable"
-        class="table-wrap"
-    ></div>
+    <div class="training-directory-tabs" style="margin-top:14px">
+        <button type="button" class="log-tab active" id="inactiveActivityTab" data-inactive-view="activity" aria-current="page">Due to Activity</button>
+        <button type="button" class="log-tab" id="inactiveOverdueTab" data-inactive-view="overdue">Training Overdue</button>
+    </div>
 
-    <h3 style="margin:24px 0 8px">Training Overdue</h3>
-    <div
-        id="trainingOverdueTable"
-        class="table-wrap"
-    ></div>
+    <section data-inactive-panel="activity">
+        <div
+            id="inactiveTable"
+            class="table-wrap"
+        ></div>
+    </section>
+
+    <section data-inactive-panel="overdue" hidden>
+        <div
+            id="trainingOverdueTable"
+            class="table-wrap"
+        ></div>
+    </section>
 
 
 </section>
