@@ -53,6 +53,24 @@
   document.body.append(dialog);
 
   const field = id => dialog.querySelector(`#${id}`);
+  // Explanation shown when the mouse rests on a notification name.
+  const NOTIFICATION_HINTS = {
+    termination: 'Members who were terminated (removed from the roster).',
+    inactive: 'Due to Activity: members whose activity is Can Be Terminated.',
+    overdue: 'Training Overdue: EMT members with 21+ days in rank who are missing Basic FORT or Advanced FORT.',
+    promotion: 'Members who were promoted or had their rank changed.',
+    eligible: 'Members who became eligible for promotion.',
+    callsign: 'Callsign changes.',
+    training: 'HERT and FORT training changes.',
+    training_time: 'Training Hours changes.',
+    loi: 'LOI (letter of intent) changes.',
+    exam: 'Supervisor exam changes.',
+    note: 'Member note changes.',
+    activity: 'Activity status changes.',
+    instructor: 'HERT and FORT instructor changes.',
+    do_not_promote: 'Do Not Promote list changes.',
+    request: 'New account requests waiting for approval.'
+  };
   const sectionIds = { profile: 'accountProfileSection', notifications: 'accountNotificationsSection', password: 'accountPasswordSection' };
   let accountProfile = null;
   const profileCacheKey = accountId => `lvfr.account.profile.v1:${accountId || ''}`;
@@ -62,18 +80,31 @@
       return members.find(member => String(member.callsign || '').trim().toUpperCase() === String(callsign || '').trim().toUpperCase()) || null;
     } catch { return null; }
   };
+  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+  // Same colours as the roster: green/yellow/orange/red for activity, green when a qualification is held, red when missing.
+  const activityBadge = value => {
+    if (!value) return '<span class="muted">Not loaded</span>';
+    const cls = value === 'Can Be Terminated' ? 'terminate-status' : value === 'Semi Active' ? 'semi-status' : value === 'Inactive' ? 'inactive-status' : 'active-status';
+    return `<span class="badge ${cls}">${escapeHtml(value)}</span>`;
+  };
+  const flagBadge = (ok, yesText, noText) => `<span class="badge ${ok ? 'active-status' : 'terminate-status'}">${escapeHtml(ok ? yesText : noText)}</span>`;
   const initials = name => String(name || '').trim().split(/\s+/).slice(0, 2).map(part => part[0] || '').join('').toUpperCase() || '?';
   const renderProfile = (user, member) => {
     field('accountSettingsAvatar').textContent = initials(user?.name || member?.name);
     field('accountSettingsSubtitle').textContent = [user?.callsign || member?.callsign, member?.rank].filter(Boolean).join(' · ');
     field('accountSettingsName').textContent = user?.name || '';
     field('accountSettingsCallsign').textContent = user?.callsign || member?.callsign || '';
-    field('accountSettingsRank').textContent = member?.rank || '';
+    const badge = typeof rankBadgeHtml === 'function' ? rankBadgeHtml(member?.rank, user?.callsign || member?.callsign) : '';
+    field('accountSettingsRank').innerHTML = `${badge}${escapeHtml(member?.rank || '')}`;
     field('accountSettingsDate').textContent = member?.rank_assigned_date || member?.date || '';
-    field('accountSettingsActivity').textContent = member?.activity || '';
-    field('accountSettingsInstructor').textContent = member?.instructor_type || user?.instructor_type || 'Not an Instructor';
-    field('accountSettingsTraining').textContent = [member?.has_basic_firefighting && 'Basic Firefighting', member?.has_advanced_firefighting && 'Advanced Firefighting', member?.has_hert && 'HERT'].filter(Boolean).join(', ') || 'None';
-    field('accountSettingsExam').textContent = member?.has_supervisor_exam ? 'Passed' : 'Not completed';
+    field('accountSettingsActivity').innerHTML = activityBadge(member?.activity || '');
+    const instructor = member?.instructor_type || user?.instructor_type || '';
+    field('accountSettingsInstructor').innerHTML = instructor ? `<span class="badge active-status">${escapeHtml(instructor)}</span>` : flagBadge(false, '', 'Not an Instructor');
+    const trainings = [member?.has_basic_firefighting && 'Basic Firefighting', member?.has_advanced_firefighting && 'Advanced Firefighting', member?.has_hert && 'HERT'].filter(Boolean);
+    field('accountSettingsTraining').innerHTML = trainings.length
+      ? trainings.map(name => `<span class="badge active-status">${escapeHtml(name)}</span>`).join(' ')
+      : flagBadge(false, '', 'None');
+    field('accountSettingsExam').innerHTML = flagBadge(!!member?.has_supervisor_exam, 'Passed', 'Not completed');
   };
 
   async function loadProfile() {
@@ -119,7 +150,7 @@
       if (!response.ok) throw new Error(result.detail || result.error || 'Could not load notification settings.');
       const allowed = result.options.filter(option => option.allowed);
       list.innerHTML = allowed.length
-        ? allowed.map(option => `<label class="account-notification-option"><input type="checkbox" data-notification-kind="${option.kind}" ${option.enabled ? 'checked' : ''}><span>${option.label}</span></label>`).join('')
+        ? allowed.map(option => `<label class="account-notification-option" title="${escapeHtml(NOTIFICATION_HINTS[option.kind] || option.label)}"><input type="checkbox" data-notification-kind="${option.kind}" ${option.enabled ? 'checked' : ''}><span>${escapeHtml(option.label)}</span></label>`).join('')
         : '<p class="muted">Your role has no notification types to choose from.</p>';
       field('accountSaveNotifications').hidden = !allowed.length;
     } catch (error) {
@@ -134,9 +165,24 @@
   };
   const close = () => dialog.classList.add('hidden');
 
+  // Shows only the account window: closes the notification and online panels, other dialogs and the side menu.
+  const hideOtherWindows = () => {
+    document.querySelector('#notificationPanel')?.setAttribute('hidden', '');
+    document.querySelector('#notificationButton')?.setAttribute('aria-expanded', 'false');
+    document.querySelector('#onlineUsersPanel')?.setAttribute('hidden', '');
+    document.querySelector('#topOnlineCount')?.setAttribute('aria-expanded', 'false');
+    document.querySelectorAll('.modal:not(#accountSettingsDialog):not(.hidden)').forEach(modal => {
+      if (modal.id === 'modal' && typeof window.closeModal === 'function') window.closeModal();
+      else modal.classList.add('hidden');
+    });
+    document.querySelectorAll('dialog[open]').forEach(item => item.close?.());
+    if (document.querySelector('#appSidebar')?.classList.contains('is-open')) document.querySelector('.sidebar-close')?.click();
+  };
+
   // Opens the account window at the requested section (profile, notifications or password).
   function openSection(section) {
     closeMenu();
+    hideOtherWindows();
     dialog.classList.remove('hidden');
     void loadProfile();
     void loadNotificationOptions();
