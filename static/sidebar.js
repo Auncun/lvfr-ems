@@ -456,7 +456,11 @@
 // Marks the page while any dialog is open, so the navigation button steps behind it.
 (() => {
   const check = () => {
-    const open = !!document.querySelector('.modal:not(.hidden), dialog[open], [role="dialog"]:not([hidden]):not(.hidden)');
+    // A dialog counts as open only when it and its parents are shown (inner role="dialog" boxes sit inside hidden .modal wrappers).
+    const open = [...document.querySelectorAll('.modal, dialog, [role="dialog"]')].some(el => {
+      if (el.tagName === 'DIALOG') return el.open;
+      return !el.closest('[hidden], .hidden') && getComputedStyle(el).display !== 'none';
+    });
     document.body?.classList.toggle('dialog-open', open);
   };
   new MutationObserver(check).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'hidden', 'open'] });
