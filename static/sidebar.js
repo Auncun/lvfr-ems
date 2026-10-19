@@ -19,7 +19,10 @@
         ] },
         { label: 'Eligible', tab: 'eligible' },
         { label: 'Do not Promote', tab: 'doNotPromote', availability: '#doNotPromoteTab' },
-        { label: 'Termination', tab: 'inactive' },
+        { label: 'Termination', tab: 'inactive', children: [
+          { label: 'Due to Activity', tab: 'inactive', inactiveSub: 'activity' },
+          { label: 'Training Overdue', tab: 'inactive', inactiveSub: 'overdue' }
+        ] },
         { label: 'Members Log', tab: 'membersLog', children: [
           { label: 'Promotion Log', tab: 'membersLog', log: 'promotion' },
           { label: 'Callsign Log', tab: 'membersLog', log: 'callsign' },
@@ -75,9 +78,10 @@
     const attrs = item.tab ? ` data-tab="${item.tab}"` : '';
     const extra = item.log ? ` data-log="${item.log}"` : item.leader ? ` data-leader="${item.leader}"` : item.status ? ` data-status="${item.status}"` : item.training ? ` data-training="${item.training}"` : '';
     const trainingSection = item.trainingSection ? ` data-training-section="${item.trainingSection}"` : '';
+    const inactiveSub = item.inactiveSub ? ` data-inactive-sub="${item.inactiveSub}"` : '';
     const control = item.anchor
       ? `<a class="sidebar-item-action" href="${page.href}${item.anchor}" data-sidebar-item data-page="${page.href}"${availability}>${esc(item.label)}</a>`
-      : `<button class="sidebar-item-action" type="button" data-sidebar-item data-page="${page.href}"${attrs}${extra}${trainingSection}${availability}>${esc(item.label)}</button>`;
+      : `<button class="sidebar-item-action" type="button" data-sidebar-item data-page="${page.href}"${attrs}${extra}${trainingSection}${inactiveSub}${availability}>${esc(item.label)}</button>`;
     const expand = children.length
       ? `<button type="button" class="sidebar-expand sidebar-tree-expand" aria-label="Show ${esc(item.label)} submenus" title="Show submenus" aria-expanded="false" aria-controls="${id}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>`
       : '';
@@ -149,7 +153,8 @@
   if (!isRefresh && !sessionStorage.getItem('lvfr.sidebar.pending-navigation')) sessionStorage.removeItem(savedViewKey);
   const viewFromItem = item => ({
     page: item.dataset.page || '', tab: item.dataset.tab || '', training: item.dataset.training || '',
-    trainingSection: item.dataset.trainingSection || '', log: item.dataset.log || '', leader: item.dataset.leader || ''
+    trainingSection: item.dataset.trainingSection || '', log: item.dataset.log || '', leader: item.dataset.leader || '',
+    inactiveSub: item.dataset.inactiveSub || ''
   });
   const rememberSidebarView = view => { try { sessionStorage.setItem(savedViewKey, JSON.stringify(view)); } catch {} };
   const readSavedView = () => { try { return JSON.parse(sessionStorage.getItem(savedViewKey) || 'null'); } catch { return null; } };
@@ -173,7 +178,7 @@
       if (item.dataset.page !== currentPath) {
         sessionStorage.setItem('lvfr.sidebar.pending-navigation', JSON.stringify({
           page: item.dataset.page, tab: targetTab, log: item.dataset.log || '', leader: item.dataset.leader || '',
-          training: item.dataset.training || '', trainingSection: item.dataset.trainingSection || ''
+          training: item.dataset.training || '', trainingSection: item.dataset.trainingSection || '', inactiveSub: item.dataset.inactiveSub || ''
         }));
         location.assign(item.dataset.page);
         return;
@@ -183,6 +188,7 @@
       if (item.dataset.trainingSection) document.querySelector(`[data-training-section="${item.dataset.trainingSection}"]`)?.click();
       if (item.dataset.log) document.querySelector(`[data-log="${item.dataset.log}"]`)?.click();
       if (item.dataset.leader) document.querySelector(`[data-leader-view="${item.dataset.leader}"]`)?.click();
+      if (item.dataset.inactiveSub) document.querySelector(`[data-inactive-view="${item.dataset.inactiveSub}"]`)?.click();
       close();
       return;
     }
@@ -347,6 +353,7 @@
     if (pending.trainingSection) document.querySelector(`[data-training-section="${pending.trainingSection}"]`)?.click();
     if (pending.log) document.querySelector(`[data-log="${pending.log}"]`)?.click();
     if (pending.leader) document.querySelector(`[data-leader-view="${pending.leader}"]`)?.click();
+    if (pending.inactiveSub) document.querySelector(`[data-inactive-view="${pending.inactiveSub}"]`)?.click();
     history.replaceState(null, '', location.pathname);
   }
   window.setTimeout(activatePendingNavigation, 0);
@@ -384,12 +391,14 @@
     const sectionOk = !view.trainingSection || !!sectionButton?.classList.contains('active');
     const logOk = !view.log || !!document.querySelector(`#membersLog .log-tab[data-log="${view.log}"]`)?.classList.contains('active');
     const leaderOk = !view.leader || !!document.querySelector(`[data-leader-view="${view.leader}"]`)?.classList.contains('active');
-    if (mainOk && sectionOk && logOk && leaderOk) return;
+    const inactiveOk = !view.inactiveSub || !!document.querySelector(`[data-inactive-view="${view.inactiveSub}"]`)?.classList.contains('active');
+    if (mainOk && sectionOk && logOk && leaderOk && inactiveOk) return;
     tab.click();
     if (view.training) document.querySelector(`[data-training-view="${view.training}"]`)?.click();
     if (view.trainingSection) document.querySelector(`[data-training-section="${view.trainingSection}"]`)?.click();
     if (view.log) document.querySelector(`[data-log="${view.log}"]`)?.click();
     if (view.leader) document.querySelector(`[data-leader-view="${view.leader}"]`)?.click();
+    if (view.inactiveSub) document.querySelector(`[data-inactive-view="${view.inactiveSub}"]`)?.click();
   };
   // Remember the section the person opens from the top tabs too. Only real clicks count, so the page's own startup selection cannot overwrite the saved section.
   document.addEventListener('click', event => {

@@ -5334,11 +5334,9 @@ $("#refreshLeadersBtn")?.addEventListener("click", event => withListRefresh(even
 // CAN BE TERMINATED - REAL TIME SEARCH
 // ------------------------------------------------------------
 
-// Switch between the Due to Activity and Training Overdue sub-lists.
-document.addEventListener("click", event => {
-    const tab = event.target.closest?.("[data-inactive-view]");
-    if (!tab) return;
-    const view = tab.dataset.inactiveView;
+// Switch between the Due to Activity and Training Overdue sub-lists. The choice is kept for the session so a refresh returns to it.
+const INACTIVE_SUB_VIEW_KEY = "lvfr.inactive.sub-view";
+function setInactiveSubView(view) {
     document.querySelectorAll("[data-inactive-view]").forEach(button => {
         const active = button.dataset.inactiveView === view;
         button.classList.toggle("active", active);
@@ -5347,7 +5345,16 @@ document.addEventListener("click", event => {
     document.querySelectorAll("[data-inactive-panel]").forEach(panel => {
         panel.hidden = panel.dataset.inactivePanel !== view;
     });
+    try { sessionStorage.setItem(INACTIVE_SUB_VIEW_KEY, view); } catch {}
+}
+document.addEventListener("click", event => {
+    const tab = event.target.closest?.("[data-inactive-view]");
+    if (tab) setInactiveSubView(tab.dataset.inactiveView);
 });
+try {
+    const savedSubView = sessionStorage.getItem(INACTIVE_SUB_VIEW_KEY);
+    if (savedSubView === "activity" || savedSubView === "overdue") setInactiveSubView(savedSubView);
+} catch {}
 
 
 const inactiveSearch =
