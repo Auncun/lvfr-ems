@@ -220,6 +220,7 @@
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.detail || result.error || 'Could not save notification settings.');
         message.textContent = 'Saved.';
+        document.dispatchEvent(new Event('notification-prefs-changed'));
       } catch (error) {
         input.checked = !input.checked;
         message.textContent = error.message;
