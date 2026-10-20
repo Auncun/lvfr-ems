@@ -4,6 +4,30 @@
   const sortStates = new Map();   // table key -> { column, direction }
   const defaultOrder = new WeakMap(); // tbody -> rows in their original order
   const EMPTY = new Set(['', '—', '-']);
+  // Fixed business orders: ranks from highest to lowest, and activity from most to least active.
+  const CUSTOM_ORDERS = {
+    rank: ['commissioners', 'chief', 'county command', 'division commander', 'captain', 'lieutenant', 'lead paramedic', 'paramedic', 'aemt', 'advanced emt', 'emt', 'probationary', 'senior volunteer', 'volunteer', 'probationary volunteer', 'emr', 'emr/volunteer'],
+    activity: ['active', 'semi active', 'inactive', 'can be terminated']
+  };
+  // Reads only the heading's own text, so a button inside the heading does not change the match.
+  const headingLabel = th => [...(th?.childNodes || [])].filter(node => node.nodeType === 3).map(node => node.textContent).join('').trim().toLowerCase();
+  // Columns where sorting has no use: action buttons, yes/no training flags, hours and results.
+  const NO_SORT_LABELS = new Set(['', 'action', 'actions', 'result', 'training hours', 'basic fort', 'advanced fort', 'hert cert', 'hert certified', 'hert instructor', 'fort instructor', 'reason', 'presence', 'approval', 'role change', 'type']);
+  // Lists whose last column holds buttons only.
+  const NO_SORT_LAST_COLUMN_IN = new Set(['membersTable', 'eligibleTable', 'doNotPromoteTable', 'inactiveTable', 'trainingOverdueTable']);
+  const isSortable = (table, th) => {
+    if (NO_SORT_LABELS.has(headingLabel(th))) return false;
+    const headerRow = table.tHead.rows[0];
+    const isLast = th === headerRow.cells[headerRow.cells.length - 1];
+    if (isLast && NO_SORT_LAST_COLUMN_IN.has(table.closest('[id]')?.id)) return false;
+    return true;
+  };
+  const customOrderFor = th => {
+    const label = headingLabel(th);
+    if (label === 'rank') return CUSTOM_ORDERS.rank;
+    if (label === 'activity') return CUSTOM_ORDERS.activity;
+    return null;
+  };
 
   const cellText = cell => (cell?.textContent || '').replace(/\s+/g, ' ').trim();
   const numberOf = text => {
@@ -42,12 +66,22 @@
       ordered = rows.slice().sort((a, b) => (position.get(a) ?? 1e9) - (position.get(b) ?? 1e9));
     } else {
       const values = new Map(rows.map(row => [row, cellText(row.cells[state.column])]));
+      const order = customOrderFor(table.tHead.rows[0].cells[state.column]);
+      const position = value => {
+        const index = order.indexOf(value.toLowerCase());
+        return index < 0 ? 1e9 : index;
+      };
       ordered = rows.slice().sort((a, b) => {
         const va = values.get(a), vb = values.get(b);
         const emptyA = EMPTY.has(va), emptyB = EMPTY.has(vb);
         if (emptyA || emptyB) return emptyA === emptyB ? 0 : emptyA ? 1 : -1; // blanks always go last
-        const na = numberOf(va) ?? dateOf(va), nb = numberOf(vb) ?? dateOf(vb);
-        const cmp = na !== null && nb !== null ? na - nb : va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' });
+        let cmp;
+        if (order) {
+          cmp = position(va) - position(vb);
+        } else {
+          const na = numberOf(va) ?? dateOf(va), nb = numberOf(vb) ?? dateOf(vb);
+          cmp = na !== null && nb !== null ? na - nb : va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' });
+        }
         return state.direction === 'desc' ? -cmp : cmp;
       });
     }
@@ -61,7 +95,7 @@
       if (!headerRow || !table.tBodies[0]) return;
       table.dataset.sortReady = '1';
       headerRow.querySelectorAll('th').forEach(th => {
-        if (th.colSpan <= 1 && !th.querySelector('input, select, textarea')) th.classList.add('sortable-th');
+        if (th.colSpan <= 1 && !th.querySelector('input, select, textarea') && isSortable(table, th)) th.classList.add('sortable-th');
       });
       const state = sortStates.get(keyFor(table, headerRow));
       if (state) { applySort(table, state); markHeaders(table, state); }
