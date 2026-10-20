@@ -363,7 +363,8 @@ const permissionGroups = [
   { name: 'Notifications', items: [
     ['notifications_clear_all', 'Clear notifications (everyone)', 'Delete all notifications for everyone from D1 and Google Sheets. Button appears in Operation Command.'],
     ['notif_termination', 'Termination notifications', 'Receive termination notifications and view the Termination log.'],
-    ['notif_inactive', 'Termination list notifications', 'Receive notifications when members are Can Be Terminated and view the Termination list.'],
+    ['notif_inactive', 'Due to Activity notifications', 'Receive notifications when members are Can Be Terminated for activity, and view the Due to Activity list.'],
+    ['notif_overdue', 'Training Overdue notifications', 'Receive notifications when EMT members are overdue for Basic or Advanced FORT, and view the Training Overdue list.'],
     ['notif_promotion', 'Promotion notifications', 'Receive promotion notifications and view the Promotion log.'],
     ['notif_eligible', 'Eligible notifications', 'Receive eligible-for-promotion notifications and view the Eligible list.'],
     ['notif_callsign', 'Callsign notifications', 'Receive callsign notifications and view the Callsign log.'],
@@ -458,7 +459,7 @@ const scopeBaseKeys = {
 };
 // A notification type is listed only when one of its base permissions is on, as with rank limits.
 const notificationBaseKeys = {
-    notif_termination: ['termination_manage'], notif_inactive: ['inactive_view'], notif_promotion: ['promotion_manage', 'rank_manage'],
+    notif_termination: ['termination_manage'], notif_inactive: ['inactive_view'], notif_overdue: ['inactive_view'], notif_promotion: ['promotion_manage', 'rank_manage'],
     notif_eligible: ['eligible_view', 'promotion_access'], notif_callsign: ['callsign_manage'], notif_training: ['training_hert_manage', 'training_fort_manage'],
     notif_training_time: ['training_hours_manage'], notif_loi: ['loi_manage'], notif_exam: ['exam_manage'], notif_note: ['notes_manage'],
     notif_activity: ['activity_manage'], notif_instructor: ['instructor_manage'], notif_do_not_promote: ['do_not_promote_manage'],

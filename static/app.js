@@ -768,17 +768,20 @@ async function enabledNotificationKinds() {
     }
     return notificationPrefCache;
 }
+// Checked filter options. Empty means no filter (show everything). "unread" is a separate option that can be combined with types.
+let notificationFilterSelected = new Set();
 // The filter lists only the types that are switched on and that have notifications to show.
 async function fillNotificationFilter() {
-    const select = $("#notificationFilter");
-    if (!select) return;
+    const box = $("#notificationFilter");
+    if (!box) return;
     const enabled = await enabledNotificationKinds();
     const present = new Set(notificationItems.map(item => item.kind));
     const kinds = Object.keys(NOTIFICATION_FILTER_LABELS).filter(kind => present.has(kind) && (!enabled || enabled.has(kind)));
-    const current = select.value || "all";
-    select.innerHTML = `<option value="all">All notifications</option><option value="unread">Unread only</option>`
-        + kinds.map(kind => `<option value="${kind}">${NOTIFICATION_FILTER_LABELS[kind]}</option>`).join("");
-    select.value = [...select.options].some(option => option.value === current) ? current : "all";
+    notificationFilterSelected = new Set([...notificationFilterSelected].filter(value => value === "unread" || kinds.includes(value)));
+    const option = (value, label) => `<label class="notif-check"><input type="checkbox" value="${value}" ${notificationFilterSelected.has(value) || (value === "all" && notificationFilterSelected.size === 0) ? "checked" : ""}><span>${label}</span></label>`;
+    box.innerHTML = option("all", "All")
+        + option("unread", "Unread")
+        + kinds.map(kind => option(kind, NOTIFICATION_FILTER_LABELS[kind])).join("");
 }
 document.addEventListener("notification-prefs-changed", () => {
     notificationPrefCache = null;
@@ -795,11 +798,12 @@ function renderNotifications() {
         badge.hidden = unread === 0;
     }
     if (!list) return;
-    const filter = $("#notificationFilter")?.value || "all";
+    const kindsSelected = [...notificationFilterSelected].filter(value => value !== "unread");
+    const unreadOnly = notificationFilterSelected.has("unread");
     const visibleItems = notificationItems.filter(item => {
-        if (filter === "all") return true;
-        if (filter === "unread") return !Number(item.is_read);
-        return item.kind === filter;
+        if (kindsSelected.length && !kindsSelected.includes(item.kind)) return false;
+        if (unreadOnly && Number(item.is_read)) return false;
+        return true;
     });
     list.innerHTML = visibleItems.length ? visibleItems.map(item => `
         <button type="button" class="notification-item ${Number(item.is_read) ? "" : "unread"}"
@@ -5427,7 +5431,14 @@ function setInactiveSubView(view) {
 }
 document.addEventListener("change", event => {
     const id = event.target?.id;
-    if (id === "notificationFilter") renderNotifications();
+    const filterBox = event.target?.closest?.("#notificationFilter");
+    if (filterBox && event.target.matches('input[type="checkbox"]')) {
+        const value = event.target.value;
+        if (value === "all") notificationFilterSelected = new Set();
+        else if (event.target.checked) notificationFilterSelected.add(value);
+        else notificationFilterSelected.delete(value);
+        renderNotifications();
+    }
     if (id === "inactiveRankFilter" || id === "overdueMissingFilter") renderInactive();
     if (id === "doNotPromoteRankFilter") renderDoNotPromote();
 });

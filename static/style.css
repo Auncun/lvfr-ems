@@ -1276,3 +1276,10 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 .list-filter-row select { min-width:180px; max-width:100%; padding:8px 10px; border:1px solid #374454; border-radius:9px; background:#0b1017; color:#f3f6fa }
 #notificationPanel .list-filter-row { padding:0 12px 10px }
 #notificationPanel .list-filter-row select { width:100%; min-width:0 }
+
+/* Notification filter: checkboxes, so several types can be chosen at once */
+.notif-filter-checks { display:flex; flex-wrap:wrap; gap:6px; padding:0 12px 10px }
+.notif-check { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid #374454; border-radius:999px; background:#0d1219; font-size:12px; cursor:pointer }
+.notif-check:hover { border-color:#4a86e8 }
+.notif-check:has(input:checked) { border-color:#4a86e8; background:#14202e }
+.notif-check input { width:14px; height:14px; margin:0; accent-color:#4a86e8 }

@@ -18,7 +18,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=filters-20261020-1"
+    href="/static/style.css?v=notif-checks-20261020-1"
 >
 
 <style>
@@ -175,25 +175,7 @@
                     <strong>Notifications</strong>
                     <div class="notification-panel-actions"><button type="button" id="markNotificationsRead">Mark as read</button><button type="button" id="clearMyNotifications">Clear notifications</button></div>
                 </div>
-                <div class="list-filter-row"><select id="notificationFilter" aria-label="Filter notifications">
-                    <option value="all">All notifications</option>
-                    <option value="unread">Unread only</option>
-                    <option value="inactive">Due to Activity</option>
-                    <option value="overdue">Training Overdue</option>
-                    <option value="termination">Termination</option>
-                    <option value="promotion">Promotion</option>
-                    <option value="eligible">Can be promoted</option>
-                    <option value="callsign">Callsign</option>
-                    <option value="training">Training</option>
-                    <option value="training_time">Training Hours</option>
-                    <option value="loi">LOI</option>
-                    <option value="exam">Exam</option>
-                    <option value="note">Note</option>
-                    <option value="activity">Activity</option>
-                    <option value="instructor">Instructor</option>
-                    <option value="do_not_promote">Do Not Promote</option>
-                    <option value="request">Account requests</option>
-                </select></div>
+                <div id="notificationFilter" class="notif-filter-checks" role="group" aria-label="Filter notifications"></div>
                 <div id="notificationList"><div class="empty">Loading...</div></div>
             </section>
         </div>
@@ -892,7 +874,7 @@
 
 <script src="/static/session-auth.js?v=shared-session-7"></script>
 <script src="/static/account-settings.js?v=notif-filter-20261020-1"></script>
-<script src="/static/app.js?v=notif-filter-20261020-1"></script>
+<script src="/static/app.js?v=notif-checks-20261020-1"></script>
 <script src="/static/sidebar.js?v=termination-sub-20261019-1"></script>
 <script src="/static/mobile-popovers.js?v=portal-controls-20261004-1"></script>
 
