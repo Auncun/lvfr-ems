@@ -1259,3 +1259,20 @@ th.sortable-th::after { content:" \2195"; opacity:.35; font-size:11px }
 th.sortable-th:hover::after { opacity:.7 }
 th.sort-asc::after { content:" \25B2"; opacity:1 }
 th.sort-desc::after { content:" \25BC"; opacity:1 }
+
+/* Profile menu icons */
+.account-menu button,.account-menu form button { display:flex; align-items:center; gap:10px }
+.account-menu svg { width:18px; height:18px; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round }
+
+/* Notification options: the explanation is always visible, so it works on phones without hover */
+.notif-option-text { display:grid; gap:3px; min-width:0 }
+.notif-option-text strong { font-weight:600; font-size:14px }
+.notif-option-text small { color:#9aa4b2; font-size:12px; line-height:1.4; font-weight:400 }
+#accountSettingsDialog .account-notification-option { align-items:flex-start }
+#accountSettingsDialog .account-notification-option input { margin-top:3px }
+
+/* Filter rows above lists and in the notification panel */
+.list-filter-row { display:flex; gap:8px; margin:0 0 10px }
+.list-filter-row select { min-width:180px; max-width:100%; padding:8px 10px; border:1px solid #374454; border-radius:9px; background:#0b1017; color:#f3f6fa }
+#notificationPanel .list-filter-row { padding:0 12px 10px }
+#notificationPanel .list-filter-row select { width:100%; min-width:0 }

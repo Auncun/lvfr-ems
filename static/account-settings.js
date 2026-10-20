@@ -158,7 +158,7 @@
       if (!response.ok) throw new Error(result.detail || result.error || 'Could not load notification settings.');
       const allowed = result.options.filter(option => option.allowed);
       list.innerHTML = allowed.length
-        ? allowed.map(option => `<label class="account-notification-option" title="${escapeHtml(NOTIFICATION_HINTS[option.kind] || option.label)}"><input type="checkbox" data-notification-kind="${escapeHtml(option.kind)}" ${option.enabled ? 'checked' : ''}><span>${escapeHtml(option.label)}</span></label>`).join('')
+        ? allowed.map(option => `<label class="account-notification-option"><input type="checkbox" data-notification-kind="${escapeHtml(option.kind)}" ${option.enabled ? 'checked' : ''}><span class="notif-option-text"><strong>${escapeHtml(option.label)}</strong><small>${escapeHtml(NOTIFICATION_HINTS[option.kind] || '')}</small></span></label>`).join('')
         : '<p class="muted">Your role has no notification types to choose from.</p>';
     } catch (error) {
       list.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;

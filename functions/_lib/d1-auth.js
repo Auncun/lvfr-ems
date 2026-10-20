@@ -1554,9 +1554,9 @@ export async function handleD1(context) {
       },[]));
     }
     const viewableInactive=(route==="/api/inactive"||route==="/api/training-overdue")&&method==="GET"?await viewRanks(db,user):null;
-    if(route==="/api/inactive" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>(!viewableInactive||viewableInactive.includes(row.rank))&&row.activity==="Can Be Terminated").map(({callsign,name})=>({callsign,name})));
+    if(route==="/api/inactive" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>(!viewableInactive||viewableInactive.includes(row.rank))&&row.activity==="Can Be Terminated").map(({callsign,name,rank})=>({callsign,name,rank})));
     if(route==="/api/training-overdue" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>(!viewableInactive||viewableInactive.includes(row.rank))&&row.rank==="EMT"&&Number(row.days_in_rank||0)>=21&&(!row.has_basic_firefighting||!row.has_advanced_firefighting)).map(({callsign,name,days_in_rank,has_basic_firefighting,has_advanced_firefighting})=>({callsign,name,days_in_rank,has_basic_firefighting,has_advanced_firefighting})));
-    if(route==="/api/do-not-promote" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.do_not_promote).map(({callsign,name})=>({callsign,name,added_at:"",added_by:""})));
+    if(route==="/api/do-not-promote" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.do_not_promote).map(({callsign,name,rank})=>({callsign,name,rank,added_at:"",added_by:""})));
     if(route==="/api/instructors" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).flatMap(row=>String(row.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(type=>(type==="HERT"&&user.permissions.hert_instructor_view)||(type==="FORT"&&user.permissions.fort_instructor_view)).map(type=>({name:row.name,type,date:""}))));
     const memberRoute=route.match(/^\/api\/member\/([^/]+)$/);
     if(route==="/api/account/profile" && method==="GET") {

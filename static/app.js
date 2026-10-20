@@ -735,6 +735,21 @@ let notificationItems = [];
 let notificationLoadPromise = null;
 let notificationCacheHydrated = false;
 
+// Rank order used in every rank filter, from highest to lowest.
+const RANK_FILTER_ORDER = ['commissioners', 'chief', 'county command', 'division commander', 'captain', 'lieutenant', 'lead paramedic', 'paramedic', 'aemt', 'advanced emt', 'emt', 'probationary', 'senior volunteer', 'volunteer', 'probationary volunteer', 'emr', 'emr/volunteer'];
+// Fills a rank dropdown with the ranks present in the list, keeping the chosen rank when it still exists.
+function fillRankFilter(select, rows) {
+    if (!select) return;
+    const current = select.value || "all";
+    const ranks = [...new Set(rows.map(row => String(row.rank || "").trim()).filter(Boolean))]
+        .sort((a, b) => {
+            const ia = RANK_FILTER_ORDER.indexOf(a.toLowerCase()), ib = RANK_FILTER_ORDER.indexOf(b.toLowerCase());
+            return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib) || a.localeCompare(b);
+        });
+    select.innerHTML = `<option value="all">All ranks</option>` + ranks.map(rank => `<option value="${esc(rank)}">${esc(rank)}</option>`).join("");
+    select.value = ranks.includes(current) ? current : "all";
+}
+
 function renderNotifications() {
     const list = $("#notificationList");
     const badge = $("#notificationBadge");
@@ -744,7 +759,13 @@ function renderNotifications() {
         badge.hidden = unread === 0;
     }
     if (!list) return;
-    list.innerHTML = notificationItems.length ? notificationItems.map(item => `
+    const filter = $("#notificationFilter")?.value || "all";
+    const visibleItems = notificationItems.filter(item => {
+        if (filter === "all") return true;
+        if (filter === "unread") return !Number(item.is_read);
+        return item.kind === filter;
+    });
+    list.innerHTML = visibleItems.length ? visibleItems.map(item => `
         <button type="button" class="notification-item ${Number(item.is_read) ? "" : "unread"}"
                 data-notification-id="${Number(item.id)}">
             <strong>${esc(item.title)}</strong>
@@ -2004,7 +2025,10 @@ function renderInactive() {
         : "";
 
     if (activityContainer) {
-        const rows = inactiveRows.filter(matches);
+        const rankSelect = $("#inactiveRankFilter");
+        fillRankFilter(rankSelect, inactiveRows);
+        const selectedRank = rankSelect?.value || "all";
+        const rows = inactiveRows.filter(matches).filter(m => selectedRank === "all" || String(m.rank || "") === selectedRank);
         activityContainer.innerHTML = rows.length
 
             ? `
@@ -2035,7 +2059,14 @@ function renderInactive() {
     }
 
     if (overdueContainer) {
-        const rows = trainingOverdueRows.filter(matches);
+        const missing = $("#overdueMissingFilter")?.value || "all";
+        const rows = trainingOverdueRows.filter(matches).filter(m => {
+            const noBasic = !m.has_basic_firefighting, noAdvanced = !m.has_advanced_firefighting;
+            if (missing === "basic") return noBasic;
+            if (missing === "advanced") return noAdvanced;
+            if (missing === "both") return noBasic && noAdvanced;
+            return true;
+        });
         const flag = ok => `<span class="badge ${ok ? "active-status" : "terminate-status"}">${ok ? "Yes" : "No"}</span>`;
         overdueContainer.innerHTML = rows.length
 
@@ -5358,6 +5389,12 @@ function setInactiveSubView(view) {
     });
     try { sessionStorage.setItem(INACTIVE_SUB_VIEW_KEY, view); } catch {}
 }
+document.addEventListener("change", event => {
+    const id = event.target?.id;
+    if (id === "notificationFilter") renderNotifications();
+    if (id === "inactiveRankFilter" || id === "overdueMissingFilter") renderInactive();
+    if (id === "doNotPromoteRankFilter") renderDoNotPromote();
+});
 document.addEventListener("click", event => {
     const tab = event.target.closest?.("[data-inactive-view]");
     if (tab) setInactiveSubView(tab.dataset.inactiveView);
@@ -5657,9 +5694,13 @@ async function loadDoNotPromote() {
 function renderDoNotPromote() {
     const container = $("#doNotPromoteTable");
     if (!container) return;
-    container.innerHTML = doNotPromoteRows.length ? `
+    const rankSelect = $("#doNotPromoteRankFilter");
+    fillRankFilter(rankSelect, doNotPromoteRows);
+    const selectedRank = rankSelect?.value || "all";
+    const visibleRows = doNotPromoteRows.filter(member => selectedRank === "all" || String(member.rank || "") === selectedRank);
+    container.innerHTML = visibleRows.length ? `
         <table><thead><tr><th>Callsign</th><th>Name</th><th>Added At</th><th>Added By</th><th></th></tr></thead>
-        <tbody>${doNotPromoteRows.map(member => `
+        <tbody>${visibleRows.map(member => `
             <tr>
                 <td>${esc(member.callsign)}</td><td>${esc(member.name)}</td>
                 <td>${esc(member.added_at)}</td><td>${esc(member.added_by)}</td>
