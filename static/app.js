@@ -751,7 +751,7 @@ function fillRankFilter(select, rows) {
 }
 
 // Names for the notification types shown in the filter.
-const NOTIFICATION_FILTER_LABELS = { inactive: "Due to Activity", overdue: "Training Overdue", termination: "Termination", promotion: "Promotion", eligible: "Can be promoted", callsign: "Callsign", training: "Training", training_time: "Training Hours", loi: "LOI", exam: "Exam", note: "Note", activity: "Activity", instructor: "Instructor", do_not_promote: "Do Not Promote", request: "Account requests" };
+const NOTIFICATION_FILTER_LABELS = { inactive: "Due to Activity", overdue: "Training Overdue", termination: "Termination", promotion: "Promotion", eligible: "Can be promoted", callsign: "Callsign", training: "Training", training_time: "Training Hours", loi: "LOI", exam: "Exam", note: "Note", activity: "Activity", instructor: "Instructor", do_not_promote: "Do Not Promote", request: "New account request" };
 let notificationPrefCache = null;
 let notificationPrefCacheAt = 0;
 // Types the person has switched on in Notification Settings (null when the settings cannot be read).
@@ -761,8 +761,9 @@ async function enabledNotificationKinds() {
         const response = await fetch("/api/account/notification-preferences");
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "Could not load notification settings.");
-        notificationPrefCache = new Set(result.options.filter(option => option.allowed && option.enabled).map(option => option.kind));
+        notificationPrefCache = new Map(result.options.filter(option => option.allowed && option.enabled).map(option => [option.kind, option.label]));
         notificationPrefCacheAt = Date.now();
+        document.dispatchEvent(new Event("notification-prefs-loaded"));
     } catch {
         notificationPrefCache = null;
     }
@@ -775,18 +776,23 @@ async function fillNotificationFilter() {
     const box = $("#notificationFilter");
     if (!box) return;
     const enabled = await enabledNotificationKinds();
-    const present = new Set(notificationItems.map(item => item.kind));
-    const kinds = Object.keys(NOTIFICATION_FILTER_LABELS).filter(kind => present.has(kind) && (!enabled || enabled.has(kind)));
+    // Every type you have switched on is listed, using the same name as in Notification Settings.
+    // Without settings, only types that have notifications are listed.
+    // Only types switched on in Notification Settings appear. Without readable settings, no type is listed.
+    const kinds = enabled ? [...enabled.keys()] : [];
+    const labelOf = kind => (enabled && enabled.get(kind)) || NOTIFICATION_FILTER_LABELS[kind] || kind;
     notificationFilterSelected = new Set([...notificationFilterSelected].filter(value => value === "unread" || kinds.includes(value)));
     const option = (value, label) => `<label class="notif-check"><input type="checkbox" value="${value}" ${notificationFilterSelected.has(value) || (value === "all" && notificationFilterSelected.size === 0) ? "checked" : ""}><span>${label}</span></label>`;
     box.innerHTML = option("all", "All")
         + option("unread", "Unread")
-        + kinds.map(kind => option(kind, NOTIFICATION_FILTER_LABELS[kind])).join("");
+        + kinds.map(kind => option(kind, labelOf(kind))).join("");
 }
 document.addEventListener("notification-prefs-changed", () => {
     notificationPrefCache = null;
-    void fillNotificationFilter();
+    void enabledNotificationKinds().then(() => renderNotifications());
 });
+// Once settings are loaded, the list is redrawn so items of switched-off types disappear at once.
+document.addEventListener("notification-prefs-loaded", () => renderNotifications());
 
 function renderNotifications() {
     const list = $("#notificationList");
@@ -798,9 +804,12 @@ function renderNotifications() {
         badge.hidden = unread === 0;
     }
     if (!list) return;
+    // Only types switched on in Notification Settings are shown (the server applies the same rule).
+    const enabledKinds = notificationPrefCache;
     const kindsSelected = [...notificationFilterSelected].filter(value => value !== "unread");
     const unreadOnly = notificationFilterSelected.has("unread");
     const visibleItems = notificationItems.filter(item => {
+        if (enabledKinds && !enabledKinds.has(item.kind)) return false;
         if (kindsSelected.length && !kindsSelected.includes(item.kind)) return false;
         if (unreadOnly && Number(item.is_read)) return false;
         return true;

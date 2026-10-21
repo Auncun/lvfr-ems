@@ -17,7 +17,7 @@ const NOTIFICATION_PREFERENCE_KINDS=[
   {kind:"activity",label:"Activity",key:"notif_activity",bases:["activity_manage"]},
   {kind:"instructor",label:"Instructor",key:"notif_instructor",bases:["instructor_manage"]},
   {kind:"do_not_promote",label:"Do Not Promote",key:"notif_do_not_promote",bases:["do_not_promote_manage"]},
-  {kind:"request",label:"Account is pending",key:null,bases:[],roles:["admin","commander"]}
+  {kind:"request",label:"New account request",key:null,bases:[],roles:["admin","commander"]}
 ];
 // A notification type is allowed only if its own key AND one of its base permissions are on.
 function notifAllowed(user,item){
@@ -33,6 +33,14 @@ function enforceNotificationKeys(result,saved={}){
   for(const item of NOTIFICATION_PREFERENCE_KINDS) {
     if(!item.key) continue;
     if(typeof saved[item.key]!=="boolean") result[item.key]=item.bases.some(key=>result[key]===true);
+    result[item.key]=result[item.key]===true&&item.bases.some(key=>result[key]===true);
+  }
+  return result;
+}
+// Turns off a notification switch whose base permission is missing, without overwriting the saved switch.
+function clampNotificationKeys(result){
+  for(const item of NOTIFICATION_PREFERENCE_KINDS) {
+    if(!item.key) continue;
     result[item.key]=result[item.key]===true&&item.bases.some(key=>result[key]===true);
   }
   return result;
@@ -147,7 +155,7 @@ async function accountPermissions(db, account) {
   result.training_view=TRAINING_VIEW_PERMISSIONS.every(key=>result[key]);
   // Edit rank permission (operation_command_access) includes the rank actions.
   if(result.operation_command_access===true) for(const key of ["rank_add","rank_rename","rank_delete","rank_reorder","role_manage"]) result[key]=true;
-  enforceNotificationKeys(result);
+  clampNotificationKeys(result);
   return result;
 }
 function permissionForRequest(route, method, data={}) {
@@ -754,13 +762,30 @@ async function writeOperationalLog(db,old,route,data,result,user) {
   else if(route==="/api/exam") { kind="exam"; action=data.remove?"REMOVED":"ADDED"; details="Supervisor Exam"; }
   else if(route==="/api/do-not-promote") { kind="do_not_promote"; action=data.blocked?"ADDED":"REMOVED"; details="Do Not Promote"; }
   else if(route==="/api/terminate") { kind="termination"; action="Terminated"; details=String(data.note||""); }
-  else if(route==="/api/member/"+callsign+"/instructor") { kind="instructor"; const type=String(data.instructor_type||"").toUpperCase(); action=type+" Instructor "+(data.assigned?"Assigned":"Removed"); details=type; }
+  else if(/^\/api\/member\/[^/]+\/instructor$/.test(route)) { kind="instructor"; const type=String(data.instructor_type||"").toUpperCase(); action=type+" Instructor "+(data.assigned?"Assigned":"Removed"); details=type; }
   else if(route==="/api/change-callsign") { kind="callsign"; action="Callsign Changed"; newCallsign=String(result.new_callsign||data.new_callsign||""); newRank=String(result.new_rank||old.rank||""); }
   else if(["/api/promote","/api/force-promote","/api/demote","/api/change-rank"].includes(route)) { kind="promotion"; action=route==="/api/demote"?"Demoted":route==="/api/change-rank"?"Rank Changed":"Promoted"; newCallsign=String(result.new_callsign||""); newRank=String(result.new_rank||""); }
   if(!kind) return;
   if(!newCallsign) newCallsign=callsign;
-  await db.prepare(`INSERT INTO operational_logs(kind,log_date,callsign,member_name,action,details,changed_by,old_rank,new_rank,old_callsign,new_callsign)
+  const inserted=await db.prepare(`INSERT INTO operational_logs(kind,log_date,callsign,member_name,action,details,changed_by,old_rank,new_rank,old_callsign,new_callsign)
     VALUES(?,?,?,?,?,?,?,?,?,?,?)`).bind(kind,now,callsign,String(old.name||""),action,details,String(user.name||""),String(old.rank||""),newRank||String(old.rank||""),kind==="callsign"||kind==="promotion"?callsign:"",kind==="callsign"||kind==="promotion"?newCallsign:"").run();
+  await createLogNotification(db,kind,{action,details,oldRank:String(old.rank||""),newRank,callsign,newCallsign,name:String(old.name||""),logId:inserted?.meta?.last_row_id});
+}
+// Titles for operational-log changes that also create a notification. Who sees each one is still decided by Notification Settings.
+const LOG_NOTIFICATION_TITLES={promotion:"Promotion",termination:"Termination",callsign:"Callsign",training:"Training",exam:"Exam",note:"Note",activity:"Activity",instructor:"Instructor",do_not_promote:"Do Not Promote",loi:"LOI",training_time:"Training Hours"};
+async function createLogNotification(db,kind,info) {
+  const eventKey=info.eventKey||(info.logId?"log:"+info.logId:"");
+  if(!LOG_NOTIFICATION_TITLES[kind]||!eventKey) return;
+  try {
+    const shownCallsign=info.newCallsign||info.callsign;
+    const change=info.oldRank&&info.newRank&&info.oldRank!==info.newRank?" ("+info.oldRank+" → "+info.newRank+")":"";
+    const detail=info.details?" - "+info.details:"";
+    const message=((info.name||shownCallsign)+" ("+shownCallsign+") "+info.action+change+detail).trim();
+    await db.prepare("INSERT OR IGNORE INTO notifications(kind,event_key,title,message,callsign,target_rank,created_at) VALUES(?,?,?,?,?,?,?)")
+      .bind(kind,eventKey,LOG_NOTIFICATION_TITLES[kind],message,shownCallsign,info.newRank||"",new Date().toISOString()).run();
+  } catch(error) {
+    console.error("Notification write failed:",error);
+  }
 }
 
 // FORT LOI passes may certify Basic and/or Advanced Firefighting.
@@ -1151,7 +1176,9 @@ export async function handleD1(context) {
       const other=index+(data.direction==="up"?-1:1), actorRank=actor.role==="admin"?1:Number(canonical.find(row=>row.role===actor.role)?.sort_order)||2;
       if(index<1||other<1||other>=canonical.length||Number(canonical[index].sort_order)<=actorRank||Number(canonical[other].sort_order)<=actorRank) throw Object.assign(new Error("You cannot reorder your rank or a higher rank."),{status:403});
       [canonical[index],canonical[other]]=[canonical[other],canonical[index]];
-      const statements=canonical.filter(row=>row.role!=="admin").map((row,i)=>db.prepare("UPDATE role_permissions SET sort_order=? WHERE role=?").bind(i+2,row.role));
+      const nowOrder=new Date().toISOString();
+      const statements=canonical.filter(row=>row.role!=="admin").map((row,i)=>db.prepare(`INSERT INTO role_permissions(role,sort_order,display_name,permissions_json,updated_at,updated_by) VALUES(?,?,?,'{}',?,?)
+        ON CONFLICT(role) DO UPDATE SET sort_order=excluded.sort_order`).bind(row.role,i+2,String(row.display_name||""),nowOrder,String(actor.name||"")));
       await db.batch(statements);
       return json({ok:true,order:canonical});
     }
@@ -1200,7 +1227,7 @@ export async function handleD1(context) {
         for(const key of ROLE_PERMISSION_KEYS) if(effective[key]===true&&Object.hasOwn(incoming,key)) permissions[key]=Boolean(incoming[key]);
       }
       permissions.logs_view=LOG_VIEW_PERMISSIONS.every(key=>permissions[key]===true);
-      enforceNotificationKeys(permissions);
+      clampNotificationKeys(permissions);
       permissions.training_view=TRAINING_VIEW_PERMISSIONS.every(key=>permissions[key]===true);
       const now=new Date().toISOString();
       const beforeSnapshot={permissions:await rolePermissions(db,role),scopes:await roleScopes(db,role)};
@@ -1399,6 +1426,7 @@ export async function handleD1(context) {
       const logDate=new Date().toISOString(), details=JSON.stringify({loi_type:type,test_percent:testPercent});
       await db.prepare("INSERT INTO operational_logs(kind,log_date,callsign,member_name,action,details,changed_by) VALUES('loi',?,?,?,?,?,?)")
         .bind(logDate,member.callsign,member.name,eventAction,details,String(user.name||"")).run();
+      await createLogNotification(db,"loi",{action:"LOI "+eventAction,details:type+(testPercent===null||testPercent===""?"":" ("+testPercent+"%)"),oldRank:"",newRank:"",callsign:member.callsign,newCallsign:"",name:member.name,eventKey:"loi:"+logDate+":"+member.callsign});
       // A passed LOI certifies the member in D1 at once. Trainings already held are left unchanged.
       const trainingAdded=[];
       for(const training of passedTrainings) {
@@ -1473,6 +1501,7 @@ export async function handleD1(context) {
           :db.prepare("UPDATE training_hours SET time=?,updated_at=?,updated_by=? WHERE id=?").bind(time,timestamp,user.name,recordId);
         await db.batch([change,log]);
       }
+      await createLogNotification(db,"training_time",{action:"Training Hours "+(logAction==="Time Changed"?"time changed":logAction.toLowerCase()),details:newTime?"Time: "+newTime+(previousTime&&action!=="add"?" (was "+previousTime+")":""):"Removed",oldRank:"",newRank:"",callsign:member.callsign,newCallsign:"",name:member.name,eventKey:"training_time:"+savedId+":"+timestamp});
       const bridgeAssertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
       const {proxyToAppsScript}=await import("../[[path]].js");
       const sheetLog={kind:"training_time",log_date:timestamp,callsign:member.callsign,member_name:member.name,action:logAction,details:JSON.stringify({previous_time:previousTime,new_time:newTime}),changed_by:user.name};

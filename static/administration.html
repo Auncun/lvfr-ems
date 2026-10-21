@@ -5,7 +5,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Operation Command | LVFR EMS</title>
-  <link rel="stylesheet" href="/static/style.css?v=filters-20261020-1">
+  <link rel="stylesheet" href="/static/style.css?v=notif-checks-20261020-1">
   <style>
     body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:72px 24px 24px}
     .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -72,6 +72,7 @@
       </section>
       </div>
       <div class="permission-subpanel" data-permission-subpanel="rank">
+      <label class="permission-search">Search permissions<input id="permissionSearch" type="search" autocomplete="off" placeholder="Search a permission, group or rank"></label>
       <div class="role-editor-layout"><nav id="permissionRoleNav" class="permission-role-nav" aria-label="Permission profiles"></nav><div class="role-editor-main"><div id="rolePermissionsPanel" class="role-permissions-panel"><div class="empty">Loading role permissions...</div></div><div class="custom-role-tools"><label>New role <input id="newPermissionRole" maxlength="32" placeholder="e.g. training_lead"><label class="role-start-from">Start from <select id="newPermissionRoleFrom" aria-label="Start from"></select></label></label><button type="button" id="createPermissionRole">Create role</button></div></div></div>
       </div>
       <p id="permissionStatus" class="permission-status" role="status" aria-live="polite"></p>
@@ -112,7 +113,7 @@
   <script src="/static/session-auth.js?v=shared-session-7"></script>
   <script src="/static/header-controls.js?v=header-controls-2"></script>
   <script src="/static/account-settings.js?v=show-password-20261010-1"></script>
-  <script src="/static/administration.js?v=instant-perm-20261010-2"></script>
+  <script src="/static/administration.js?v=instant-perm-20261021-5"></script>
   <script src="/static/sidebar.js?v=revert-20261009-7"></script>
   <script src="/static/mobile-popovers.js?v=mobile-popovers-1"></script>
 <script src="/static/search-clear.js?v=2" defer></script>

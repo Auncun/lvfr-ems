@@ -770,11 +770,21 @@ document.addEventListener('change', async event => {
 
 function scopesFromDom(role) {
     const scopes = {};
+    const totals = {};
     document.querySelectorAll(`[data-scope-role="${role}"]`).forEach(input => {
+        const id = `${input.dataset.scope}|${input.dataset.scopeField}`;
+        totals[id] = (totals[id] || 0) + 1;
         const scope = scopes[input.dataset.scope] || (scopes[input.dataset.scope] = {});
         const field = scope[input.dataset.scopeField] || (scope[input.dataset.scopeField] = []);
         if (input.checked) field.push(input.value);
     });
+    // Every rank ticked means no limit. Saving the full list would block ranks added later.
+    for (const [scopeName, fields] of Object.entries(scopes)) {
+        for (const field of Object.keys(fields)) {
+            if (fields[field].length === (totals[`${scopeName}|${field}`] || 0)) delete fields[field];
+        }
+        if (!Object.keys(fields).length) delete scopes[scopeName];
+    }
     return scopes;
 }
 
@@ -1125,10 +1135,12 @@ document.querySelector('#individualPermissionsReset')?.addEventListener('click',
 });
 document.querySelector('#individualPermissionsSave')?.addEventListener('click', async event => {
   if (!individualPermissionTarget || !individualPermissionState) return;
-  const overrides = {};
+  // Start from the current overrides so keys that are not shown in this list (hidden notification switches, for example) are kept.
+  const overrides = {...(individualPermissionState.overrides || {})};
   document.querySelectorAll('[data-individual-permission]').forEach(input => {
     const key=input.dataset.individualPermission;
     if(input.checked!==Boolean(individualPermissionState.defaults[key])) overrides[key]=input.checked;
+    else delete overrides[key];
   });
   const button=event.currentTarget; button.disabled=true;
   try {
