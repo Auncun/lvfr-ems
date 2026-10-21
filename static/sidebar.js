@@ -32,7 +32,7 @@
           { label: 'Notes Log', tab: 'membersLog', log: 'note' },
           { label: 'Activity Log', tab: 'membersLog', log: 'activity' },
           { label: 'Instructor Log', tab: 'membersLog', log: 'instructor', availability: '#instructorLogTab' },
-          { label: 'Do Not Promote Log', tab: 'membersLog', log: 'do_not_promote', availability: '#doNotPromoteLogTab' },
+          { label: 'Do Not Promote Log', tab: 'membersLog', log: 'do_not_promote', availability: '#doNotPromoteLogTab' }, { label: 'Do Not Terminate Log', tab: 'membersLog', log: 'do_not_terminate', availability: '#doNotTerminateLogTab' },
           { label: 'LOI Log', tab: 'membersLog', log: 'loi', availability: '#loiLogTab' },
           { label: 'Training Time Log', tab: 'membersLog', log: 'training_time', availability: '#trainingTimeLogTab' }
         ] },

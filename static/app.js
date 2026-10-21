@@ -2403,7 +2403,7 @@ async function loadMembersLog(
     type = currentLogType
 ) {
 
-    const logPermission = {promotion:"promotion_log_view",callsign:"callsign_log_view",termination:"termination_log_view",training:"training_log_view",training_time:"training_hours_log_view",loi:"loi_log_view",exam:"exam_log_view",note:"note_log_view",activity:"activity_log_view",instructor:"instructor_log_view",do_not_promote:"do_not_promote_log_view"}[type];
+    const logPermission = {promotion:"promotion_log_view",callsign:"callsign_log_view",termination:"termination_log_view",training:"training_log_view",training_time:"training_hours_log_view",loi:"loi_log_view",exam:"exam_log_view",note:"note_log_view",activity:"activity_log_view",instructor:"instructor_log_view",do_not_promote:"do_not_promote_log_view",do_not_terminate:"do_not_terminate_log_view"}[type];
     if (!logPermission || !currentUserHasPermission(logPermission)) return;
     currentLogType = type;
     const canDeleteD1Log = currentUserHasPermission("logs_delete_d1");
@@ -2670,7 +2670,7 @@ function renderMembersLog() {
                 ];
             }
 
-            else if (currentLogType === "do_not_promote") {
+            else if (currentLogType === "do_not_promote" || currentLogType === "do_not_terminate") {
 
                 values = [r.log_date, r.callsign, r.member_name, r.action, r.changed_by];
 
@@ -2716,7 +2716,7 @@ function renderMembersLog() {
     // PROMOTION LOG
     // ========================================================
 
-    if (currentLogType === "do_not_promote") {
+    if (currentLogType === "do_not_promote" || currentLogType === "do_not_terminate") {
         container.innerHTML = `<table><thead><tr><th>Date</th><th>Callsign</th><th>Member Name</th><th>Change</th><th>Changed By</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.log_date || "")}</td><td><strong>${esc(r.callsign || "")}</strong></td><td>${esc(r.member_name || "")}</td><td>${String(r.action || "").toUpperCase() === "ADDED" ? "Added to Do Not Promote" : "Removed from Do Not Promote"}</td><td>${esc(r.changed_by || "")}</td></tr>`).join("")}</tbody></table>`;
         return;
     }
@@ -5479,7 +5479,7 @@ function applyAccountUser(user) {
     const inactiveTab = $("#inactiveTab");
     if (inactiveTab) inactiveTab.style.display = currentUserHasPermission("inactive_view") && !viewRanksEmpty() ? "" : "none";
     if (viewRanksEmpty()) ["members", "eligible"].forEach(tab => { const node = document.querySelector(`.tab[data-tab="${tab}"]`); if (node) node.style.display = "none"; });
-    const logViewPermissions = {promotion:"promotion_log_view",callsign:"callsign_log_view",termination:"termination_log_view",training:"training_log_view",training_time:"training_hours_log_view",loi:"loi_log_view",exam:"exam_log_view",note:"note_log_view",activity:"activity_log_view",instructor:"instructor_log_view",do_not_promote:"do_not_promote_log_view"};
+    const logViewPermissions = {promotion:"promotion_log_view",callsign:"callsign_log_view",termination:"termination_log_view",training:"training_log_view",training_time:"training_hours_log_view",loi:"loi_log_view",exam:"exam_log_view",note:"note_log_view",activity:"activity_log_view",instructor:"instructor_log_view",do_not_promote:"do_not_promote_log_view",do_not_terminate:"do_not_terminate_log_view"};
     document.querySelectorAll("#membersLog .log-tab[data-log]").forEach(button => { button.style.display = currentUserHasPermission(logViewPermissions[button.dataset.log]) ? "" : "none"; });
     const anyLogView = Object.values(logViewPermissions).some(key => currentUserHasPermission(key));
     const statisticsTab = $("#statisticsTab");

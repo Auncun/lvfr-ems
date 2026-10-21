@@ -17,6 +17,7 @@ const NOTIFICATION_PREFERENCE_KINDS=[
   {kind:"activity",label:"Activity",key:"notif_activity",bases:["activity_manage"]},
   {kind:"instructor",label:"Instructor",key:"notif_instructor",bases:["instructor_manage"]},
   {kind:"do_not_promote",label:"Do Not Promote",key:"notif_do_not_promote",bases:["do_not_promote_manage"]},
+  {kind:"do_not_terminate",label:"Do Not Terminate",key:"notif_do_not_terminate",bases:["do_not_promote_manage"]},
   {kind:"request",label:"New account request",key:null,bases:[],roles:["admin","commander"]}
 ];
 // A notification type is allowed only if its own key AND one of its base permissions are on.
@@ -48,7 +49,7 @@ function clampNotificationKeys(result){
 const DEFAULT_ON_NOTIFICATION_KINDS=["eligible","inactive","overdue","request"];
 const LOG_VIEW_PERMISSIONS = ["promotion_log_view","callsign_log_view","termination_log_view","training_log_view","training_hours_log_view","loi_log_view","exam_log_view","note_log_view","activity_log_view","instructor_log_view"];
 const TRAINING_VIEW_PERMISSIONS = ["hert_certified_view","hert_instructor_view","hert_loi_view","fort_training_view","fort_instructor_view","fort_loi_view"];
-const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","notif_termination","notif_inactive","notif_overdue","notif_promotion","notif_eligible","notif_callsign","notif_training","notif_training_time","notif_loi","notif_exam","notif_note","notif_activity","notif_instructor","notif_do_not_promote","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
+const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","do_not_terminate_log_view","notif_termination","notif_inactive","notif_overdue","notif_promotion","notif_eligible","notif_callsign","notif_training","notif_training_time","notif_loi","notif_exam","notif_note","notif_activity","notif_instructor","notif_do_not_promote","notif_do_not_terminate","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
 const DEFAULT_ROLE_PERMISSIONS = {
   member: { portal_access:false,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:false,eligible_view:false,promotion_access:false,profile_view:false,inactive_view:false,logs_view:false,training_view:false,training_fort_manage:false,training_hert_manage:false,training_hours_view:false,training_hours_manage:false,loi_manage:false,statistics_view:false,notes_manage:false,promotion_manage:false,callsign_manage:false,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:false,sync_manage:false },
   leader: { portal_access:true,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,promotion_access:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,loi_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true },
@@ -194,7 +195,7 @@ function permissionForRequest(route, method, data={}) {
   return method==="POST"?writes[route]||null:null;
 }
 function logViewPermission(kind) {
-  return ({promotion:"promotion_log_view",callsign:"callsign_log_view",termination:"termination_log_view",training:"training_log_view",training_time:"training_hours_log_view",loi:"loi_log_view",exam:"exam_log_view",note:"note_log_view",activity:"activity_log_view",instructor:"instructor_log_view",do_not_promote:"do_not_promote_log_view"})[String(kind||"").toLowerCase()]||"logs_view";
+  return ({promotion:"promotion_log_view",callsign:"callsign_log_view",termination:"termination_log_view",training:"training_log_view",training_time:"training_hours_log_view",loi:"loi_log_view",exam:"exam_log_view",note:"note_log_view",activity:"activity_log_view",instructor:"instructor_log_view",do_not_promote:"do_not_promote_log_view",do_not_terminate:"do_not_terminate_log_view"})[String(kind||"").toLowerCase()]||"logs_view";
 }
 function requireRolePermission(user, permissions, key) {
   if(!key || user.role === "admin") return;
@@ -767,6 +768,7 @@ async function writeOperationalLog(db,old,route,data,result,user) {
   else if(route==="/api/training") { kind="training"; action=data.remove?"REMOVED":"ADDED"; details=String(data.training||""); }
   else if(route==="/api/exam") { kind="exam"; action=data.remove?"REMOVED":"ADDED"; details="Supervisor Exam"; }
   else if(route==="/api/do-not-promote") { kind="do_not_promote"; action=data.blocked?"ADDED":"REMOVED"; details="Do Not Promote"; }
+  else if(route==="/api/do-not-terminate") { kind="do_not_terminate"; action=data.blocked?"ADDED":"REMOVED"; details="Do Not Terminate"; }
   else if(route==="/api/terminate") { kind="termination"; action="Terminated"; details=String(data.note||""); }
   else if(/^\/api\/member\/[^/]+\/instructor$/.test(route)) { kind="instructor"; const type=String(data.instructor_type||"").toUpperCase(); action=type+" Instructor "+(data.assigned?"Assigned":"Removed"); details=type; }
   else if(route==="/api/change-callsign") { kind="callsign"; action="Callsign Changed"; newCallsign=String(result.new_callsign||data.new_callsign||""); newRank=String(result.new_rank||old.rank||""); }
@@ -778,7 +780,7 @@ async function writeOperationalLog(db,old,route,data,result,user) {
   await createLogNotification(db,kind,{action,details,oldRank:String(old.rank||""),newRank,callsign,newCallsign,name:String(old.name||""),logId:inserted?.meta?.last_row_id});
 }
 // Titles for operational-log changes that also create a notification. Who sees each one is still decided by Notification Settings.
-const LOG_NOTIFICATION_TITLES={promotion:"Promotion",termination:"Termination",callsign:"Callsign",training:"Training",exam:"Exam",note:"Note",activity:"Activity",instructor:"Instructor",do_not_promote:"Do Not Promote",loi:"LOI",training_time:"Training Hours"};
+const LOG_NOTIFICATION_TITLES={promotion:"Promotion",termination:"Termination",callsign:"Callsign",training:"Training",exam:"Exam",note:"Note",activity:"Activity",instructor:"Instructor",do_not_promote:"Do Not Promote",do_not_terminate:"Do Not Terminate",loi:"LOI",training_time:"Training Hours"};
 async function createLogNotification(db,kind,info) {
   const eventKey=info.eventKey||(info.logId?"log:"+info.logId:"");
   if(!LOG_NOTIFICATION_TITLES[kind]||!eventKey) return;
@@ -1363,7 +1365,7 @@ export async function handleD1(context) {
     const directLogKind={"/api/promotions":"promotion","/api/training-log":"training","/api/exam-log":"exam","/api/termination-log":"termination"}[route];
     if((route==="/api/members-log"||directLogKind) && method==="GET") {
       const kind=directLogKind||String(url.searchParams.get("log_type")||"promotion").toLowerCase();
-      const allowed=["promotion","callsign","termination","training","training_time","loi","exam","note","activity","instructor","do_not_promote"];
+      const allowed=["promotion","callsign","termination","training","training_time","loi","exam","note","activity","instructor","do_not_promote","do_not_terminate"];
       if(!allowed.includes(kind)) throw Object.assign(new Error("Invalid log type: "+kind),{status:400});
       if(kind==="training_time") {
         const rows={results:await filterRowsByViewRanks(db,user,(await db.prepare("SELECT id,log_date,callsign,member_name,action,previous_time,new_time,changed_by FROM training_hours_log ORDER BY id DESC LIMIT 200").all()).results||[])};

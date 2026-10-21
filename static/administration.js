@@ -339,6 +339,7 @@ const permissionGroups = [
     ['notif_activity', 'Activity notifications', 'Receive activity notifications and view the Activity log.'],
     ['notif_instructor', 'Instructor notifications', 'Receive instructor notifications and view the Instructor log.'],
     ['notif_do_not_promote', 'Do Not Promote notifications', 'Receive Do Not Promote notifications and view the Do Not Promote log.'],
+    ['notif_do_not_terminate', 'Do Not Terminate notifications', 'Receive Do Not Terminate notifications and view the Do Not Terminate log.'],
   ] },
   { name: 'Application access', items: [
     ['portal_access', 'EMS Operations', 'Open the EMS Operations application.'],
@@ -352,7 +353,8 @@ const permissionGroups = [
     ['profile_view', 'Member profiles', 'Open member View / Manage details.'], ['inactive_view', 'Termination list', 'View the Termination list: members due to activity and EMTs overdue for training.'],
     { key:'logs_view', label:'Members Log (all)', description:'Allow every log tab.', children:[
       ['promotion_log_view','Promotion log','View promotion and rank-change history.'],['callsign_log_view','Callsign log','View callsign-change history.'],['termination_log_view','Termination log','View termination history.'],['training_log_view','Training log','View FORT and HERT training history.'],['training_hours_log_view','Training Hours log','View Training Hours changes.'],['loi_log_view','LOI log','View LOI history.'],['exam_log_view','Exam log','View exam history.'],['note_log_view','Note log','View member-note history.'],['activity_log_view','Activity log','View activity-status history.'],['instructor_log_view','Instructor log','View instructor-assignment history.'],
-      ['do_not_promote_log_view','Do Not Promote log','View when members were added to or removed from the Do Not Promote list, and by whom.']
+      ['do_not_promote_log_view','Do Not Promote log','View when members were added to or removed from the Do Not Promote list, and by whom.'],
+      ['do_not_terminate_log_view','Do Not Terminate log','View when members were added to or removed from the Do Not Terminate list, and by whom.']
     ]}, ['statistics_view', 'Statistics', 'View roster statistics.'],
     ['logs_delete_d1', 'Delete logs from D1', 'Delete the selected log from the website database.'], ['logs_clean_full', 'Full Cleaning', 'Delete selected logs and notifications from D1 and Google Sheets.'],
     { key:'training_view', label:'Training lists (all)', description:'Allow every HERT and FORT training sublist.', children:[
@@ -425,7 +427,7 @@ const notificationBaseKeys = {
     notif_termination: ['termination_manage'], notif_inactive: ['inactive_view'], notif_overdue: ['inactive_view'], notif_promotion: ['promotion_manage', 'rank_manage'],
     notif_eligible: ['eligible_view', 'promotion_access'], notif_callsign: ['callsign_manage'], notif_training: ['training_hert_manage', 'training_fort_manage'],
     notif_training_time: ['training_hours_manage'], notif_loi: ['loi_manage'], notif_exam: ['exam_manage'], notif_note: ['notes_manage'],
-    notif_activity: ['activity_manage'], notif_instructor: ['instructor_manage'], notif_do_not_promote: ['do_not_promote_manage'],
+    notif_activity: ['activity_manage'], notif_instructor: ['instructor_manage'], notif_do_not_promote: ['do_not_promote_manage'], notif_do_not_terminate: ['do_not_promote_manage'],
 };
 function notificationEntryAllowed(entry, profile) {
     const key = Array.isArray(entry) ? entry[0] : entry.key;

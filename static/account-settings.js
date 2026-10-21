@@ -146,6 +146,7 @@
     activity: 'Activity status changes.',
     instructor: 'HERT and FORT instructor changes.',
     do_not_promote: 'Do Not Promote list changes.',
+    do_not_terminate: 'Do Not Terminate list changes.',
     request: 'New account requests waiting for approval.'
   };
 
