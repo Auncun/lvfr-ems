@@ -395,7 +395,7 @@ const permissionGroups = [
     { key:'training_view', label:'Training lists (all)', description:'Allow every HERT and FORT training sublist.', children:[
       ['hert_certified_view','HERT Certified','View HERT certification records.'],['hert_instructor_view','HERT Instructor','View HERT instructor records.'],['hert_loi_view','HERT LOI','View the HERT LOI list.'],['fort_training_view','FORT Training','View Basic and Advanced FORT records.'],['fort_instructor_view','FORT Instructor','View FORT instructor records.'],['fort_loi_view','FORT LOI','View the FORT LOI list.']
     ]}, ['training_hours_view', 'Training Hours: view', 'View Training Hours records.'],
-    ['do_not_promote_view', 'Do not Promote: view', 'View the Do not Promote list.'], ['sync_view', 'Sync status', 'View roster synchronization status.'],
+    ['do_not_promote_view', 'Do Not Promote/Terminate: view', 'View the Do Not Promote and Do Not Terminate lists.'], ['sync_view', 'Sync status', 'View roster synchronization status.'],
   ] },
   { name: 'Training and member changes', items: [
     ['training_fort_manage', 'Manage FORT training', 'Change Basic and Advanced FORT status; FORT Instructor status is also required.'],
@@ -406,7 +406,7 @@ const permissionGroups = [
     ['exam_manage', 'Supervisor exam', 'Add or remove exam status.'], ['rank_date_manage', 'Rank date', 'Change a member rank date.'],
     ['promotion_manage', 'Promotion', 'Promote members using available rules.'], ['rank_manage', 'Rank tools', 'Force promote, demote, or change rank.'],
     ['callsign_manage', 'Callsign changes', 'Change a member callsign.'], ['termination_manage', 'Termination', 'Remove a member from the roster.'],
-    ['do_not_promote_manage', 'Do not Promote: edit', 'Add or remove members from that list.'], ['sync_manage', 'Sync now', 'Synchronize with the source sheet.'],
+    ['do_not_promote_manage', 'Do Not Promote/Terminate: edit', 'Add or remove members from the Do Not Promote and Do Not Terminate lists.'], ['sync_manage', 'Sync now', 'Synchronize with the source sheet.'],
     ['full_sync_manage', 'Full roster sync', 'Run a full roster synchronization from the source sheet.'],
   ] },
 ];

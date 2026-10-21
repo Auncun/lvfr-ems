@@ -654,6 +654,8 @@ document.addEventListener("click", event => {
         case "promote": promote(callsign); break;
         case "do-not-promote": setMemberPromotionBlock(callsign, control.dataset.blocked === "true"); break;
         case "do-not-promote-remove": setMemberPromotionBlock(callsign, false); break;
+        case "do-not-terminate": setMemberTerminationBlock(callsign, control.dataset.blocked === "true"); break;
+        case "do-not-terminate-remove": setMemberTerminationBlock(callsign, false); break;
         case "open-manage": openManage(callsign); break;
         case "terminate": terminate(callsign); break;
         case "training-add": training(callsign, false); break;
@@ -2096,7 +2098,7 @@ function renderInactive() {
                                 <td>${esc(m.name)}</td>
                                 <td>
                                     ${profileButton(m)}
-                                    ${currentUserHasPermission("termination_manage") ? `<button type="button" class="danger" data-action="terminate" data-callsign="${esc(m.callsign)}">Terminate</button>` : ""}
+                                    ${terminateButtonHtml(m.callsign, m.do_not_terminate)}
                                 </td>
                             </tr>
                         `).join("")}
@@ -2141,7 +2143,7 @@ function renderInactive() {
                                 <td>${flag(m.has_advanced_firefighting)}</td>
                                 <td>
                                     ${profileButton(m)}
-                                    ${currentUserHasPermission("termination_manage") ? `<button type="button" class="danger" data-action="terminate" data-callsign="${esc(m.callsign)}">Terminate</button>` : ""}
+                                    ${terminateButtonHtml(m.callsign, m.do_not_terminate)}
                                 </td>
                             </tr>
                         `).join("")}
@@ -4038,13 +4040,13 @@ function openManage(cs) {
                 </button>` : ""}
 
 
-                ${currentUserHasPermission("termination_manage") ? `<button
-                    type="button"
-                    class="danger"
-                    data-action="terminate" data-callsign="${esc(cs)}"
-                >
-                    Terminate
+                ${currentUserHasPermission("do_not_promote_manage") ? `<button type="button" class="${managedMember.do_not_terminate ? "danger" : ""}"
+                    data-action="do-not-terminate" data-blocked="${managedMember.do_not_terminate ? "false" : "true"}"
+                    data-callsign="${esc(cs)}">
+                    ${managedMember.do_not_terminate ? "Remove from Do Not Terminate" : "Add to Do Not Terminate"}
                 </button>` : ""}
+
+                ${terminateButtonHtml(cs, managedMember.do_not_terminate)}
 
 
             </div>
@@ -4614,6 +4616,12 @@ async function promote(cs) {
 // ============================================================
 
 async function terminate(cs) {
+    const protectedMember = memberCache.get(String(cs).trim().toUpperCase())
+        || allMembersCache?.find(member => String(member.callsign || "").toUpperCase() === String(cs).trim().toUpperCase());
+    if (protectedMember?.do_not_terminate) {
+        toast(`${String(cs).toUpperCase()} is on the Do Not Terminate list and cannot be terminated.`);
+        return;
+    }
 
     // Typing the callsign is required, because termination clears the member's active data and cannot be undone here.
     const typed = prompt(
@@ -5449,7 +5457,7 @@ document.addEventListener("change", event => {
         renderNotifications();
     }
     if (id === "inactiveRankFilter" || id === "overdueMissingFilter") renderInactive();
-    if (id === "doNotPromoteRankFilter") renderDoNotPromote();
+    if (id === "doNotPromoteRankFilter") { renderDoNotPromote(); renderDoNotTerminate(); }
 });
 document.addEventListener("click", event => {
     const tab = event.target.closest?.("[data-inactive-view]");
@@ -5732,6 +5740,7 @@ let doNotPromoteRows = [];
 const DO_NOT_PROMOTE_CACHE_KEY = "lvfr.do-not-promote.v1";
 
 async function loadDoNotPromote() {
+    void loadDoNotTerminate();
     try {
         const cached = JSON.parse(localStorage.getItem(DO_NOT_PROMOTE_CACHE_KEY) || "null");
         if (Array.isArray(cached)) {
@@ -5751,7 +5760,7 @@ function renderDoNotPromote() {
     const container = $("#doNotPromoteTable");
     if (!container) return;
     const rankSelect = $("#doNotPromoteRankFilter");
-    fillRankFilter(rankSelect, doNotPromoteRows);
+    fillRankFilter(rankSelect, [...doNotPromoteRows, ...doNotTerminateRows]);
     const selectedRank = rankSelect?.value || "all";
     const visibleRows = doNotPromoteRows.filter(member => selectedRank === "all" || String(member.rank || "") === selectedRank);
     container.innerHTML = visibleRows.length ? `
@@ -5928,3 +5937,111 @@ document.addEventListener("visibilitychange", () => {
 setInterval(() => {
     if (!document.hidden && currentUserIsAdmin && $("#allLeadersTable")) void loadLeaders();
 }, 30000);
+
+// ============================================================
+// DO NOT TERMINATE
+// ============================================================
+
+// Shared Terminate control: disabled and labelled when the member is on the Do Not Terminate list.
+function terminateButtonHtml(callsign, blocked) {
+    if (!currentUserHasPermission("termination_manage")) return "";
+    const key = esc(callsign);
+    return blocked
+        ? `<button type="button" class="danger" disabled title="On the Do Not Terminate list" data-action="terminate" data-callsign="${key}">Terminate</button>`
+        : `<button type="button" class="danger" data-action="terminate" data-callsign="${key}">Terminate</button>`;
+}
+
+let doNotTerminateRows = [];
+const DO_NOT_TERMINATE_CACHE_KEY = "lvfr.do-not-terminate.v1";
+
+async function loadDoNotTerminate() {
+    try {
+        const cached = JSON.parse(localStorage.getItem(DO_NOT_TERMINATE_CACHE_KEY) || "null");
+        if (Array.isArray(cached)) {
+            doNotTerminateRows = cached;
+            renderDoNotTerminate();
+        }
+    } catch {}
+    try {
+        apiReadCache.delete("/api/do-not-terminate");
+        doNotTerminateRows = await api("/api/do-not-terminate");
+        try { localStorage.setItem(DO_NOT_TERMINATE_CACHE_KEY, JSON.stringify(doNotTerminateRows)); } catch {}
+        renderDoNotTerminate();
+    } catch (error) { toast(error.message); }
+}
+
+function renderDoNotTerminate() {
+    const container = $("#doNotTerminateTable");
+    if (!container) return;
+    const selectedRank = $("#doNotPromoteRankFilter")?.value || "all";
+    const visibleRows = doNotTerminateRows.filter(member => selectedRank === "all" || String(member.rank || "") === selectedRank);
+    container.innerHTML = visibleRows.length ? `
+        <table><thead><tr><th>Callsign</th><th>Name</th><th>Added At</th><th>Added By</th><th></th></tr></thead>
+        <tbody>${visibleRows.map(member => `
+            <tr>
+                <td>${esc(member.callsign)}</td><td>${esc(member.name)}</td>
+                <td>${esc(member.added_at)}</td><td>${esc(member.added_by)}</td>
+                <td>${currentUserHasPermission("profile_view") ? `<button type="button" data-action="profile" data-callsign="${esc(member.callsign)}">View</button>` : ""}
+                    ${currentUserHasPermission("do_not_promote_manage") ? `<button type="button" class="danger" data-action="do-not-terminate-remove" data-callsign="${esc(member.callsign)}">Remove</button>` : ""}</td>
+            </tr>`).join("")}</tbody></table>` : empty("The Do Not Terminate list is empty.");
+}
+
+async function setMemberTerminationBlock(callsign, blocked) {
+    if (!currentUserHasPermission("do_not_promote_manage")) return toast("You do not have permission to edit this list.");
+    if (blocked && !confirm(`Add ${callsign} to Do Not Terminate? Terminate will be disabled for this member.`)) return;
+    const key = String(callsign).trim().toUpperCase();
+    const rosterMember = memberCache.get(key) || allMembersCache?.find(member => String(member.callsign || "").toUpperCase() === key);
+    const oldBlocked = Boolean(rosterMember?.do_not_terminate);
+    const previousRows = doNotTerminateRows;
+    if (rosterMember) {
+        rosterMember.do_not_terminate = blocked;
+        memberCache.set(key, rosterMember);
+    }
+    if (Array.isArray(allMembersCache)) {
+        allMembersCache = allMembersCache.map(member => String(member.callsign || "").toUpperCase() === key
+            ? { ...member, do_not_terminate: blocked } : member);
+        allMembersCacheAt = Date.now();
+        memberListRenderKey = "";
+        try { sessionStorage.setItem("lvfr.roster.snapshot.v1", JSON.stringify(allMembersCache)); } catch {}
+        renderStatistics();
+    }
+    if (blocked) {
+        if (!doNotTerminateRows.some(member => String(member.callsign || "").toUpperCase() === key)) {
+            doNotTerminateRows = [{ callsign: key, name: rosterMember?.name || "", added_at: new Date().toLocaleString(), added_by: "You" }, ...doNotTerminateRows];
+        }
+    } else {
+        doNotTerminateRows = doNotTerminateRows.filter(member => String(member.callsign || "").toUpperCase() !== key);
+    }
+    try { localStorage.setItem(DO_NOT_TERMINATE_CACHE_KEY, JSON.stringify(doNotTerminateRows)); } catch {}
+    renderDoNotTerminate();
+    if (activeProfileMember?.callsign?.toUpperCase() === key && rosterMember) void profile(key, true, rosterMember);
+    void loadMembers(false);
+    toast(blocked ? `${key} added to Do Not Terminate.` : `${key} removed from Do Not Terminate.`);
+    try {
+        await api("/api/do-not-terminate", { method: "POST", body: JSON.stringify({ callsign, blocked }) });
+        apiReadCache.clear();
+        void loadMembers(true, true);
+        if (activeProfileMember?.callsign?.toUpperCase() === key) {
+            void api(`/api/member/${encodeURIComponent(callsign)}`).then(fresh => {
+                memberCache.set(key, fresh);
+                profile(callsign, true, fresh);
+            }).catch(() => {});
+        }
+    } catch (error) {
+        doNotTerminateRows = previousRows;
+        try { localStorage.setItem(DO_NOT_TERMINATE_CACHE_KEY, JSON.stringify(doNotTerminateRows)); } catch {}
+        if (rosterMember) {
+            rosterMember.do_not_terminate = oldBlocked;
+            memberCache.set(key, rosterMember);
+        }
+        if (Array.isArray(allMembersCache)) {
+            allMembersCache = allMembersCache.map(member => String(member.callsign || "").toUpperCase() === key
+                ? { ...member, do_not_terminate: oldBlocked } : member);
+            allMembersCacheAt = Date.now();
+            memberListRenderKey = "";
+        }
+        renderDoNotTerminate();
+        void loadMembers(false);
+        toast(error.message);
+    }
+}

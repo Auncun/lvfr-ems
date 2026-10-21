@@ -149,6 +149,8 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/eligible' && method === 'GET') { requireLeader_(user); return eligibleMembers_(); }
   if (route === '/api/do-not-promote' && method === 'GET') { requireRolePermission_(user, 'do_not_promote_view'); return listDoNotPromote_(); }
   if (route === '/api/do-not-promote' && method === 'POST') { requireRolePermission_(user, 'do_not_promote_manage'); return setDoNotPromote_(data, user); }
+  if (route === '/api/do-not-terminate' && method === 'GET') { requireRolePermission_(user, 'do_not_promote_view'); return listDoNotTerminate_(); }
+  if (route === '/api/do-not-terminate' && method === 'POST') { requireRolePermission_(user, 'do_not_promote_manage'); return setDoNotTerminate_(data, user); }
   if (route === '/api/inactive' && method === 'GET') { requireAdmin_(user); return inactiveMembers_(); }
   if (route === '/api/training-overdue' && method === 'GET') { requireAdmin_(user); return trainingOverdueMembers_(); }
   if (route === '/api/sync-status' && method === 'GET') { requireRolePermission_(user, 'sync_view'); return syncStatus_(); }
@@ -1063,6 +1065,7 @@ function readRosterMembers_(readOnly) {
   const hertByName = hertDirectory_(spreadsheet);
   const instructorsByName = new Map(instructorDirectory_(spreadsheet).map(item => [item.name.toLowerCase(), item]));
   const doNotPromote = doNotPromoteCallsigns_(Boolean(readOnly));
+  const doNotTerminate = doNotTerminateCallsigns_(Boolean(readOnly));
   const rankByCallsign = Object.create(null);
   let rank = 'Probationary';
   const records = [];
@@ -1094,7 +1097,8 @@ function readRosterMembers_(readOnly) {
       has_hert: Boolean(hertByName.get(name.toLowerCase())),
       activity: activityFromColor_(colors[index][3]),
       instructor_type: (instructorsByName.get(name.toLowerCase()) || {}).type || '',
-      do_not_promote: doNotPromote.has(callsign)
+      do_not_promote: doNotPromote.has(callsign),
+      do_not_terminate: doNotTerminate.has(callsign)
     };
     records.push(item);
   });
@@ -1116,6 +1120,7 @@ function memberProfile_(callsign, user) {
     eligibility_reason: eligibility.reason,
     next_rank: eligibility.next_rank,
     do_not_promote: Boolean(member.do_not_promote),
+    do_not_terminate: Boolean(member.do_not_terminate),
     instructor_type: isCommand_(user) ? member.instructor_type : '',
     instructor_date: ''
   });
@@ -1389,7 +1394,7 @@ function syncRosterSnapshotToD1_(source, forceFull) {
     lockAcquired = true;
     console.log('Roster D1 sync acquired ScriptLock; source=' + source + '.');
     invalidateRosterCache_();
-    CacheService.getScriptCache().removeAll(['instructor-directory:v2', 'members:do-not-promote:v1', 'members:do-not-promote:list:v1']);
+    CacheService.getScriptCache().removeAll(['instructor-directory:v2', 'members:do-not-promote:v1', 'members:do-not-promote:list:v1', 'members:do-not-terminate:v1', 'members:do-not-terminate:list:v1']);
     console.log('Roster D1 sync reading current Google Sheet snapshot; readOnly=' + forceFull + '.');
     const members = forceFull ? readRosterMembers_(true) : readRosterMembers_();
     if (forceFull && members.length === 0) {
@@ -1582,6 +1587,76 @@ function moveDoNotPromoteCallsign_(oldCallsign, newCallsign, name) {
   const index = rows.findIndex(row => String(row[0] || '').trim().toUpperCase() === oldCallsign);
   if (index >= 0) sheet.getRange(index + 2, 1, 1, 2).setValues([[newCallsign, name]]);
   CacheService.getScriptCache().removeAll(['members:do-not-promote:v1', 'members:do-not-promote:list:v1']);
+}
+
+// Do Not Terminate list: kept in its own Sheet tab; members on it cannot be terminated.
+const DO_NOT_TERMINATE_TAB = 'Do Not Terminate';
+const DO_NOT_TERMINATE_HEADERS = ['Callsign', 'Name', 'Added At', 'Added By'];
+
+function doNotTerminateSheet_() {
+  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+  let sheet = spreadsheet.getSheetByName(DO_NOT_TERMINATE_TAB);
+  if (!sheet) sheet = spreadsheet.insertSheet(DO_NOT_TERMINATE_TAB);
+  if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, DO_NOT_TERMINATE_HEADERS.length).setValues([DO_NOT_TERMINATE_HEADERS]);
+  return sheet;
+}
+
+function doNotTerminateCallsigns_(readOnly) {
+  const cache = CacheService.getScriptCache(), key = 'members:do-not-terminate:v1';
+  if (!readOnly) {
+    const cached = cache.get(key);
+    if (cached) { try { return new Set(JSON.parse(cached)); } catch (ignored) {} }
+  }
+  let sheet;
+  if (readOnly) {
+    const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_PRIVATE_SPREADSHEET_ID'));
+    sheet = spreadsheet.getSheetByName(DO_NOT_TERMINATE_TAB);
+  } else {
+    sheet = doNotTerminateSheet_();
+  }
+  if (!sheet) return new Set();
+  const count = Math.max(0, sheet.getLastRow() - 1);
+  const callsigns = count ? sheet.getRange(2, 1, count, 1).getDisplayValues()
+    .map(row => String(row[0] || '').trim().toUpperCase()).filter(Boolean) : [];
+  if (!readOnly) { try { cache.put(key, JSON.stringify(callsigns), 300); } catch (ignored) {} }
+  return new Set(callsigns);
+}
+
+function listDoNotTerminate_() {
+  const cache = CacheService.getScriptCache(), cacheKey = 'members:do-not-terminate:list:v1';
+  const cached = cache.get(cacheKey);
+  if (cached) { try { return JSON.parse(cached); } catch (ignored) {} }
+  const sheet = doNotTerminateSheet_(), count = Math.max(0, sheet.getLastRow() - 1);
+  const result = count ? sheet.getRange(2, 1, count, DO_NOT_TERMINATE_HEADERS.length).getDisplayValues()
+    .filter(row => row[0])
+    .map(row => ({ callsign: row[0], name: row[1], added_at: row[2], added_by: row[3] })) : [];
+  try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (ignored) {}
+  return result;
+}
+
+function setDoNotTerminate_(data, user) {
+  if (typeof data.blocked !== 'boolean') throw new Error('Choose whether to add or remove this member from Do Not Terminate.');
+  const member = memberByCallsign_(data.callsign), lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = doNotTerminateSheet_(), count = Math.max(0, sheet.getLastRow() - 1);
+    const rows = count ? sheet.getRange(2, 1, count, DO_NOT_TERMINATE_HEADERS.length).getDisplayValues() : [];
+    const index = rows.findIndex(row => String(row[0] || '').trim().toUpperCase() === member.callsign);
+    if (data.blocked && index < 0) sheet.appendRow([member.callsign, member.name, new Date().toISOString(), actorName_(user)]);
+    else if (!data.blocked && index >= 0) sheet.deleteRow(index + 2);
+    CacheService.getScriptCache().removeAll(['members:do-not-terminate:v1', 'members:do-not-terminate:list:v1']);
+    invalidateRosterCache_();
+    return { ok: true, callsign: member.callsign, blocked: data.blocked, changed: data.blocked ? index < 0 : index >= 0 };
+  } finally { lock.releaseLock(); }
+}
+
+function moveDoNotTerminateCallsign_(oldCallsign, newCallsign, name) {
+  const sheet = doNotTerminateSheet_(), count = Math.max(0, sheet.getLastRow() - 1);
+  if (!count) return;
+  const rows = sheet.getRange(2, 1, count, DO_NOT_TERMINATE_HEADERS.length).getDisplayValues();
+  const index = rows.findIndex(row => String(row[0] || '').trim().toUpperCase() === oldCallsign);
+  if (index >= 0) sheet.getRange(index + 2, 1, 1, 2).setValues([[newCallsign, name]]);
+  CacheService.getScriptCache().removeAll(['members:do-not-terminate:v1', 'members:do-not-terminate:list:v1']);
 }
 
 // EMT members who have held the rank for 21+ days and are missing Basic FORT or Advanced FORT.
@@ -1902,6 +1977,7 @@ function moveMember_(member, target, newRank, user, operation) {
   sheet.getRange(member.row, 11).clearContent().setBackground('#ffffff'); // K only
   sheet.getRange(member.row, 2).setValue(oldCallsign);
   if (member.do_not_promote) moveDoNotPromoteCallsign_(oldCallsign, target.callsign, member.name);
+  if (member.do_not_terminate) moveDoNotTerminateCallsign_(oldCallsign, target.callsign, member.name);
   const event = operation === 'DEMOTION' ? 'Demoted' : operation === 'CALLSIGN_CHANGE' ? 'Callsign Changed' : operation === 'CHANGE_RANK' ? 'Rank Changed' : 'Promoted';
   const timestamp = new Date().toISOString();
   appendArchiveLog_({ timestamp, event, member: member.name, callsign: target.callsign, old_callsign: oldCallsign, new_callsign: target.callsign, old_rank: oldRank, new_rank: newRank, details: '', actor: actorName_(user), actor_callsign: user.callsign });
@@ -1919,6 +1995,7 @@ function appendArchiveLog_(entry) {
 
 function terminateMember_(data, user) {
   const member = memberByCallsign_(data.callsign), sheet = rosterSheet_();
+  if (member.do_not_terminate) throw new Error('This member is on the Do Not Terminate list.');
   const preserveSeniorRankFields = rankLevel_(member.rank) > rankLevel_('Paramedic');
   sheet.getRange(member.row, 3, 1, 1).clearContent().setBackground('#ffffff');
   if (preserveSeniorRankFields) sheet.getRange(member.row, 6, 1, 4).clearContent().setBackground('#ffffff');

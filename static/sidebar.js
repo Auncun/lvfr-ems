@@ -18,7 +18,7 @@
           { label: 'Training Hours', tab: 'trainingDirectory', training: 'HOURS', availability: '#trainingHoursTab' }
         ] },
         { label: 'Eligible', tab: 'eligible' },
-        { label: 'Do not Promote', tab: 'doNotPromote', availability: '#doNotPromoteTab' },
+        { label: 'Do Not Promote/Terminate', tab: 'doNotPromote', availability: '#doNotPromoteTab' },
         { label: 'Termination', tab: 'inactive', children: [
           { label: 'Due to Activity', tab: 'inactive', inactiveSub: 'activity' },
           { label: 'Training Overdue', tab: 'inactive', inactiveSub: 'overdue' }

@@ -180,6 +180,8 @@ function permissionForRequest(route, method, data={}) {
   if(route==="/api/notifications/clear"&&method==="POST") return "notifications_clear_all";
   if(route==="/api/do-not-promote"&&method==="GET") return "do_not_promote_view";
   if(route==="/api/do-not-promote"&&method==="POST") return "do_not_promote_manage";
+  if(route==="/api/do-not-terminate"&&method==="GET") return "do_not_promote_view";
+  if(route==="/api/do-not-terminate"&&method==="POST") return "do_not_promote_manage";
   if(route==="/api/member/instructor"||/^\/api\/member\/[^/]+\/instructor$/.test(route)) return "instructor_manage";
   if(route==="/api/account/profile"&&method==="GET") return "profile_view";
   if(route==="/api/watch-command/current-user") return null;
@@ -331,10 +333,11 @@ async function replaceMembers(db, members, syncedAt = new Date().toISOString()) 
           activity,
           instructor_type,
           do_not_promote,
+          do_not_terminate,
           sheet_row,
           synced_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         String(member.callsign || "").trim().toUpperCase(),
         String(member.name || "").trim(),
@@ -351,6 +354,7 @@ async function replaceMembers(db, members, syncedAt = new Date().toISOString()) 
         String(member.activity || "Active"),
         String(member.instructor_type || ""),
         member.do_not_promote ? 1 : 0,
+        member.do_not_terminate ? 1 : 0,
         Number(member.sheet_row || member.row || 0) || null,
         syncedAt
       )
@@ -361,7 +365,7 @@ async function replaceMembers(db, members, syncedAt = new Date().toISOString()) 
 
   return { ok: true, members: members.length, synced_at: syncedAt };
 }
-const MEMBER_WRITE_ROUTES = new Set(["/api/activity", "/api/note", "/api/date", "/api/training", "/api/exam", "/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign", "/api/terminate", "/api/do-not-promote"]);
+const MEMBER_WRITE_ROUTES = new Set(["/api/activity", "/api/note", "/api/date", "/api/training", "/api/exam", "/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign", "/api/terminate", "/api/do-not-promote", "/api/do-not-terminate"]);
 const RANK_PREFIX = { Commissioners:"COM", Chief:"CHIEF", "County Command":"B", "Division Commander":"DIV", Captain:"C", Lieutenant:"E", "Lead Paramedic":"L", Paramedic:"M", AEMT:"A", EMT:"R", Probationary:"P", EMR:"P", "Senior Volunteer":"S", Volunteer:"V", "Probationary Volunteer":"V", "EMR/Volunteer":"P" };
 function rankForCallsign(cs) { const p=String(cs||"").match(/^[A-Z]+/); if(!p)return ""; if(p[0]==="V") return [1,2,3,4,5,6,7,8,9,14,21,22,23,24,25,26,27,28,29,36,37,38,39,40].includes(Number(cs.split("-")[1]))?"Probationary Volunteer":"Volunteer"; return ({COM:"Commissioners",CHIEF:"Chief",B:"County Command",DIV:"Division Commander",C:"Captain",E:"Lieutenant",L:"Lead Paramedic",M:"Paramedic",A:"AEMT",R:"EMT",P:"Probationary",S:"Senior Volunteer"})[p[0]]||""; }
 let orderedMembersViewReady = false;
@@ -385,7 +389,7 @@ async function applyRosterMutationD1(db, route, data, actor) {
   const admin=["admin","commander"].includes(String(actor.role||""));
   const cs=String(data.callsign||"").trim().toUpperCase(), old=await db.prepare("SELECT * FROM members WHERE upper(callsign)=?").bind(cs).first();
   if(!old) throw Object.assign(new Error("Member not found."),{status:404});
-  const now=new Date().toISOString(), cols={callsign:old.callsign,name:old.name,rank:old.rank,date:old.date,rank_assigned_date:old.rank_assigned_date,days_in_rank:old.days_in_rank,discord_id:old.discord_id,notes:old.notes,has_basic_firefighting:old.has_basic_firefighting,has_advanced_firefighting:old.has_advanced_firefighting,has_supervisor_exam:old.has_supervisor_exam,has_hert:old.has_hert,activity:old.activity,instructor_type:old.instructor_type,do_not_promote:old.do_not_promote,sheet_row:old.sheet_row,synced_at:now};
+  const now=new Date().toISOString(), cols={callsign:old.callsign,name:old.name,rank:old.rank,date:old.date,rank_assigned_date:old.rank_assigned_date,days_in_rank:old.days_in_rank,discord_id:old.discord_id,notes:old.notes,has_basic_firefighting:old.has_basic_firefighting,has_advanced_firefighting:old.has_advanced_firefighting,has_supervisor_exam:old.has_supervisor_exam,has_hert:old.has_hert,activity:old.activity,instructor_type:old.instructor_type,do_not_promote:old.do_not_promote,do_not_terminate:old.do_not_terminate,sheet_row:old.sheet_row,synced_at:now};
   let result={ok:true};
   if(route==="/api/activity") { const val=String(data.activity||""); if(!["Active","Semi Active","Inactive","Can Be Terminated"].includes(val)) throw new Error("Invalid activity status."); cols.activity=val; }
   else if(route==="/api/note") { const action=String(data.action||""), entered=String(data.note||"").trim(); if(action==="Add"&&old.notes) throw new Error("This member already has a note. Choose Edit or Delete."); if(action==="Edit"&&!old.notes) throw new Error("This member has no note to edit. Choose Add."); if(action==="Delete") cols.notes=""; else if(["Add","Edit"].includes(action)){if(!entered) throw new Error("Enter a note before saving it.");cols.notes=entered;} else throw new Error("Invalid note action."); result.note=cols.notes; }
@@ -420,7 +424,9 @@ async function applyRosterMutationD1(db, route, data, actor) {
     cols.instructor_type=[...set].sort().join(" / ");
   }
   else if(route==="/api/do-not-promote") cols.do_not_promote=data.blocked?1:0;
+  else if(route==="/api/do-not-terminate") cols.do_not_terminate=data.blocked?1:0;
   else if(route==="/api/terminate") {
+    if(Number(old.do_not_terminate||0)===1) throw new Error("This member is on the Do Not Terminate list.");
     await assertRankScope(db,actor,"terminate",String(old.rank||"").trim());
     await db.batch([
       db.prepare("DELETE FROM members WHERE callsign=?").bind(old.callsign),
@@ -463,7 +469,7 @@ async function applyRosterMutationD1(db, route, data, actor) {
     if(route==="/api/change-rank" && !["EMT|AEMT","AEMT|Senior Volunteer","EMT|Volunteer","Senior Volunteer|AEMT","Volunteer|EMT"].includes(old.rank+"|"+nextRank)) throw new Error("This rank change is not supported.");
     const finalRank=route==="/api/change-callsign"?(admin?slot.rank:old.rank):nextRank;
     const date=route==="/api/change-callsign"?old.date:now.slice(0,10);
-    await db.batch([db.prepare("DELETE FROM callsign_slots WHERE callsign=?").bind(nextCs),db.prepare("DELETE FROM members WHERE callsign=?").bind(old.callsign),db.prepare(`INSERT INTO members(callsign,name,rank,date,rank_assigned_date,days_in_rank,discord_id,notes,has_basic_firefighting,has_advanced_firefighting,has_supervisor_exam,has_hert,activity,instructor_type,do_not_promote,sheet_row,synced_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(nextCs,old.name,finalRank,date,date,0,old.discord_id,old.notes,old.has_basic_firefighting,old.has_advanced_firefighting,old.has_supervisor_exam,old.has_hert,old.activity,old.instructor_type,old.do_not_promote,slot.sheet_row||null,now),db.prepare("INSERT OR IGNORE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(rankForCallsign(old.callsign),old.callsign,old.sheet_row,now)]);
+    await db.batch([db.prepare("DELETE FROM callsign_slots WHERE callsign=?").bind(nextCs),db.prepare("DELETE FROM members WHERE callsign=?").bind(old.callsign),db.prepare(`INSERT INTO members(callsign,name,rank,date,rank_assigned_date,days_in_rank,discord_id,notes,has_basic_firefighting,has_advanced_firefighting,has_supervisor_exam,has_hert,activity,instructor_type,do_not_promote,do_not_terminate,sheet_row,synced_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(nextCs,old.name,finalRank,date,date,0,old.discord_id,old.notes,old.has_basic_firefighting,old.has_advanced_firefighting,old.has_supervisor_exam,old.has_hert,old.activity,old.instructor_type,old.do_not_promote,old.do_not_terminate,slot.sheet_row||null,now),db.prepare("INSERT OR IGNORE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(rankForCallsign(old.callsign),old.callsign,old.sheet_row,now)]);
     // Record the promotion for PORTAL and Discord confirmation, with the person who made it.
     if(route==="/api/promote"||route==="/api/force-promote") await db.prepare("INSERT INTO promotion_confirmations(callsign,name,old_rank,new_rank,old_callsign,new_callsign,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)").bind(nextCs,String(old.name||""),String(old.rank||""),String(finalRank||nextRank||""),String(old.callsign||""),nextCs,now,String(actor.name||"")).run();
     return {ok:true,new_callsign:nextCs,new_rank:finalRank};
@@ -479,7 +485,7 @@ function memberFromRow(row) {
   const days=Number.isFinite(assignedTime)?Math.max(0,Math.floor((Date.now()-assignedTime)/86400000)):Number(row.days_in_rank||0);
   return { ...row, row: row.sheet_row, has_basic_firefighting: !!row.has_basic_firefighting,
     has_advanced_firefighting: !!row.has_advanced_firefighting, has_supervisor_exam: !!row.has_supervisor_exam,
-    has_hert: !!row.has_hert, do_not_promote: !!row.do_not_promote, days_in_rank: days };
+    has_hert: !!row.has_hert, do_not_promote: !!row.do_not_promote, do_not_terminate: !!row.do_not_terminate, days_in_rank: days };
 }
 function compareCallsigns(a, b) {
   const left=String(a||"").trim().toUpperCase().match(/^([A-Z]+)-(\d+)$/);
@@ -1585,6 +1591,7 @@ export async function handleD1(context) {
     const viewableInactive=(route==="/api/inactive"||route==="/api/training-overdue")&&method==="GET"?await viewRanks(db,user):null;
     if(route==="/api/inactive" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>(!viewableInactive||viewableInactive.includes(row.rank))&&row.activity==="Can Be Terminated").map(({callsign,name,rank})=>({callsign,name,rank})));
     if(route==="/api/training-overdue" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>(!viewableInactive||viewableInactive.includes(row.rank))&&row.rank==="EMT"&&Number(row.days_in_rank||0)>=21&&(!row.has_basic_firefighting||!row.has_advanced_firefighting)).map(({callsign,name,days_in_rank,has_basic_firefighting,has_advanced_firefighting})=>({callsign,name,days_in_rank,has_basic_firefighting,has_advanced_firefighting})));
+    if(route==="/api/do-not-terminate" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.do_not_terminate).map(({callsign,name,rank})=>({callsign,name,rank,added_at:"",added_by:""})));
     if(route==="/api/do-not-promote" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.do_not_promote).map(({callsign,name,rank})=>({callsign,name,rank,added_at:"",added_by:""})));
     if(route==="/api/instructors" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).flatMap(row=>String(row.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(type=>(type==="HERT"&&user.permissions.hert_instructor_view)||(type==="FORT"&&user.permissions.fort_instructor_view)).map(type=>({name:row.name,type,date:""}))));
     const memberRoute=route.match(/^\/api\/member\/([^/]+)$/);

@@ -14,7 +14,7 @@
   // Columns where sorting has no use: action buttons, yes/no training flags, hours and results.
   const NO_SORT_LABELS = new Set(['', 'action', 'actions', 'result', 'training hours', 'basic fort', 'advanced fort', 'hert cert', 'hert certified', 'hert instructor', 'fort instructor', 'reason', 'presence', 'approval', 'role change', 'type']);
   // Lists whose last column holds buttons only.
-  const NO_SORT_LAST_COLUMN_IN = new Set(['membersTable', 'eligibleTable', 'doNotPromoteTable', 'inactiveTable', 'trainingOverdueTable']);
+  const NO_SORT_LAST_COLUMN_IN = new Set(['membersTable', 'eligibleTable', 'doNotPromoteTable', 'doNotTerminateTable', 'inactiveTable', 'trainingOverdueTable']);
   const isSortable = (table, th) => {
     if (NO_SORT_LABELS.has(headingLabel(th))) return false;
     const headerRow = table.tHead.rows[0];
