@@ -1661,13 +1661,13 @@ function moveDoNotTerminateCallsign_(oldCallsign, newCallsign, name) {
 
 // EMT members who have held the rank for 21+ days and are missing Basic FORT or Advanced FORT.
 function trainingOverdueMembers_() {
-  return listMembers_('').filter(member => member.rank === 'EMT' && Number(member.days_in_rank || 0) >= 21
+  return listMembers_('').filter(member => !member.do_not_terminate && member.rank === 'EMT' && Number(member.days_in_rank || 0) >= 21
       && (!member.has_basic_firefighting || !member.has_advanced_firefighting))
     .map(({ callsign, name, days_in_rank, has_basic_firefighting, has_advanced_firefighting }) => ({ callsign, name, days_in_rank, has_basic_firefighting, has_advanced_firefighting }));
 }
 
 function inactiveMembers_() {
-  return listMembers_('').filter(member => member.activity === 'Can Be Terminated')
+  return listMembers_('').filter(member => member.activity === 'Can Be Terminated' && !member.do_not_terminate)
     .map(({ callsign, name }) => ({ callsign, name }));
 }
 

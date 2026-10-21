@@ -18,7 +18,10 @@
           { label: 'Training Hours', tab: 'trainingDirectory', training: 'HOURS', availability: '#trainingHoursTab' }
         ] },
         { label: 'Eligible', tab: 'eligible' },
-        { label: 'Do Not Promote/Terminate', tab: 'doNotPromote', availability: '#doNotPromoteTab' },
+        { label: 'Do Not Promote/Terminate', tab: 'doNotPromote', availability: '#doNotPromoteTab', children: [
+          { label: 'Do Not Promote', tab: 'doNotPromote', dnpNav: 'promote', availability: '#doNotPromoteTab' },
+          { label: 'Do Not Terminate', tab: 'doNotPromote', dnpNav: 'terminate', availability: '#doNotPromoteTab' }
+        ] },
         { label: 'Termination', tab: 'inactive', children: [
           { label: 'Due to Activity', tab: 'inactive', inactiveSub: 'activity' },
           { label: 'Training Overdue', tab: 'inactive', inactiveSub: 'overdue' }
@@ -76,7 +79,7 @@
     const id = `sidebarTree${entryId++}`;
     const availability = item.availability ? ` data-availability="${item.availability}"` : '';
     const attrs = item.tab ? ` data-tab="${item.tab}"` : '';
-    const extra = item.log ? ` data-log="${item.log}"` : item.leader ? ` data-leader="${item.leader}"` : item.status ? ` data-status="${item.status}"` : item.training ? ` data-training="${item.training}"` : '';
+    const extra = item.log ? ` data-log="${item.log}"` : item.leader ? ` data-leader="${item.leader}"` : item.status ? ` data-status="${item.status}"` : item.training ? ` data-training="${item.training}"` : item.dnpNav ? ` data-dnp-nav="${item.dnpNav}"` : '';
     const trainingSection = item.trainingSection ? ` data-training-section="${item.trainingSection}"` : '';
     const inactiveSub = item.inactiveSub ? ` data-inactive-sub="${item.inactiveSub}"` : '';
     const control = item.anchor
@@ -154,7 +157,7 @@
   const viewFromItem = item => ({
     page: item.dataset.page || '', tab: item.dataset.tab || '', training: item.dataset.training || '',
     trainingSection: item.dataset.trainingSection || '', log: item.dataset.log || '', leader: item.dataset.leader || '',
-    inactiveSub: item.dataset.inactiveSub || ''
+    inactiveSub: item.dataset.inactiveSub || '', dnpNav: item.dataset.dnpNav || ''
   });
   const rememberSidebarView = view => { try { sessionStorage.setItem(savedViewKey, JSON.stringify(view)); } catch {} };
   const readSavedView = () => { try { return JSON.parse(sessionStorage.getItem(savedViewKey) || 'null'); } catch { return null; } };
@@ -177,7 +180,7 @@
       rememberSidebarView(viewFromItem(item));
       if (item.dataset.page !== currentPath) {
         sessionStorage.setItem('lvfr.sidebar.pending-navigation', JSON.stringify({
-          page: item.dataset.page, tab: targetTab, log: item.dataset.log || '', leader: item.dataset.leader || '',
+          page: item.dataset.page, tab: targetTab, dnpNav: item.dataset.dnpNav || '', log: item.dataset.log || '', leader: item.dataset.leader || '',
           training: item.dataset.training || '', trainingSection: item.dataset.trainingSection || '', inactiveSub: item.dataset.inactiveSub || ''
         }));
         location.assign(item.dataset.page);
@@ -187,6 +190,7 @@
       if (item.dataset.training) document.querySelector(`[data-training-view="${item.dataset.training}"]`)?.click();
       if (item.dataset.trainingSection) document.querySelector(`[data-training-section="${item.dataset.trainingSection}"]`)?.click();
       if (item.dataset.log) document.querySelector(`[data-log="${item.dataset.log}"]`)?.click();
+      if (item.dataset.dnpNav) document.querySelector(`[data-dnp-view="${item.dataset.dnpNav}"]`)?.click();
       if (item.dataset.leader) document.querySelector(`[data-leader-view="${item.dataset.leader}"]`)?.click();
       if (item.dataset.inactiveSub) document.querySelector(`[data-inactive-view="${item.dataset.inactiveSub}"]`)?.click();
       close();
@@ -352,6 +356,7 @@
     if (pending.training) document.querySelector(`[data-training-view="${pending.training}"]`)?.click();
     if (pending.trainingSection) document.querySelector(`[data-training-section="${pending.trainingSection}"]`)?.click();
     if (pending.log) document.querySelector(`[data-log="${pending.log}"]`)?.click();
+    if (pending.dnpNav) document.querySelector(`[data-dnp-view="${pending.dnpNav}"]`)?.click();
     if (pending.leader) document.querySelector(`[data-leader-view="${pending.leader}"]`)?.click();
     if (pending.inactiveSub) document.querySelector(`[data-inactive-view="${pending.inactiveSub}"]`)?.click();
     history.replaceState(null, '', location.pathname);

@@ -285,7 +285,7 @@ function applyOptimisticMutation(route, payload, callsign) {
         }
         inactiveRows = inactiveRows.filter(member => String(member.callsign || "").toUpperCase() !== key);
         trainingOverdueRows = trainingOverdueRows.filter(member => String(member.callsign || "").toUpperCase() !== key);
-        if (updated.activity === "Can Be Terminated") inactiveRows.push({ callsign: updated.callsign, name: updated.name });
+        if (updated.activity === "Can Be Terminated" && !updated.do_not_terminate) inactiveRows.push({ callsign: updated.callsign, name: updated.name });
         renderInactive();
     }
     if (!(updated.optimistic_from && ["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank"].includes(route))) {
@@ -1811,8 +1811,8 @@ async function fetchInactiveLists(query = "") {
         api(`/api/training-overdue${query}`).catch(() => [])
     ]);
 
-    inactiveRows = Array.isArray(activity) ? activity : [];
-    trainingOverdueRows = Array.isArray(overdue) ? overdue : [];
+    inactiveRows = Array.isArray(activity) ? activity.filter(member => !member.do_not_terminate) : [];
+    trainingOverdueRows = Array.isArray(overdue) ? overdue.filter(member => !member.do_not_terminate) : [];
 }
 
 
@@ -1826,7 +1826,7 @@ async function loadInactive(forceFresh = false) {
         }
         const cachedRows = [...memberCache.values()];
         if (cachedRows.length) {
-            inactiveRows = cachedRows.filter(member => member.activity === "Can Be Terminated");
+            inactiveRows = cachedRows.filter(member => member.activity === "Can Be Terminated" && !member.do_not_terminate);
             renderInactive();
             fetchInactiveLists("").then(renderInactive).catch(() => {});
             return;
@@ -5775,6 +5775,11 @@ async function setMemberTerminationBlock(callsign, blocked) {
     const rosterMember = memberCache.get(key) || allMembersCache?.find(member => String(member.callsign || "").toUpperCase() === key);
     const oldBlocked = Boolean(rosterMember?.do_not_terminate);
     const previousRows = doNotTerminateRows;
+    if (blocked) {
+        inactiveRows = inactiveRows.filter(member => String(member.callsign || "").toUpperCase() !== key);
+        trainingOverdueRows = trainingOverdueRows.filter(member => String(member.callsign || "").toUpperCase() !== key);
+        renderInactive();
+    }
     if (rosterMember) {
         rosterMember.do_not_terminate = blocked;
         memberCache.set(key, rosterMember);
@@ -5802,6 +5807,7 @@ async function setMemberTerminationBlock(callsign, blocked) {
     try {
         await api("/api/do-not-terminate", { method: "POST", body: JSON.stringify({ callsign, blocked }) });
         apiReadCache.clear();
+        void loadInactive(true);
         void loadMembers(true, true);
         if (activeProfileMember?.callsign?.toUpperCase() === key) {
             void api(`/api/member/${encodeURIComponent(callsign)}`).then(fresh => {
