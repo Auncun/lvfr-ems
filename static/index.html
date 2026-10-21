@@ -461,12 +461,19 @@
 
 <section id="doNotPromote" class="panel">
     <div class="section-head"><div><h2>Do Not Promote/Terminate</h2></div><button type="button" class="list-refresh" id="refreshDoNotPromoteBtn" aria-label="Refresh Do Not Promote/Terminate lists" title="Refresh Do Not Promote/Terminate lists"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
-    <div class="list-filter-row"><select id="doNotPromoteRankFilter" aria-label="Filter by rank"><option value="all">All ranks</option></select></div>
-    <h3 class="list-subhead">Do Not Promote</h3>
-    <div class="table-wrap" id="doNotPromoteTable"></div>
-    <h3 class="list-subhead">Do Not Terminate</h3>
-    <p class="muted list-note">Members on this list cannot be terminated.</p>
-    <div class="table-wrap" id="doNotTerminateTable"></div>
+    <div class="log-tabs" role="tablist" aria-label="Do Not Promote or Do Not Terminate list">
+        <button type="button" class="log-tab active" data-dnp-view="promote" aria-current="page">Do Not Promote</button>
+        <button type="button" class="log-tab" data-dnp-view="terminate">Do Not Terminate</button>
+    </div>
+    <div data-dnp-panel="promote">
+        <div class="list-filter-row"><select id="doNotPromoteRankFilter" aria-label="Filter by rank"><option value="all">All ranks</option></select></div>
+        <div class="table-wrap" id="doNotPromoteTable"></div>
+    </div>
+    <div data-dnp-panel="terminate" hidden>
+        <p class="muted list-note">Members on this list cannot be terminated.</p>
+        <div class="list-filter-row"><select id="doNotTerminateRankFilter" aria-label="Filter Do Not Terminate by rank"><option value="all">All ranks</option></select></div>
+        <div class="table-wrap" id="doNotTerminateTable"></div>
+    </div>
 </section>
 
 
@@ -877,6 +884,7 @@
      ========================================================= -->
 
 <script src="/static/session-auth.js?v=ops-20261021-1"></script>
+<script src="/static/rank-badges.js?v=ops-20261021-1"></script>
 <script src="/static/account-settings.js?v=ops-20261021-1"></script>
 <script src="/static/app.js?v=ops-20261021-1"></script>
 <script src="/static/sidebar.js?v=ops-20261021-1"></script>
