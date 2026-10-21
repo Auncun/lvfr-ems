@@ -1593,8 +1593,8 @@ export async function handleD1(context) {
     const viewableInactive=(route==="/api/inactive"||route==="/api/training-overdue")&&method==="GET"?await viewRanks(db,user):null;
     if(route==="/api/inactive" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>(!viewableInactive||viewableInactive.includes(row.rank))&&row.activity==="Can Be Terminated"&&!row.do_not_terminate).map(({callsign,name,rank})=>({callsign,name,rank})));
     if(route==="/api/training-overdue" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>(!viewableInactive||viewableInactive.includes(row.rank))&&!row.do_not_terminate&&row.rank==="EMT"&&Number(row.days_in_rank||0)>=21&&(!row.has_basic_firefighting||!row.has_advanced_firefighting)).map(({callsign,name,days_in_rank,has_basic_firefighting,has_advanced_firefighting})=>({callsign,name,days_in_rank,has_basic_firefighting,has_advanced_firefighting})));
-    if(route==="/api/do-not-terminate" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.do_not_terminate).map(({callsign,name,rank})=>({callsign,name,rank,added_at:"",added_by:""})));
-    if(route==="/api/do-not-promote" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row=>row.do_not_promote).map(({callsign,name,rank})=>({callsign,name,rank,added_at:"",added_by:""})));
+    if(route==="/api/do-not-terminate" && method==="GET") return json(await doNotListRows(db,env,user,"do_not_terminate","do_not_terminate"));
+    if(route==="/api/do-not-promote" && method==="GET") return json(await doNotListRows(db,env,user,"do_not_promote","do_not_promote"));
     if(route==="/api/instructors" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).flatMap(row=>String(row.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(type=>(type==="HERT"&&user.permissions.hert_instructor_view)||(type==="FORT"&&user.permissions.fort_instructor_view)).map(type=>({name:row.name,type,date:""}))));
     const memberRoute=route.match(/^\/api\/member\/([^/]+)$/);
     if(route==="/api/account/profile" && method==="GET") {
@@ -1755,4 +1755,19 @@ export async function handleD1(context) {
     const response=await proxyToAppsScript(context,route,url,assertion,data);
     return response;
   } catch(error) { console.error("D1 API request failed:",error); return json({detail:error.message||"Request failed."},error.status||400); }
+}
+
+// Members on a Do Not list, with who added them and when (latest ADDED entry in the operational log).
+async function doNotListRows(db, env, user, kind, flag) {
+  const members = (await readMembers(db, "", env, await signedClaims(user, env.LVFR_D1_AUTH_BRIDGE_SECRET))).filter(row => row[flag]);
+  const logRows = (await db.prepare("SELECT callsign, log_date, changed_by FROM operational_logs WHERE kind=? AND action='ADDED' ORDER BY log_date DESC, rowid DESC").bind(kind).all()).results || [];
+  const latest = new Map();
+  for (const row of logRows) {
+    const key = String(row.callsign || "").toUpperCase();
+    if (!latest.has(key)) latest.set(key, row);
+  }
+  return members.map(({ callsign, name, rank }) => {
+    const hit = latest.get(String(callsign || "").toUpperCase());
+    return { callsign, name, rank, added_at: hit?.log_date || "", added_by: hit?.changed_by || "" };
+  });
 }

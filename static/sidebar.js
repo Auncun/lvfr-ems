@@ -397,11 +397,13 @@
     const logOk = !view.log || !!document.querySelector(`#membersLog .log-tab[data-log="${view.log}"]`)?.classList.contains('active');
     const leaderOk = !view.leader || !!document.querySelector(`[data-leader-view="${view.leader}"]`)?.classList.contains('active');
     const inactiveOk = !view.inactiveSub || !!document.querySelector(`[data-inactive-view="${view.inactiveSub}"]`)?.classList.contains('active');
-    if (mainOk && sectionOk && logOk && leaderOk && inactiveOk) return;
+    const dnpOk = !view.dnpNav || !!document.querySelector(`[data-dnp-view="${view.dnpNav}"]`)?.classList.contains('active');
+    if (mainOk && sectionOk && logOk && leaderOk && inactiveOk && dnpOk) return;
     tab.click();
     if (view.training) document.querySelector(`[data-training-view="${view.training}"]`)?.click();
     if (view.trainingSection) document.querySelector(`[data-training-section="${view.trainingSection}"]`)?.click();
     if (view.log) document.querySelector(`[data-log="${view.log}"]`)?.click();
+    if (view.dnpNav) document.querySelector(`[data-dnp-view="${view.dnpNav}"]`)?.click();
     if (view.leader) document.querySelector(`[data-leader-view="${view.leader}"]`)?.click();
     if (view.inactiveSub) document.querySelector(`[data-inactive-view="${view.inactiveSub}"]`)?.click();
   };
@@ -420,6 +422,7 @@
         trainingSection: document.querySelector('[data-training-section].active')?.dataset.trainingSection || '',
         log: tab === 'membersLog' ? (document.querySelector('.log-tabs .log-tab.active[data-log]')?.dataset.log || '') : '',
         leader: document.querySelector('[data-leader-view].active')?.dataset.leaderView || '',
+        dnpNav: tab === 'doNotPromote' ? (document.querySelector('[data-dnp-view].active')?.dataset.dnpView || '') : '',
       });
     });
   });
