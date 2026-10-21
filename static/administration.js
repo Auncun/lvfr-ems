@@ -5,8 +5,6 @@ const countEl = document.querySelector('#accountCount');
 let overview = { approved: [], pending: [], deactivated: [], audit: [] };
 let selectedStatus = 'all';
 let currentUser = null;
-let notificationItems = [];
-let notificationLoadPromise = null;
 let rolePermissionsLoaded = false;
 let rolePermissionsLoadPromise = null;
 const cachedNotificationUser = window.lvfrCachedUser?.();
@@ -221,9 +219,9 @@ document.querySelector('#confirmFullCleaning')?.addEventListener('click', async 
     try { knownLogs.forEach(kind => sessionStorage.removeItem(`lvfr.log.${accountId}.${kind}.v1`)); } catch {}
     if (items.includes('account_audit') || items.includes('all')) { overview.audit = []; renderAudit(); void loadAccounts(true); }
     if (items.includes('notifications') || items.includes('all')) {
-      notificationItems = [];
       try { localStorage.setItem(notificationCacheKey, '[]'); } catch {}
-      renderNotifications(0);
+      void window.lvfrNotifications?.load();
+      window.lvfrNotifications?.render();
     }
     status.textContent = 'Selected logs and notifications were removed from D1 and Google Sheets.';
     status.className = 'admin-status success';
@@ -269,41 +267,6 @@ async function loadAccounts(silent = false) {
     if (!silent) setMessage(error.message, 'error');
     accountRows.innerHTML = '<tr><td colspan="7">Could not load accounts.</td></tr>';
   }
-}
-function renderNotifications(unreadCount = null) {
-  const badge = document.querySelector('#notificationBadge');
-  const list = document.querySelector('#notificationList');
-  const unread = unreadCount ?? notificationItems.filter(item => !Number(item.is_read)).length;
-  badge.textContent = unread > 99 ? '99+' : String(unread);
-  badge.hidden = unread === 0;
-  list.innerHTML = notificationItems.length ? notificationItems.map(item => `
-    <button type="button" class="notification-item ${Number(item.is_read) ? '' : 'unread'}" data-notification-id="${Number(item.id)}">
-      <strong>${esc(item.title)}</strong><p>${esc(item.message)}</p><small>${esc(item.created_at || '')}</small>
-    </button>`).join('') : '<div class="empty">No notifications.</div>';
-}
-async function loadNotifications() {
-  if (notificationLoadPromise) return notificationLoadPromise;
-  notificationLoadPromise = (async () => {
-    try {
-      const result = await api('/api/notifications');
-      notificationItems = Array.isArray(result.items) ? result.items : [];
-      try { localStorage.setItem(notificationCacheKey, JSON.stringify(notificationItems)); } catch {}
-      renderNotifications(Number(result.unread_count || 0));
-    } catch (error) {
-      if (!notificationItems.length) document.querySelector('#notificationList').innerHTML = `<div class="empty">${esc(error.message)}</div>`;
-    } finally { notificationLoadPromise = null; }
-  })();
-  return notificationLoadPromise;
-}
-async function markNotificationsRead(ids = []) {
-  const selected = new Set(ids.map(Number));
-  notificationItems = notificationItems.map(item => !selected.size || selected.has(Number(item.id)) ? { ...item, is_read: 1 } : item);
-  try { localStorage.setItem(notificationCacheKey, JSON.stringify(notificationItems)); } catch {}
-  renderNotifications();
-  void api('/api/notifications/read', { method: 'POST', body: JSON.stringify({ ids }) }).catch(error => {
-    if (String(error?.message || error) === 'BACKGROUND_SAVE_PENDING') return;
-    setMessage(`Save failed: ${error.message}. Notification state may differ from Google Sheets. Reload notifications to refresh it.`, 'error');
-  });
 }
 async function performAction(button) {
   const { action, id } = button.dataset;
@@ -1163,54 +1126,24 @@ document.querySelectorAll('.admin-tabs button').forEach(button => button.addEven
 document.querySelector('#accountSearch').addEventListener('input', renderAccounts);
 document.querySelector('#refreshAccounts').addEventListener('click', loadAccounts);
 window.setInterval(() => { if (!document.hidden) void loadAccounts(true); }, 30000);
-const notificationButton = document.querySelector('#notificationButton');
-notificationButton.addEventListener('click', async () => {
-  const panel = document.querySelector('#notificationPanel');
-  panel.hidden = !panel.hidden;
-  notificationButton.setAttribute('aria-expanded', String(!panel.hidden));
-  if (!panel.hidden) await loadNotifications();
-});
-document.querySelector('#markNotificationsRead').addEventListener('click', () => markNotificationsRead());
-// Clears only this account's view of notifications. Other people keep theirs.
-document.querySelector('#clearMyNotifications').addEventListener('click', async event => {
-  const button = event.currentTarget;
-  button.disabled = true;
-  try {
-    await api('/api/notifications/clear-mine', { method: 'POST', body: '{}' });
-    notificationItems = [];
-    try { localStorage.setItem(notificationCacheKey, '[]'); } catch {}
-    renderNotifications();
-  } catch (error) {
-    setMessage(`Could not clear notifications: ${error.message}`, 'error');
-  } finally {
-    button.disabled = false;
-  }
-});
-document.querySelector('#notificationList').addEventListener('click', async event => {
-  const button = event.target.closest('[data-notification-id]');
-  if (!button) return;
-  const item = notificationItems.find(entry => Number(entry.id) === Number(button.dataset.notificationId));
+// Admin page: a request notification opens the Pending accounts list here; others open EMS Operations.
+window.lvfrOpenNotification = async id => {
+  const item = window.lvfrNotifications?.find(id);
   if (!item) return;
-  await markNotificationsRead([item.id]);
+  await window.lvfrNotifications.markRead([id]);
   if (item.kind === 'request') {
     selectedStatus = 'pending';
     document.querySelectorAll('.admin-tabs button').forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.status === 'pending')));
     renderAccounts();
-    document.querySelector('#accountsHeading').scrollIntoView({ behavior: 'smooth' });
-  } else if (item.callsign) {
+    document.querySelector('#accountsHeading')?.scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
+  if (item.callsign) {
     const target = new URL('/', location.origin);
     target.searchParams.set('notification_id', String(item.id));
     location.assign(target.toString());
-    return;
   }
-  document.querySelector('#notificationPanel').hidden = true;
-  notificationButton.setAttribute('aria-expanded', 'false');
-});
-document.addEventListener('click', event => {
-  if (event.target.closest('.notification-control')) return;
-  document.querySelector('#notificationPanel').hidden = true;
-  notificationButton.setAttribute('aria-expanded', 'false');
-});
+};
 document.querySelector('#logoutButton').addEventListener('click', () => {
   window.lvfrLogout?.();
 });
@@ -1249,10 +1182,3 @@ function selectCommandSectionFromHash() {
 window.addEventListener('hashchange', selectCommandSectionFromHash);
 selectCommandSectionFromHash();
 loadAccounts();
-try {
-  const cached = JSON.parse(localStorage.getItem(notificationCacheKey) || 'null');
-  if (Array.isArray(cached)) { notificationItems = cached; renderNotifications(); }
-} catch {}
-loadNotifications();
-window.setInterval(() => { if (!document.hidden) void loadNotifications(); }, 60000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) void loadNotifications(); });

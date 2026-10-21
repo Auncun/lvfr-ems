@@ -218,11 +218,7 @@ function applyOptimisticMutation(route, payload, callsign) {
         return;
     }
     if (route === "/api/notifications/read") {
-        const readIds = new Set((payload.ids || []).map(Number));
-        notificationItems = notificationItems.map(item =>
-            !readIds.size || readIds.has(Number(item.id)) ? { ...item, is_read: 1 } : item
-        );
-        renderNotifications();
+        window.lvfrNotifications?.applyRead(payload.ids || []);
         return;
     }
     const key = String(callsign || "").trim().toUpperCase();
@@ -701,10 +697,6 @@ function toast(msg) {
 
 
 try { Object.keys(localStorage).filter(key => key.startsWith('lvfr.portal.notifications.v1:')).forEach(key => localStorage.removeItem(key)); } catch {}
-let notificationItems = [];
-let notificationLoadPromise = null;
-let notificationCacheHydrated = false;
-
 // Rank order used in every rank filter, from highest to lowest.
 const RANK_FILTER_ORDER = ['commissioners', 'chief', 'county command', 'division commander', 'captain', 'lieutenant', 'lead paramedic', 'paramedic', 'aemt', 'advanced emt', 'emt', 'probationary', 'senior volunteer', 'volunteer', 'probationary volunteer', 'emr', 'emr/volunteer'];
 // Fills a rank dropdown with the ranks present in the list, keeping the chosen rank when it still exists.
@@ -720,147 +712,14 @@ function fillRankFilter(select, rows) {
     select.value = ranks.includes(current) ? current : "all";
 }
 
-// Names for the notification types shown in the filter.
-const NOTIFICATION_FILTER_LABELS = { inactive: "Due to Activity", overdue: "Training Overdue", termination: "Termination", promotion: "Promotion", eligible: "Can be promoted", callsign: "Callsign", training: "Training", training_time: "Training Hours", loi: "LOI", exam: "Exam", note: "Note", activity: "Activity", instructor: "Instructor", do_not_promote: "Do Not Promote", request: "New account request" };
-let notificationPrefCache = null;
-let notificationPrefCacheAt = 0;
-// Types the person has switched on in Notification Settings (null when the settings cannot be read).
-async function enabledNotificationKinds() {
-    if (notificationPrefCache && Date.now() - notificationPrefCacheAt < 60000) return notificationPrefCache;
-    try {
-        const response = await fetch("/api/account/notification-preferences");
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.detail || "Could not load notification settings.");
-        notificationPrefCache = new Map(result.options.filter(option => option.allowed && option.enabled).map(option => [option.kind, option.label]));
-        notificationPrefCacheAt = Date.now();
-        document.dispatchEvent(new Event("notification-prefs-loaded"));
-    } catch {
-        notificationPrefCache = null;
-    }
-    return notificationPrefCache;
-}
-// Checked filter options. Empty means no filter (show everything). "unread" is a separate option that can be combined with types.
-let notificationFilterSelected = new Set();
-// The filter lists only the types that are switched on and that have notifications to show.
-async function fillNotificationFilter() {
-    const box = $("#notificationFilter");
-    if (!box) return;
-    const enabled = await enabledNotificationKinds();
-    // Every type you have switched on is listed, using the same name as in Notification Settings.
-    // Without settings, only types that have notifications are listed.
-    // Only types switched on in Notification Settings appear. Without readable settings, no type is listed.
-    const kinds = enabled ? [...enabled.keys()] : [];
-    const labelOf = kind => (enabled && enabled.get(kind)) || NOTIFICATION_FILTER_LABELS[kind] || kind;
-    notificationFilterSelected = new Set([...notificationFilterSelected].filter(value => value === "unread" || kinds.includes(value)));
-    const option = (value, label) => `<label class="notif-check"><input type="checkbox" value="${value}" ${notificationFilterSelected.has(value) || (value === "all" && notificationFilterSelected.size === 0) ? "checked" : ""}><span>${label}</span></label>`;
-    box.innerHTML = option("all", "All")
-        + option("unread", "Unread")
-        + kinds.map(kind => option(kind, labelOf(kind))).join("");
-}
-document.addEventListener("notification-prefs-changed", () => {
-    notificationPrefCache = null;
-    void enabledNotificationKinds().then(() => renderNotifications());
-});
-// Once settings are loaded, the list is redrawn so items of switched-off types disappear at once.
-document.addEventListener("notification-prefs-loaded", () => renderNotifications());
-
-function renderNotifications() {
-    const list = $("#notificationList");
-    void fillNotificationFilter();
-    const badge = $("#notificationBadge");
-    const unread = notificationItems.filter(item => !Number(item.is_read)).length;
-    if (badge) {
-        badge.textContent = unread > 99 ? "99+" : String(unread);
-        badge.hidden = unread === 0;
-    }
-    if (!list) return;
-    // Only types switched on in Notification Settings are shown (the server applies the same rule).
-    const enabledKinds = notificationPrefCache;
-    const kindsSelected = [...notificationFilterSelected].filter(value => value !== "unread");
-    const unreadOnly = notificationFilterSelected.has("unread");
-    const visibleItems = notificationItems.filter(item => {
-        if (enabledKinds && !enabledKinds.has(item.kind)) return false;
-        if (kindsSelected.length && !kindsSelected.includes(item.kind)) return false;
-        if (unreadOnly && Number(item.is_read)) return false;
-        return true;
-    });
-    list.innerHTML = visibleItems.length ? visibleItems.map(item => `
-        <button type="button" class="notification-item ${Number(item.is_read) ? "" : "unread"}"
-                data-notification-id="${Number(item.id)}">
-            <strong>${esc(item.title)}</strong>
-            <p>${esc(item.message)}</p>
-            <small>${esc(item.created_at || "")}</small>
-        </button>
-    `).join("") : '<div class="empty">No notifications.</div>';
-    list.querySelectorAll("[data-notification-id]").forEach(button => {
-        button.addEventListener("click", () => openNotification(Number(button.dataset.notificationId)));
-    });
-}
-
-
-async function loadNotifications(silent = true) {
-    if (!notificationCacheHydrated && currentUserAccountId) {
-        notificationCacheHydrated = true;
-        try {
-            const cached = JSON.parse(localStorage.getItem(`lvfr.portal.notifications.v2:${currentUserAccountId}`) || "null");
-            if (Array.isArray(cached)) {
-                notificationItems = cached;
-                renderNotifications();
-            }
-        } catch {}
-    }
-    if (notificationLoadPromise) return notificationLoadPromise;
-    notificationLoadPromise = (async () => {
-        try {
-            const result = await api("/api/notifications");
-            notificationItems = Array.isArray(result.items) ? result.items : [];
-            try {
-                if (currentUserAccountId) localStorage.setItem(`lvfr.portal.notifications.v2:${currentUserAccountId}`, JSON.stringify(notificationItems));
-            } catch {}
-            renderNotifications();
-        } catch (error) {
-            if (!silent) toast(`Could not load notifications: ${error.message}`);
-        } finally {
-            notificationLoadPromise = null;
-        }
-    })();
-    return notificationLoadPromise;
-}
-
-
-async function markNotificationsRead(ids = []) {
-    try {
-        await api("/api/notifications/read", {
-            method: "POST",
-            body: JSON.stringify({ ids }),
-        });
-        const selected = new Set(ids.map(Number));
-        notificationItems = notificationItems.map(item =>
-            !ids.length || selected.has(Number(item.id)) ? { ...item, is_read: 1 } : item
-        );
-        try {
-            if (currentUserAccountId) {
-                localStorage.setItem(
-                    `lvfr.portal.notifications.v2:${currentUserAccountId}`,
-                    JSON.stringify(notificationItems)
-                );
-            }
-        } catch {}
-        renderNotifications();
-    } catch (error) {
-        if (!isBackgroundPending(error)) toast(`Could not update notifications: ${error.message}`);
-    }
-}
-
-
 async function openNotification(id) {
-    const item = notificationItems.find(row => Number(row.id) === Number(id));
+    const item = window.lvfrNotifications.find(id);
     if (!item) return;
     const panel = $("#notificationPanel");
     const button = $("#notificationButton");
     if (panel) panel.hidden = true;
     if (button) button.setAttribute("aria-expanded", "false");
-    await markNotificationsRead([id]);
+    await window.lvfrNotifications.markRead([id]);
 
     if (["eligible", "inactive", "overdue"].includes(item.kind) && item.callsign) {
         if (currentUserHasPermission("profile_view")) await profile(item.callsign, true);
@@ -873,17 +732,6 @@ async function openNotification(id) {
 }
 
 
-const notificationButton = $("#notificationButton");
-notificationButton?.addEventListener("click", async () => {
-    const panel = $("#notificationPanel");
-    if (!panel) return;
-    panel.hidden = !panel.hidden;
-    notificationButton.setAttribute("aria-expanded", String(!panel.hidden));
-    if (!panel.hidden) {
-        await loadNotifications(false);
-        await markNotificationsRead();
-    }
-});
 const accountMenuButton = $("#accountMenuButton");
 accountMenuButton?.addEventListener("click", () => {
     const menu = $("#accountMenu");
@@ -899,30 +747,7 @@ onlineCountButton?.addEventListener("click", async () => {
     onlineCountButton.setAttribute("aria-expanded", String(!panel.hidden));
     if (!panel.hidden) await refreshOnlineCount();
 });
-$("#markNotificationsRead")?.addEventListener("click", () => markNotificationsRead());
-// Clears only this account's view of notifications. Other people keep theirs.
-$("#clearMyNotifications")?.addEventListener("click", async event => {
-    const button = event.currentTarget;
-    button.disabled = true;
-    try {
-        await api("/api/notifications/clear-mine", { method: "POST", body: "{}" });
-        notificationItems = [];
-        try {
-            if (currentUserAccountId) localStorage.setItem(`lvfr.portal.notifications.v2:${currentUserAccountId}`, "[]");
-        } catch {}
-        renderNotifications();
-    } catch (error) {
-        toast(`Could not clear notifications: ${error.message}`);
-    } finally {
-        button.disabled = false;
-    }
-});
 document.addEventListener("click", event => {
-    const panel = $("#notificationPanel");
-    if (panel && !event.target.closest(".notification-control")) {
-        panel.hidden = true;
-        notificationButton?.setAttribute("aria-expanded", "false");
-    }
     const accountMenu = $("#accountMenu");
     if (accountMenu && !event.target.closest(".account-control")) {
         accountMenu.hidden = true;
@@ -5416,14 +5241,6 @@ function setInactiveSubView(view) {
 }
 document.addEventListener("change", event => {
     const id = event.target?.id;
-    const filterBox = event.target?.closest?.("#notificationFilter");
-    if (filterBox && event.target.matches('input[type="checkbox"]')) {
-        const value = event.target.value;
-        if (value === "all") notificationFilterSelected = new Set();
-        else if (event.target.checked) notificationFilterSelected.add(value);
-        else notificationFilterSelected.delete(value);
-        renderNotifications();
-    }
     if (id === "inactiveRankFilter" || id === "overdueMissingFilter") renderInactive();
     if (id === "doNotPromoteRankFilter") renderDoNotPromote();
     if (id === "doNotTerminateRankFilter") renderDoNotTerminate();
@@ -5832,7 +5649,7 @@ async function loadAccount() {
 (async () => {
     try {
         if (!await loadAccount()) return;
-        const tasks = [loadNotifications(), loadConfig()];
+        const tasks = [window.lvfrNotifications?.load(), loadConfig()];
         if (currentUserHasPermission("members_view") || ["hert_certified_view","hert_instructor_view","fort_training_view","fort_instructor_view"].some(key=>currentUserHasPermission(key)) || ["statistics_view","loi_manage","training_fort_manage","training_hert_manage","training_hours_manage","instructor_manage"].some(key=>currentUserHasPermission(key))) tasks.push(loadMembers(true, true));
         const firstLog=[...document.querySelectorAll("#membersLog .log-tab[data-log]")].find(item=>getComputedStyle(item).display!=="none");
         if (firstLog) tasks.push(loadMembersLog(firstLog.dataset.log));
@@ -5897,12 +5714,6 @@ setInterval(refreshVisibleRosterView, 3000);
 document.addEventListener("visibilitychange", refreshVisibleRosterView);
 
 setInterval(() => { if (!document.hidden && currentUserHasPermission("sync_view")) syncStatus(); }, 60000);
-setInterval(() => {
-    if (!document.hidden) loadNotifications();
-}, 60000);
-document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) void loadNotifications();
-});
 setInterval(() => {
     if (!document.hidden && currentUserIsAdmin && $("#allLeadersTable")) void loadLeaders();
 }, 30000);
@@ -6031,3 +5842,4 @@ function setDoNotView(view) {
 document.querySelectorAll("[data-dnp-view]").forEach(button => {
     button.addEventListener("click", () => setDoNotView(button.dataset.dnpView));
 });
+window.lvfrOpenNotification = openNotification;
