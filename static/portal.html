@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#101720">
   <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
   <title>Choose an application · LVFR</title>
-  <link rel="stylesheet" href="/static/style.css?v=ops-20261021-1">
+  <link rel="stylesheet" href="/static/style.css?v=ops-20261021-4">
   <style>
     body{min-height:100vh;margin:0;padding:0;background:#0b1017;color:#f3f6fa}
     main{width:min(920px,100%);margin:28px auto;padding:0 18px}
@@ -51,9 +51,9 @@
             <section id="notificationPanel" class="notification-panel" hidden aria-label="Notifications">
                 <div class="notification-panel-head">
                     <strong>Notifications</strong>
-                    <div class="notification-panel-actions"><button type="button" id="markNotificationsRead">Mark as read</button><button type="button" id="clearMyNotifications">Clear notifications</button></div>
+                    <div class="notification-panel-actions"><button type="button" id="notificationFilterToggle" aria-expanded="false" aria-controls="notificationFilter">Filter</button><button type="button" id="markNotificationsRead">Mark as read</button><button type="button" id="clearMyNotifications">Clear notifications</button></div>
                 </div>
-                <div id="notificationFilter" class="notif-filter-checks" role="group" aria-label="Filter notifications"></div>
+                <div id="notificationFilter" class="notif-filter-checks" role="group" aria-label="Filter notifications" hidden></div>
                 <div id="notificationList"><div class="empty">Loading...</div></div>
             </section>
         </div>
@@ -61,7 +61,7 @@
       <div class="account-control"><button type="button" id="accountMenuButton" class="icon-button" aria-label="Account menu" title="Account" aria-expanded="false" aria-controls="accountMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></button><section id="accountMenu" class="account-menu" hidden><strong id="accountName"></strong><button type="button" id="manageAccountButton"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Account</span></button>
             <button type="button" id="accountNotificationsButton"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 21a2 2 0 0 0 4 0"/></svg><span>Notification Settings</span></button>
             <button type="button" id="accountSettingsButton"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14 9l2 2"/></svg><span>Account Settings</span></button>
-            <button type="button" data-action="logout">Sign out</button></section></div>
+            <form><button type="button" data-action="logout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></button></form></section></div>
     </div>
   </header>
   <main>
@@ -80,14 +80,14 @@
       </a>
     </section>
   </main>
-  <script src="/static/session-auth.js?v=ops-20261021-1"></script>
-  <script src="/static/notifications.js?v=ops-20261021-2"></script>
-<script src="/static/rank-badges.js?v=ops-20261021-1"></script>
-<script src="/static/account-settings.js?v=ops-20261021-1"></script>
-  <script src="/static/header-controls.js?v=ops-20261021-1"></script>
-  <script src="/static/portal.js?v=ops-20261021-1"></script>
-  <script src="/static/sidebar.js?v=ops-20261021-1"></script>
-  <script src="/static/mobile-popovers.js?v=ops-20261021-1"></script>
-<script src="/static/table-sort.js?v=ops-20261021-1"></script>
+  <script src="/static/session-auth.js?v=ops-20261021-4"></script>
+  <script src="/static/notifications.js?v=ops-20261021-4"></script>
+<script src="/static/rank-badges.js?v=ops-20261021-4"></script>
+<script src="/static/account-settings.js?v=ops-20261021-4"></script>
+  <script src="/static/header-controls.js?v=ops-20261021-4"></script>
+  <script src="/static/portal.js?v=ops-20261021-4"></script>
+  <script src="/static/sidebar.js?v=ops-20261021-4"></script>
+  <script src="/static/mobile-popovers.js?v=ops-20261021-4"></script>
+<script src="/static/table-sort.js?v=ops-20261021-4"></script>
 </body>
 </html>
