@@ -1602,7 +1602,7 @@ export async function handleD1(context) {
       const eligible=rankEligibility(member);
       member.trainings=[...(member.has_basic_firefighting?["basic_firefighting"]:[]),...(member.has_advanced_firefighting?["advanced_firefighting"]:[])];
       member.exams=member.has_supervisor_exam?["supervisor_exam"]:[]; member.hert=member.has_hert; member.eligible=eligible.eligible;
-      member.eligibility_reason=eligible.reason; member.next_rank=eligible.next_rank; member.instructor_type=""; member.instructor_date="";
+      member.eligibility_reason=eligible.reason; member.next_rank=eligible.next_rank; member.instructor_type=(["admin","commander"].includes(user.role) || /^(E|C|DIV|B|CHIEF|COM)-/.test(user.callsign))?member.instructor_type:""; member.instructor_date="";
       return json(member);
     }
     if(memberRoute && method==="GET") {

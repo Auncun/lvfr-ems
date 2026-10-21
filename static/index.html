@@ -18,7 +18,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=ops-20261021-1"
+    href="/static/style.css?v=ops-20261021-3"
 >
 
 <style>
@@ -173,9 +173,9 @@
             <section id="notificationPanel" class="notification-panel" hidden aria-label="Notifications">
                 <div class="notification-panel-head">
                     <strong>Notifications</strong>
-                    <div class="notification-panel-actions"><button type="button" id="markNotificationsRead">Mark as read</button><button type="button" id="clearMyNotifications">Clear notifications</button></div>
+                    <div class="notification-panel-actions"><button type="button" id="notificationFilterToggle" aria-expanded="false" aria-controls="notificationFilter">Filter</button><button type="button" id="markNotificationsRead">Mark as read</button><button type="button" id="clearMyNotifications">Clear notifications</button></div>
                 </div>
-                <div id="notificationFilter" class="notif-filter-checks" role="group" aria-label="Filter notifications"></div>
+                <div id="notificationFilter" class="notif-filter-checks" role="group" aria-label="Filter notifications" hidden></div>
                 <div id="notificationList"><div class="empty">Loading...</div></div>
             </section>
         </div>
@@ -883,17 +883,17 @@
      APPLICATION JAVASCRIPT
      ========================================================= -->
 
-<script src="/static/session-auth.js?v=ops-20261021-1"></script>
-<script src="/static/notifications.js?v=ops-20261021-2"></script>
-<script src="/static/rank-badges.js?v=ops-20261021-1"></script>
-<script src="/static/account-settings.js?v=ops-20261021-1"></script>
-<script src="/static/app.js?v=ops-20261021-1"></script>
-<script src="/static/sidebar.js?v=ops-20261021-1"></script>
-<script src="/static/mobile-popovers.js?v=ops-20261021-1"></script>
+<script src="/static/session-auth.js?v=ops-20261021-3"></script>
+<script src="/static/notifications.js?v=ops-20261021-3"></script>
+<script src="/static/rank-badges.js?v=ops-20261021-3"></script>
+<script src="/static/account-settings.js?v=ops-20261021-3"></script>
+<script src="/static/app.js?v=ops-20261021-3"></script>
+<script src="/static/sidebar.js?v=ops-20261021-3"></script>
+<script src="/static/mobile-popovers.js?v=ops-20261021-3"></script>
 
 
-<script src="/static/search-clear.js?v=ops-20261021-1" defer></script>
-<script src="/static/table-sort.js?v=ops-20261021-1"></script>
+<script src="/static/search-clear.js?v=ops-20261021-3" defer></script>
+<script src="/static/table-sort.js?v=ops-20261021-3"></script>
 </body>
 
 </html>

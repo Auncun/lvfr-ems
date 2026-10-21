@@ -102,7 +102,7 @@
     if (!accountProfile && accountId) {
       try { accountProfile = JSON.parse(sessionStorage.getItem(profileCacheKey(accountId)) || 'null'); } catch {}
     }
-    const cachedMember = readRosterSnapshot(user?.callsign) || accountProfile;
+    const cachedMember = accountProfile;
     if (cachedMember) {
       accountProfile = cachedMember;
       renderProfile(user, cachedMember);

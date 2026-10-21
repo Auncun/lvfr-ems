@@ -160,6 +160,12 @@
       button.setAttribute('aria-expanded', String(!p.hidden));
       if (!p.hidden) { await load(false); await markRead(); }
     });
+    $('notificationFilterToggle')?.addEventListener('click', event => {
+      const box = $('notificationFilter');
+      if (!box) return;
+      box.hidden = !box.hidden;
+      event.currentTarget.setAttribute('aria-expanded', String(!box.hidden));
+    });
     $('markNotificationsRead')?.addEventListener('click', () => markRead());
     $('clearMyNotifications')?.addEventListener('click', event => clearMine(event.currentTarget));
     $('notificationList')?.addEventListener('click', event => {
