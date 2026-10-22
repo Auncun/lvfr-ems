@@ -1301,11 +1301,12 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 @media(max-width:700px){ .sync-control .command-sync-panel { right:auto; left:0 } }
 
 
-/* Phone layout: keep table rows as lines, with enough room to read each row on one or two lines. */
+/* Phone layout: every table row stays on one line. Columns share the screen width and long text is cut with "...". */
 @media(max-width:700px) {
-    .table-wrap,.admin-table-wrap { max-width:100%; }
-    table { width:100%; border-collapse:collapse; }
-    th,td { padding:10px 8px; font-size:13px; line-height:1.4; vertical-align:middle; white-space:normal; overflow-wrap:anywhere; }
-    th { font-size:12px; }
-    td button,td a { white-space:nowrap; }
+    .table-wrap,.admin-table-wrap { overflow-x:hidden; max-width:100%; }
+    table { width:100%; table-layout:fixed; border-collapse:collapse; }
+    th,td { padding:7px 3px; font-size:11px; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; vertical-align:middle; }
+    th { font-size:10px; letter-spacing:0; }
+    td button,td a,th button { padding:3px 5px; font-size:10px; line-height:1.2; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
+    .th-action { font-size:10px; padding:2px 4px; }
 }
