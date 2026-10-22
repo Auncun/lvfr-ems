@@ -1288,3 +1288,14 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 /* Do Not Promote/Terminate tab: two lists on one page */
 .list-subhead { margin: 18px 0 6px; font-size: 16px; }
 .list-note { margin: 0 0 8px; font-size: 13px; }
+
+/* Compact sync control in the top bar: a button that opens the sync details as a dropdown. */
+.sync-control { position:relative; display:inline-flex; align-items:center }
+.sync-control[hidden] { display:none !important }
+.sync-toggle { display:inline-flex; align-items:center; gap:8px; height:42px; padding:0 14px; border-radius:21px; white-space:nowrap }
+.sync-toggle-dot { width:9px; height:9px; border-radius:50%; background:#56d364; box-shadow:0 0 0 3px #56d36422 }
+.sync-control .command-sync-panel { position:absolute; top:calc(100% + 8px); right:0; z-index:60; display:grid; gap:12px; width:max-content; min-width:260px; max-width:calc(100vw - 28px); padding:14px; border:1px solid #303945; border-radius:12px; background:#111720; box-shadow:0 14px 36px #000a }
+.sync-control .command-sync-panel[hidden] { display:none !important }
+.sync-control .sync-status-group { display:grid; gap:8px }
+.sync-control .sync-actions { display:flex; flex-wrap:wrap; gap:8px }
+@media(max-width:700px){ .sync-control .command-sync-panel { right:auto; left:0 } }

@@ -5527,7 +5527,26 @@ function applyAccountUser(user) {
     currentUserCallsign = String(user.callsign || "").trim().toUpperCase();
     currentUserIsCommand = Boolean(user.is_command);
     const commandSyncPanel = $("#commandSyncPanel");
-    if (commandSyncPanel) commandSyncPanel.hidden = !currentUserHasPermission("portal_access");
+    const syncControl = commandSyncPanel?.closest(".sync-control");
+    const canSeeSync = currentUserHasPermission("portal_access");
+    if (syncControl) syncControl.hidden = !canSeeSync;
+    if (commandSyncPanel && !canSeeSync) commandSyncPanel.hidden = true;
+    // Sync details open in a small dropdown from the top bar, so the bar stays compact.
+    const syncToggle = $("#syncToggleButton");
+    if (syncToggle && commandSyncPanel && !syncToggle.dataset.bound) {
+        syncToggle.dataset.bound = "1";
+        syncToggle.addEventListener("click", event => {
+            event.stopPropagation();
+            const opening = commandSyncPanel.hidden;
+            commandSyncPanel.hidden = !opening;
+            syncToggle.setAttribute("aria-expanded", String(opening));
+        });
+        document.addEventListener("click", event => {
+            if (event.target.closest(".sync-control")) return;
+            commandSyncPanel.hidden = true;
+            syncToggle.setAttribute("aria-expanded", "false");
+        });
+    }
     const fullSyncButton = $("#fullSyncBtn");
     if (fullSyncButton) fullSyncButton.hidden = !currentUserCanFullSync;
     if (logSyncButton) logSyncButton.hidden = !currentUserCanFullSync;
