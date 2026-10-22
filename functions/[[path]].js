@@ -5,6 +5,11 @@ export async function onRequest(context) {
   const { request, env } = context;
   const incoming = new URL(request.url);
 
+  // The site address opens the portal by default.
+  if (incoming.pathname === "/") {
+    return Response.redirect(`${incoming.origin}/portal`, 303);
+  }
+
   if (!API_PATHS.some(prefix => incoming.pathname.startsWith(prefix))) {
     return context.next();
   }
