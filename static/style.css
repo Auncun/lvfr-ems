@@ -1299,3 +1299,9 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 .sync-control .sync-status-group { display:grid; gap:8px }
 .sync-control .sync-actions { display:flex; flex-wrap:wrap; gap:8px }
 @media(max-width:700px){ .sync-control .command-sync-panel { right:auto; left:0 } }
+
+/* Phone tables: columns fit their content, so no extra space appears between them. Sideways scrolling stays as before. */
+@media(max-width:700px) {
+    table { width:max-content; min-width:100%; }
+    th,td { width:1%; }
+}
