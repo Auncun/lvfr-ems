@@ -621,7 +621,7 @@ document.addEventListener("click", event => {
         case "do-not-terminate": setMemberTerminationBlock(callsign, control.dataset.blocked === "true"); break;
         case "do-not-terminate-remove": setMemberTerminationBlock(callsign, false); break;
         case "open-manage": openManage(callsign); break;
-        case "terminate": terminate(callsign); break;
+        case "terminate": terminate(currentCallsignFor(control, callsign)); break;
         case "training-add": training(callsign, false); break;
         case "training-remove": training(callsign, true); break;
         case "activity": activity(callsign); break;
@@ -4406,6 +4406,17 @@ async function promote(cs) {
 // TERMINATION
 // ============================================================
 
+// A row's action button can keep an old callsign after a callsign change, so read the callsign shown on screen.
+function currentCallsignFor(control, fallback) {
+    const row = control.closest("tr");
+    if (row) {
+        const shown = row.querySelector("td b")?.textContent?.trim();
+        if (shown) return shown;
+    }
+    if (!row && activeProfileMember?.callsign) return activeProfileMember.callsign;
+    return fallback;
+}
+
 async function terminate(cs) {
     const protectedMember = memberCache.get(String(cs).trim().toUpperCase())
         || allMembersCache?.find(member => String(member.callsign || "").toUpperCase() === String(cs).trim().toUpperCase());
@@ -4424,7 +4435,7 @@ async function terminate(cs) {
     }
     const normalizeCallsign = value => String(value ?? "").replace(/[\u0660-\u0669\u06F0-\u06F9]/g, d => String(d.charCodeAt(0) % 16)).replace(/[^\p{L}\p{N}]/gu, "").toUpperCase();
     if (normalizeCallsign(typed) !== normalizeCallsign(cs)) {
-        toast(`The callsign did not match (expected ${String(cs ?? "").trim().toUpperCase()}). Termination was cancelled.`);
+        toast(`The callsign did not match (expected ${String(cs ?? "").trim().toUpperCase()}). Typed: [${[...String(typed)].map(c => c.codePointAt(0).toString(16)).join(" ")}] normalized typed=${normalizeCallsign(typed)} expected=${normalizeCallsign(cs)}. Termination was cancelled.`);
         return;
     }
 
