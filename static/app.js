@@ -1231,7 +1231,6 @@ function renderTrainingDirectory(members = allMembersCache || []) {
     setTabCount("hert-instructor", countOf(member => instructorHas(member, "HERT")));
     setTabCount("fort-training", countOf(member => fortTrainingMatches(member, "all")));
     setTabCount("fort-instructor", countOf(member => instructorHas(member, "FORT")));
-    setTabCount("all-members", members.length);
     const render = (type, mode, searchId, tableId) => {
         const container = $(tableId);
         if (!container) return;
@@ -2053,6 +2052,8 @@ function renderLeaders() {
     const pendingRows = Array.isArray(leaderRows.pending) ? leaderRows.pending : [];
     const deactivatedRows = Array.isArray(leaderRows.deactivated) ? leaderRows.deactivated : [];
     const accountRows = [...approvedRows, ...deactivatedRows];
+    // "All Members" on this page lists accounts, so its count is the number of accounts shown.
+    setTabCount("all-members", accountRows.length);
     const accountActions = row => {
         if (currentUserAccountId && String(row.account_id) === currentUserAccountId) return "";
         let actions;
