@@ -18,7 +18,7 @@
 
 <link
     rel="stylesheet"
-    href="/static/style.css?v=notif-checks-20261020-1"
+    href="/static/style.css?v=ops-20261021-6"
 >
 
 <style>
@@ -173,9 +173,9 @@
             <section id="notificationPanel" class="notification-panel" hidden aria-label="Notifications">
                 <div class="notification-panel-head">
                     <strong>Notifications</strong>
-                    <div class="notification-panel-actions"><button type="button" id="markNotificationsRead">Mark as read</button><button type="button" id="clearMyNotifications">Clear notifications</button></div>
+                    <div class="notification-panel-actions"><button type="button" id="notificationFilterToggle" aria-expanded="false" aria-controls="notificationFilter">Filter</button><button type="button" id="markNotificationsRead">Mark as read</button><button type="button" id="clearMyNotifications">Clear notifications</button></div>
                 </div>
-                <div id="notificationFilter" class="notif-filter-checks" role="group" aria-label="Filter notifications"></div>
+                <div id="notificationFilter" class="notif-filter-checks" role="group" aria-label="Filter notifications" hidden></div>
                 <div id="notificationList"><div class="empty">Loading...</div></div>
             </section>
         </div>
@@ -232,7 +232,7 @@
     </button>
 
     <button id="doNotPromoteTab" data-tab="doNotPromote" class="tab" style="display:none">
-        Do not Promote
+        Do Not Promote/Terminate
     </button>
 
 
@@ -460,9 +460,20 @@
      ========================================================= -->
 
 <section id="doNotPromote" class="panel">
-    <div class="section-head"><div><h2>Do not Promote</h2></div><button type="button" class="list-refresh" id="refreshDoNotPromoteBtn" aria-label="Refresh Do not Promote list" title="Refresh Do not Promote list"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
-    <div class="list-filter-row"><select id="doNotPromoteRankFilter" aria-label="Filter by rank"><option value="all">All ranks</option></select></div>
-    <div class="table-wrap" id="doNotPromoteTable"></div>
+    <div class="section-head"><div><h2>Do Not Promote/Terminate</h2></div><button type="button" class="list-refresh" id="refreshDoNotPromoteBtn" aria-label="Refresh Do Not Promote/Terminate lists" title="Refresh Do Not Promote/Terminate lists"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
+    <div class="log-tabs" role="tablist" aria-label="Do Not Promote or Do Not Terminate list">
+        <button type="button" class="log-tab active" data-dnp-view="promote" aria-current="page">Do Not Promote</button>
+        <button type="button" class="log-tab" data-dnp-view="terminate">Do Not Terminate</button>
+    </div>
+    <div data-dnp-panel="promote">
+        <div class="list-filter-row"><select id="doNotPromoteRankFilter" aria-label="Filter by rank"><option value="all">All ranks</option></select></div>
+        <div class="table-wrap" id="doNotPromoteTable"></div>
+    </div>
+    <div data-dnp-panel="terminate" hidden>
+        <p class="muted list-note">Members on this list cannot be terminated.</p>
+        <div class="list-filter-row"><select id="doNotTerminateRankFilter" aria-label="Filter Do Not Terminate by rank"><option value="all">All ranks</option></select></div>
+        <div class="table-wrap" id="doNotTerminateTable"></div>
+    </div>
 </section>
 
 
@@ -654,6 +665,9 @@
         </button>
         <button type="button" class="log-tab" id="doNotPromoteLogTab" data-log="do_not_promote" style="display:none">
             Do Not Promote
+        </button>
+        <button type="button" class="log-tab" id="doNotTerminateLogTab" data-log="do_not_terminate" style="display:none">
+            Do Not Terminate
         </button>
 
     </div>
@@ -872,15 +886,17 @@
      APPLICATION JAVASCRIPT
      ========================================================= -->
 
-<script src="/static/session-auth.js?v=shared-session-7"></script>
-<script src="/static/account-settings.js?v=notif-filter-20261020-1"></script>
-<script src="/static/app.js?v=notif-filter-20261021-3"></script>
-<script src="/static/sidebar.js?v=termination-sub-20261019-1"></script>
-<script src="/static/mobile-popovers.js?v=portal-controls-20261004-1"></script>
+<script src="/static/session-auth.js?v=ops-20261021-6"></script>
+<script src="/static/notifications.js?v=ops-20261021-6"></script>
+<script src="/static/rank-badges.js?v=ops-20261021-6"></script>
+<script src="/static/account-settings.js?v=ops-20261021-6"></script>
+<script src="/static/app.js?v=ops-20261021-6"></script>
+<script src="/static/sidebar.js?v=ops-20261021-6"></script>
+<script src="/static/mobile-popovers.js?v=ops-20261021-6"></script>
 
 
-<script src="/static/search-clear.js?v=2" defer></script>
-<script src="/static/table-sort.js?v=20261020-1"></script>
+<script src="/static/search-clear.js?v=ops-20261021-6" defer></script>
+<script src="/static/table-sort.js?v=ops-20261021-6"></script>
 </body>
 
 </html>
