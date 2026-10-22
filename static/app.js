@@ -4422,7 +4422,7 @@ async function terminate(cs) {
     if (typed === null) {
         return;
     }
-    const normalizeCallsign = value => String(value ?? "").replace(/[^\p{L}\p{N}]/gu, "").toUpperCase();
+    const normalizeCallsign = value => String(value ?? "").replace(/[\u0660-\u0669\u06F0-\u06F9]/g, d => String(d.charCodeAt(0) % 16)).replace(/[^\p{L}\p{N}]/gu, "").toUpperCase();
     if (normalizeCallsign(typed) !== normalizeCallsign(cs)) {
         toast(`The callsign did not match (expected ${String(cs ?? "").trim().toUpperCase()}). Termination was cancelled.`);
         return;
