@@ -70,10 +70,15 @@ async function api(url, options = {}) {
         throw error;
     }
 
-    const backendStatus = $("#dbStatus");
+    const backendStatus = null; // top-bar status removed; the Sync list shows it
     if (backendStatus) {
         backendStatus.textContent = "Google Apps Script: online";
         backendStatus.style.color = "#56d364";
+    }
+    const scriptStatus = $("#syncScriptStatus");
+    if (scriptStatus) {
+        scriptStatus.textContent = "Google Apps Script: online";
+        scriptStatus.style.color = "#56d364";
     }
 
     if (cacheableRead) {
@@ -900,11 +905,11 @@ async function health() {
             "/api/health"
         );
 
-        const dbStatus = $("#dbStatus");
+        const dbStatus = $("#syncScriptStatus");
 
         if (dbStatus) {
 
-            dbStatus.textContent = "Script: online";
+            dbStatus.textContent = "Google Apps Script: online";
             dbStatus.title = "Google Apps Script: online";
 
             dbStatus.style.color =
@@ -913,7 +918,7 @@ async function health() {
 
     } catch (error) {
 
-        const dbStatus = $("#dbStatus");
+        const dbStatus = $("#syncScriptStatus");
 
         if (dbStatus) {
 
@@ -5529,10 +5534,12 @@ function applyAccountUser(user) {
     currentUserCallsign = String(user.callsign || "").trim().toUpperCase();
     currentUserIsCommand = Boolean(user.is_command);
     const commandSyncPanel = $("#commandSyncPanel");
+    // Everyone can see the sync status; only users with permission see the action buttons.
     const syncControl = commandSyncPanel?.closest(".sync-control");
-    const canSeeSync = currentUserHasPermission("portal_access");
-    if (syncControl) syncControl.hidden = !canSeeSync;
-    if (commandSyncPanel && !canSeeSync) commandSyncPanel.hidden = true;
+    const canSyncNow = currentUserHasPermission("portal_access");
+    if (syncControl) syncControl.hidden = false;
+    const syncNowButton = $("#syncBtn");
+    if (syncNowButton) syncNowButton.hidden = !canSyncNow;
     // Sync details open in a small dropdown from the top bar, so the bar stays compact.
     const syncToggle = $("#syncToggleButton");
     if (syncToggle && commandSyncPanel && !syncToggle.dataset.bound) {

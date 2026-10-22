@@ -1300,8 +1300,13 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 .sync-control .sync-actions { display:flex; flex-wrap:wrap; gap:8px }
 @media(max-width:700px){ .sync-control .command-sync-panel { right:auto; left:0 } }
 
-/* Phone tables: columns fit their content, so no extra space appears between them. Sideways scrolling stays as before. */
+
+/* Phone layout: the top bar's Sync dropdown spans the screen width inside the bar, so it never leaves the screen.
+   Action buttons in a row stay on one line. */
 @media(max-width:700px) {
-    table { width:max-content; min-width:100%; }
-    th,td { width:1%; }
+    .topbar { position:relative; }
+    .sync-control { position:static; }
+    .sync-control .command-sync-panel { left:12px; right:12px; top:calc(100% + 6px); width:auto; min-width:0; max-width:none; }
+    td:has(> button), td:has(> a), td:has(> .row-actions) { white-space:nowrap; }
+    td > button, td > a, td > .row-actions > button, td > .row-actions > a { display:inline-block; margin:1px 2px; }
 }
