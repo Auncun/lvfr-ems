@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/static/style.css?v=ops-20261021-4">
   <style>
     body { min-height:100vh; background:#0b1017; color:#f3f6fa; }
-    .watch-shell { width:min(1100px,100%); margin:0 auto; padding:72px 24px 24px; }
+    .watch-shell { width:min(1100px,100%); margin:0 auto; padding:24px; }
     .watch-header { margin-bottom:22px; }
     .watch-brand { display:flex; align-items:center; gap:12px; }
     .watch-header p,.hint { color:#9aa4b2; }
@@ -103,7 +103,6 @@
 </head>
 <body>
   <button class="sidebar-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="appSidebar"><span></span><span></span><span></span></button>
-  <main class="watch-shell">
     <header class="topbar">
       <div class="topbar-left">
       <div class="brand"><a class="brand-home-link" href="/portal" aria-label="Go to application selection"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"></a><div><h1>Watch Command</h1><p>Create and review watch handover logs.</p></div></div>
@@ -130,6 +129,7 @@
             <form><button type="button" id="watchLogout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></button></form></section></div>
       </div>
     </header>
+  <main class="watch-shell">
 
     <form id="watchForm" class="watch-card">
       <h2>New Watch Log</h2>

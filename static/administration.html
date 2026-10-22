@@ -7,7 +7,7 @@
   <title>Operation Command | LVFR EMS</title>
   <link rel="stylesheet" href="/static/style.css?v=ops-20261021-4">
   <style>
-    body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:72px 24px 24px}
+    body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:24px}
     .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
     .admin-brand{display:flex;align-items:center;gap:12px}
     .admin-header{margin-bottom:20px}.admin-header h1{margin:0}.admin-header p,.muted{color:#9aa4b2}
@@ -24,7 +24,6 @@
 </head>
 <body>
   <button class="sidebar-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="appSidebar"><span></span><span></span><span></span></button>
-  <main class="admin-shell">
     <header class="topbar">
       <div class="topbar-left">
       <div class="brand"><a class="brand-home-link" href="/portal" aria-label="Go to application selection"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"></a><div><h1>Operation Command</h1><p>Manage account access, roles, and review account activity.</p></div></div>
@@ -51,6 +50,7 @@
             <form><button type="button" id="logoutButton"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></button></form></section></div>
       </div>
     </header>
+  <main class="admin-shell">
     <p id="adminMessage" class="admin-status" role="status" aria-live="polite"></p>
     <nav class="command-tabs" aria-label="Operation Command sections">
       <button type="button" class="command-tab active" data-command-section="accounts" aria-current="page">Accounts</button>
