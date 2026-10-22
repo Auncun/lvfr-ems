@@ -424,8 +424,15 @@ async function applyRosterMutationD1(db, route, data, actor) {
     }
     cols.instructor_type=[...set].sort().join(" / ");
   }
-  else if(route==="/api/do-not-promote") cols.do_not_promote=data.blocked?1:0;
-  else if(route==="/api/do-not-terminate") cols.do_not_terminate=data.blocked?1:0;
+  else if(route==="/api/do-not-promote") {
+    // Already in the requested state: change nothing, so no duplicate log row or notification is written.
+    if(Number(old.do_not_promote||0)===(data.blocked?1:0)) return {ok:true,changed:false,status:"unchanged",message:"Already set"};
+    cols.do_not_promote=data.blocked?1:0;
+  }
+  else if(route==="/api/do-not-terminate") {
+    if(Number(old.do_not_terminate||0)===(data.blocked?1:0)) return {ok:true,changed:false,status:"unchanged",message:"Already set"};
+    cols.do_not_terminate=data.blocked?1:0;
+  }
   else if(route==="/api/terminate") {
     if(Number(old.do_not_terminate||0)===1) throw new Error("This member is on the Do Not Terminate list.");
     await assertRankScope(db,actor,"terminate",String(old.rank||"").trim());
