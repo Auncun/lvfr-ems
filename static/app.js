@@ -5829,6 +5829,8 @@ async function setMemberTerminationBlock(callsign, blocked) {
             memberListRenderKey = "";
         }
         renderDoNotTerminate();
+        // The optimistic removal from Due to Activity / Training Overdue is undone by reloading from the server.
+        void loadInactive(true);
         void loadMembers(false);
         toast(error.message);
     }
