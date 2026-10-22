@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#101720">
   <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
   <title>Choose an application · LVFR</title>
-  <link rel="stylesheet" href="/static/style.css?v=ops-20261021-4">
+  <link rel="stylesheet" href="/static/style.css?v=ops-20261022-14">
   <style>
     body{min-height:100vh;margin:0;padding:0;background:#0b1017;color:#f3f6fa}
     main{width:min(920px,100%);margin:28px auto;padding:0 18px}
@@ -40,7 +40,26 @@
   <header class="topbar portal-topbar">
     <div class="topbar-left">
       <div class="brand portal-brand"><a class="brand-home-link" href="/portal" aria-label="Go to application selection"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"></a><div><h1>Choose an application</h1><p>Select where you want to continue.</p></div></div>
-      <div class="portal-sync-group"><button type="button" id="portalSyncButton" class="primary" hidden>Sync roster</button><span id="portalSyncStatus" class="status-dot" role="status" aria-live="polite" hidden></span></div>
+      <div class="sync-control">
+        <button id="syncToggleButton" class="sync-toggle" type="button" aria-expanded="false" aria-controls="commandSyncPanel" title="Sync status">
+          <span class="sync-toggle-dot" aria-hidden="true"></span>
+          <span>Sync</span>
+        </button>
+        <div id="commandSyncPanel" class="command-sync-panel" hidden>
+          <div class="sync-status-group">
+            <span id="syncScriptStatus" class="status-dot">Google Apps Script: checking…</span>
+            <span id="syncStatus" class="status-dot"></span>
+            <span id="syncActivityStatus" class="status-dot"></span>
+            <span id="googleWriteStatus" class="status-dot archive-status"></span>
+            <span id="archiveStatus" class="status-dot archive-status"></span>
+          </div>
+          <div class="sync-actions">
+            <button id="syncBtn" class="primary" type="button" hidden>Sync now</button>
+            <button id="fullSyncBtn" class="danger" type="button" hidden>Full Sync</button>
+            <button type="button" id="logSyncBtn" hidden>Log sync</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="top-actions">
       <div class="notification-control">
@@ -86,7 +105,7 @@
 <script src="/static/rank-badges.js?v=ops-20261021-4"></script>
 <script src="/static/account-settings.js?v=ops-20261021-4"></script>
   <script src="/static/header-controls.js?v=ops-20261021-4"></script>
-  <script src="/static/portal.js?v=ops-20261021-4"></script>
+  <script src="/static/portal.js?v=ops-20261022-1"></script>
   <script src="/static/sidebar.js?v=ops-20261021-4"></script>
   <script src="/static/mobile-popovers.js?v=ops-20261021-4"></script>
 <script src="/static/table-sort.js?v=ops-20261021-4"></script>

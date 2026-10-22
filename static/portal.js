@@ -6,9 +6,9 @@ function showAvailableApps(user) {
   const approved = String(user.status || '').toLowerCase() === 'approved';
   document.querySelector('#emsCard')?.toggleAttribute('hidden', !approved || !(role === 'admin' || user.permissions?.portal_access === true));
   document.querySelector('#watchCommandCard')?.toggleAttribute('hidden', !approved || !(role === 'admin' || user.permissions?.watch_command_view === true));
-  const canSync = Boolean(user.is_command || isCommander);
-  document.querySelector('#portalSyncButton')?.toggleAttribute('hidden', !canSync);
-  document.querySelector('#portalSyncStatus')?.toggleAttribute('hidden', !canSync);
+  // Everyone sees the sync status; only users with permission see the action buttons.
+  const canSync = Boolean(user.is_command);
+  ['#syncBtn', '#fullSyncBtn', '#logSyncBtn'].forEach(id => { const el = document.querySelector(id); if (el) el.hidden = !canSync; });
 }
 
 document.querySelector('[data-action="logout"]')?.addEventListener('click', () => window.lvfrLogout?.());
@@ -149,40 +149,85 @@ fetch('/auth/me')
     if (!user) return;
     window.lvfrCacheUser?.(user);
     showAvailableApps(user);
-    void loadPortalSyncStatus();
+    void refreshSyncStatus();
   })
   .catch(() => {});
 
-const portalSyncButton = document.querySelector('#portalSyncButton');
-const portalSyncStatus = document.querySelector('#portalSyncStatus');
-function showPortalSyncTime(value) {
-  if (!portalSyncStatus) return;
-  portalSyncStatus.textContent = value ? `Last sync: ${window.lvfrDateOnly(value)}` : 'Roster has not been synced yet.';
+// Sync control in the top bar, the same as EMS Operations.
+const syncPanel = document.querySelector('#commandSyncPanel');
+const syncToggle = document.querySelector('#syncToggleButton');
+const syncNowBtn = document.querySelector('#syncBtn');
+const fullSyncBtn = document.querySelector('#fullSyncBtn');
+const logSyncBtn = document.querySelector('#logSyncBtn');
+const SYNC_GREEN = '#56d364';
+const SYNC_AMBER = '#d29922';
+const SYNC_RED = '#f85149';
+
+function setSyncText(id, text, color, title) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  if (title) el.title = title;
+  if (color) el.style.color = color;
 }
-async function loadPortalSyncStatus() {
-  if (!portalSyncButton || portalSyncButton.hidden) return;
+
+async function refreshSyncStatus() {
+  try {
+    const health = await fetch('/api/health');
+    setSyncText('syncScriptStatus', health.ok ? 'Google Apps Script: online' : 'Google Apps Script: offline', health.ok ? SYNC_GREEN : SYNC_RED);
+  } catch {
+    setSyncText('syncScriptStatus', 'Google Apps Script: offline', SYNC_RED);
+  }
   try {
     const response = await fetch('/api/sync-status');
-    const result = await response.json();
-    if (response.ok) showPortalSyncTime(result.synced_at || result.sync_last_success);
+    const s = await response.json();
+    if (response.ok) {
+      setSyncText('syncStatus',
+        s.synced_at ? `Roster: ${s.members} · ${window.lvfrDateOnly(s.synced_at)}` : `Roster: ${s.members} · Initial sync pending`,
+        s.synced_at ? SYNC_GREEN : SYNC_AMBER,
+        s.synced_at ? `Roster snapshot: ${window.lvfrDateOnly(s.synced_at)} | ${s.members} members` : `Roster ready: ${s.members} members | waiting for initial sync`);
+      setSyncText('syncActivityStatus', 'Site: live · Sheet: trigger sync', SYNC_AMBER, 'Site edits update D1 immediately; Sheet edits sync through the spreadsheet trigger');
+      if (syncNowBtn && !syncNowBtn.dataset.syncing) syncNowBtn.disabled = Boolean(s.sync_running);
+    }
   } catch {}
+  setSyncText('googleWriteStatus', 'Sheets: background sync', SYNC_GREEN, 'Edits save to D1 immediately; Google Sheets updates in the background');
+  setSyncText('archiveStatus', 'Audit: private Sheet', SYNC_GREEN, 'Audit history is stored in the private Google Sheet');
 }
-portalSyncButton?.addEventListener('click', async () => {
-  portalSyncButton.disabled = true;
-  portalSyncButton.textContent = 'Syncing…';
-  if (portalSyncStatus) portalSyncStatus.textContent = 'Updating roster…';
+
+async function runSyncAction(button, busyText, idleText, url, confirmText) {
+  if (!button || (confirmText && !window.confirm(confirmText))) return;
+  button.dataset.syncing = 'true';
+  button.disabled = true;
+  button.textContent = busyText;
   try {
-    const response = await fetch('/api/sync', { method: 'POST' });
+    const response = await fetch(url, { method: 'POST' });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.detail || result.error || 'Roster sync failed.');
-    showPortalSyncTime(result.synced_at || new Date().toISOString());
-    portalSyncButton.textContent = 'Sync complete';
-    setTimeout(() => { portalSyncButton.textContent = 'Sync roster'; }, 1800);
+    if (!response.ok) throw new Error(result.detail || result.error || 'Sync failed.');
+    setSyncText('syncActivityStatus', result.message || 'Sync complete', SYNC_GREEN);
   } catch (error) {
-    if (portalSyncStatus) portalSyncStatus.textContent = error.message;
-    portalSyncButton.textContent = 'Sync roster';
+    setSyncText('syncActivityStatus', error.message, SYNC_RED);
   } finally {
-    portalSyncButton.disabled = false;
+    delete button.dataset.syncing;
+    button.disabled = false;
+    button.textContent = idleText;
+    await refreshSyncStatus();
   }
+}
+
+syncToggle?.addEventListener('click', event => {
+  event.stopPropagation();
+  const opening = syncPanel.hidden;
+  syncPanel.hidden = !opening;
+  syncToggle.setAttribute('aria-expanded', String(opening));
 });
-void loadPortalSyncStatus();
+document.addEventListener('click', event => {
+  if (event.target.closest('.sync-control')) return;
+  if (syncPanel) syncPanel.hidden = true;
+  syncToggle?.setAttribute('aria-expanded', 'false');
+});
+syncNowBtn?.addEventListener('click', () => runSyncAction(syncNowBtn, 'Syncing…', 'Sync now', '/api/sync'));
+fullSyncBtn?.addEventListener('click', () => runSyncAction(fullSyncBtn, 'Full Syncing…', 'Full Sync', '/api/full-sync',
+  'Full Sync will replace the D1 roster and Callsign slots from the current Google Sheet. Continue?'));
+logSyncBtn?.addEventListener('click', () => runSyncAction(logSyncBtn, 'Syncing logs…', 'Log sync', '/api/logs-sync',
+  'Log sync copies logs from the Google Sheet into D1. Continue?'));
+void refreshSyncStatus();
