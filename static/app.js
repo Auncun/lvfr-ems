@@ -2752,7 +2752,7 @@ function renderMembersLog() {
                         <tr>
 
                             <td>
-                                ${esc(r.promo_date)}
+                                ${esc(window.lvfrDateOnly(r.promo_date))}
                             </td>
 
                             <td>
@@ -2837,9 +2837,7 @@ function renderMembersLog() {
                         <tr>
 
                             <td>
-                                ${esc(
-                                    r.termination_date
-                                )}
+                                ${esc(window.lvfrDateOnly(r.termination_date))}
                             </td>
 
                             <td>
@@ -4424,8 +4422,9 @@ async function terminate(cs) {
     if (typed === null) {
         return;
     }
-    if (String(typed).trim().toUpperCase() !== String(cs).trim().toUpperCase()) {
-        toast("The callsign did not match. Termination was cancelled.");
+    const normalizeCallsign = value => String(value ?? "").replace(/\s+/g, "").toUpperCase();
+    if (normalizeCallsign(typed) !== normalizeCallsign(cs)) {
+        toast(`The callsign did not match (expected ${String(cs ?? "").trim().toUpperCase()}). Termination was cancelled.`);
         return;
     }
 
