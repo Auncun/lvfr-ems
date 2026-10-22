@@ -6,9 +6,7 @@
     "/auth",
     "/auth/*",
     "/internal",
-    "/internal/*",
-    "/",
-    "/ems"
+    "/internal/*"
   ],
   "exclude": []
 }

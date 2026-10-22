@@ -1,177 +1,68 @@
 <!doctype html>
-
 <html lang="en">
-
 <head>
-
-<meta charset="utf-8">
+  <meta charset="utf-8">
   <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#101720">
-<link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
-
-<meta
-    name="viewport"
-    content="width=device-width,initial-scale=1"
->
-
-<title>LVFR EMS Operations</title>
-
-<link
-    rel="stylesheet"
-    href="/static/style.css?v=ops-20261022-13"
->
-
-<style>
-
-    .log-tabs {
-
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-        margin: 16px 0;
-
-    }
-
-
-    .log-tab {
-
-        padding: 9px 14px;
-
-        border: 1px solid rgba(255,255,255,.12);
-
-        border-radius: 8px;
-
-        cursor: pointer;
-
-    }
-
-
-    .log-tab.active {
-
-        font-weight: 700;
-
-    }
-
-
-    /* ========================================================
-       LOG TOOLBAR
-       ======================================================== */
-
-    .log-toolbar {
-
-        display: flex;
-
-        gap: 10px;
-
-        margin-bottom: 16px;
-
-        align-items: center;
-
-    }
-
-
-    .log-toolbar input {
-
-        flex: 1;
-
-        min-width: 220px;
-
-    }
-
-
-    /* ========================================================
-       INACTIVE SEARCH
-       ======================================================== */
-
-    .inactive-toolbar {
-
-        display: flex;
-
-        gap: 10px;
-
-        margin-bottom: 16px;
-
-        align-items: center;
-
-    }
-
-
-    .inactive-toolbar input {
-
-        flex: 1;
-
-        min-width: 220px;
-
-    }
-
-</style>
-
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101720">
+  <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
+  <title>Choose an application · LVFR</title>
+  <link rel="stylesheet" href="/static/style.css?v=ops-20261022-16">
+  <style>
+    body{min-height:100vh;margin:0;padding:0;background:#0b1017;color:#f3f6fa}
+    main{width:min(920px,100%);margin:28px auto;padding:0 18px}
+    .portal-heading{text-align:center;margin-bottom:30px}
+    .portal-brand{justify-content:flex-start;margin-bottom:0;text-align:left}
+    .portal-sync-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .portal-topbar{padding-left:70px}
+    @media(max-width:700px){.portal-topbar{padding:68px 14px 14px}}
+    #portalSyncStatus{margin:0;color:#9aa4b2}
+    .portal-heading p{color:#9aa4b2;margin:8px 0}
+    .portal-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
+    .portal-card{display:flex;min-height:190px;flex-direction:column;justify-content:space-between;padding:24px;border:1px solid #303945;border-radius:16px;background:#111720;text-decoration:none;color:inherit;transition:border-color .15s,transform .15s}
+    #administrationCard[hidden]{display:none}
+    #emsCard[hidden]{display:none}
+    .portal-card:hover{border-color:#62a0ea;transform:translateY(-2px)}
+    .portal-card h2{margin:0 0 10px}.portal-card p{color:#9aa4b2;line-height:1.5;margin:0}
+    .portal-card span{align-self:flex-start;margin-top:22px;color:#8bbcff;font-weight:700}
+    .portal-footer{text-align:center;margin-top:22px}.portal-footer button{background:transparent}
+    .portal-notifications{margin:0 0 24px;padding:16px;border:1px solid #303945;border-radius:14px;background:#111720}
+    .portal-notifications h2{margin:0 0 10px;font-size:18px}
+    .portal-notification-list{display:grid;gap:8px}
+    .portal-notification{width:100%;padding:11px;text-align:left;border:1px solid #27303b;border-radius:9px;background:#0d1219;color:#e6edf3}
+    .portal-notification.unread{border-color:#356da8;background:#142235}
+    .portal-notification strong,.portal-notification small{display:block}
+    .portal-notification small{margin-top:4px;color:#9aa4b2}
+  </style>
 </head>
-
-
 <body>
-
-<button class="sidebar-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="appSidebar"><span></span><span></span><span></span></button>
-
-
-<!-- =========================================================
-     TOP BAR
-     ========================================================= -->
-
-<header class="topbar">
-
-
+  <button class="sidebar-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="appSidebar"><span></span><span></span><span></span></button>
+  <header class="topbar portal-topbar">
     <div class="topbar-left">
-    <div class="brand">
-
-
-        <a class="brand-home-link" href="/portal" aria-label="Go to application selection">
-        <img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue">
-        </a>
-
-
-        <div>
-
-            <h1>
-                LVFR EMS Operations
-            </h1>
-
-            <p>
-                Personnel management & promotion control
-            </p>
-
+      <div class="brand portal-brand"><a class="brand-home-link" href="/portal" aria-label="Go to application selection"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"></a><div><h1>Choose an application</h1><p>Select where you want to continue.</p></div></div>
+      <div class="sync-control">
+        <button id="syncToggleButton" class="sync-toggle" type="button" aria-expanded="false" aria-controls="commandSyncPanel" title="Sync status">
+          <span class="sync-toggle-dot" aria-hidden="true"></span>
+          <span>Sync</span>
+        </button>
+        <div id="commandSyncPanel" class="command-sync-panel" hidden>
+          <div class="sync-status-group">
+            <span id="syncScriptStatus" class="status-dot">Google Apps Script: checking…</span>
+            <span id="syncStatus" class="status-dot"></span>
+            <span id="syncActivityStatus" class="status-dot"></span>
+            <span id="googleWriteStatus" class="status-dot archive-status"></span>
+            <span id="archiveStatus" class="status-dot archive-status"></span>
+          </div>
+          <div class="sync-actions">
+            <button id="syncBtn" class="primary" type="button" hidden>Sync now</button>
+            <button id="fullSyncBtn" class="danger" type="button" hidden>Full Sync</button>
+            <button type="button" id="logSyncBtn" hidden>Log sync</button>
+          </div>
         </div>
-
-
-    </div>
-
-
-
-    <div class="sync-control" hidden>
-      <button id="syncToggleButton" class="sync-toggle" type="button" aria-expanded="false" aria-controls="commandSyncPanel" title="Sync status">
-        <span class="sync-toggle-dot" aria-hidden="true"></span>
-        <span>Sync</span>
-      </button>
-    <div id="commandSyncPanel" class="command-sync-panel" hidden>
-      <div class="sync-status-group">
-        <span id="syncScriptStatus" class="status-dot">Google Apps Script: checking…</span>
-        <span id="syncStatus" class="status-dot"></span>
-        <span id="syncActivityStatus" class="status-dot"></span>
-        <span id="googleWriteStatus" class="status-dot archive-status"></span>
-        <span id="archiveStatus" class="status-dot archive-status"></span>
-      </div>
-      <div class="sync-actions">
-        <button id="syncBtn" class="primary" type="button">Sync now</button>
-        <button id="fullSyncBtn" class="danger" type="button" hidden>Full Sync</button>
-        <button type="button" id="logSyncBtn" hidden>Log sync</button>
       </div>
     </div>
-    </div>
-    </div>
-
     <div class="top-actions">
-
-        <div class="notification-control">
+      <div class="notification-control">
             <button type="button" id="notificationButton" class="icon-button" aria-label="Notifications" title="Notifications" aria-expanded="false" aria-controls="notificationPanel">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
                 <span id="notificationBadge" class="notification-badge" hidden>0</span>
@@ -185,671 +76,38 @@
                 <div id="notificationList"><div class="empty">Loading...</div></div>
             </section>
         </div>
-
-        <div class="account-control">
-        <button type="button" id="accountMenuButton" class="icon-button" aria-label="Account menu" title="Account" aria-expanded="false" aria-controls="accountMenu">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-        </button>
-        <section id="accountMenu" class="account-menu" hidden>
-            <strong id="accountName"></strong>
-            <button type="button" id="manageAccountButton"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Account</span></button>
+        <div class="online-control"><button type="button" id="topOnlineCount" class="online-count-button" aria-expanded="false" aria-controls="onlineUsersPanel">Online: —</button><section id="onlineUsersPanel" class="online-users-panel" hidden aria-label="Online members"><strong>Online now</strong><div id="onlineUsersList" aria-live="polite"><div class="empty">Loading...</div></div></section></div>
+      <div class="account-control"><button type="button" id="accountMenuButton" class="icon-button" aria-label="Account menu" title="Account" aria-expanded="false" aria-controls="accountMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></button><section id="accountMenu" class="account-menu" hidden><strong id="accountName"></strong><button type="button" id="manageAccountButton"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Account</span></button>
             <button type="button" id="accountNotificationsButton"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 21a2 2 0 0 0 4 0"/></svg><span>Notification Settings</span></button>
             <button type="button" id="accountSettingsButton"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14 9l2 2"/></svg><span>Account Settings</span></button>
-            <form action="/auth/logout" method="post"><button type="submit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></button></form>
-        </section>
-        </div>
-        <div class="online-control">
-            <button type="button" id="topOnlineCount" class="online-count-button" aria-expanded="false" aria-controls="onlineUsersPanel">Online: —</button>
-            <section id="onlineUsersPanel" class="online-users-panel" hidden aria-label="Online members">
-                <strong>Online now</strong>
-                <div id="onlineUsersList" aria-live="polite"><div class="empty">Loading...</div></div>
-            </section>
-        </div>
-
-
-
+            <form><button type="button" data-action="logout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></button></form></section></div>
     </div>
-
-
-</header>
-
-
-<!-- =========================================================
-     MAIN TABS
-     ========================================================= -->
-
-<nav class="tabs">
-
-
-    <button
-        data-tab="members"
-        class="tab active"
-        aria-current="page"
-    >
-        Members
-    </button>
-
-
-    <button
-        data-tab="eligible"
-        class="tab"
-    >
-        Eligible
-    </button>
-
-    <button id="doNotPromoteTab" data-tab="doNotPromote" class="tab" style="display:none">
-        Do Not Promote/Terminate
-    </button>
-
-
-    <button
-        id="inactiveTab"
-        data-tab="inactive"
-        class="tab"
-    >
-        Termination
-    </button>
-
-
-    <button
-        data-tab="membersLog"
-        class="tab"
-    >
-        Members Log
-    </button>
-
-    <button id="trainingTab" data-tab="trainingDirectory" class="tab">Training</button>
-
-    <button id="statisticsTab" data-tab="statistics" class="tab" style="display:none">
-        Statistics
-    </button>
-
-
-</nav>
-
-
-<main>
-
-
-<!-- =========================================================
-     MEMBERS
-     ========================================================= -->
-
-<section
-    id="members"
-    class="panel active"
->
-
-
-    <div class="section-head">
-
-
-        <div>
-
-            <h2>
-                Members
-            </h2>
-
-
-        </div>
-
-
-        <div class="member-heading-controls">
-            <span id="memberCount" class="count">0</span>
-            <button type="button" class="list-refresh" id="refreshMembersBtn" aria-label="Refresh members" title="Refresh members"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button>
-        </div>
-
-
-    </div>
-
-
-    <!-- =====================================================
-         REAL-TIME SEARCH
-         ===================================================== -->
-
-    <div class="toolbar">
-
-
-        <input
-            id="search"
-            type="text"
-            placeholder="Search by name, Callsign, or rank"
-            autocomplete="off"
-        >
-
-
-        <button
-            type="button"
-            id="clearBtn"
-        >
-            Clear
-        </button>
-
-        <details class="member-filter-menu">
-            <summary>Filters</summary>
-            <div class="member-filters">
-                <select id="filterRank" aria-label="Filter by rank" title="Rank">
-                    <option value="all">Rank: Any</option>
-                </select>
-                <select id="filterHert" aria-label="Filter by HERT" title="HERT">
-                    <option value="all">HERT: Any</option>
-                    <option value="yes">HERT: Yes</option>
-                    <option value="no">HERT: No</option>
-                </select>
-                <select id="filterFortInstructor" aria-label="Filter by FORT instructor" title="FORT Instructor">
-                    <option value="all">FORT Instructor: Any</option>
-                    <option value="yes">FORT Instructor: Yes</option>
-                    <option value="no">FORT Instructor: No</option>
-                </select>
-                <select id="filterHertInstructor" aria-label="Filter by HERT instructor" title="HERT Instructor">
-                    <option value="all">HERT Instructor: Any</option>
-                    <option value="yes">HERT Instructor: Yes</option>
-                    <option value="no">HERT Instructor: No</option>
-                </select>
-                <select id="filterBasic" aria-label="Filter by Basic FORT" title="Basic FORT">
-                    <option value="all">Basic FORT: Any</option>
-                    <option value="yes">Basic FORT: Yes</option>
-                    <option value="no">Basic FORT: No</option>
-                </select>
-                <select id="filterAdvanced" aria-label="Filter by Advanced FORT" title="Advanced FORT">
-                    <option value="all">Advanced FORT: Any</option>
-                    <option value="yes">Advanced FORT: Yes</option>
-                    <option value="no">Advanced FORT: No</option>
-                </select>
-                <select id="filterSupervisorExam" aria-label="Filter by Supervisor Exam" title="Supervisor Exam">
-                    <option value="all">Exam: Any</option>
-                    <option value="yes">Exam: Passed</option>
-                    <option value="no">Exam: No</option>
-                </select>
-                <select id="filterActivity" aria-label="Filter by Activity" title="Activity">
-                    <option value="all">Activity: Any</option>
-                    <option value="Active">Active</option>
-                    <option value="Semi Active">Semi Active</option>
-                    <option value="Inactive">Inactive</option>
-                    <option value="Can Be Terminated">Can Be Terminated</option>
-                </select>
-                <button type="button" id="resetMemberFilters">Reset</button>
-            </div>
-        </details>
-
-
-    </div>
-
-    <div
-        id="membersTable"
-        class="table-wrap"
-    ></div>
-
-
-</section>
-
-<section id="trainingDirectory" class="panel">
-  <div class="section-head"><div><h2>Training</h2></div><button type="button" class="list-refresh" id="refreshTrainingBtn" aria-label="Refresh training list" title="Refresh training list"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
-  <div class="training-directory-tabs"><button type="button" class="log-tab active" id="hertTrainingTab" data-training-view="HERT" aria-current="page">HERT</button><button type="button" class="log-tab" id="fortTrainingTab" data-training-view="FORT">FORT</button><button type="button" class="log-tab" id="trainingHoursTab" data-training-view="HOURS">Training Hours</button></div>
-  <section class="training-directory-view" data-training-panel="HERT">
-    <div class="training-directory-tabs"><button type="button" class="log-tab active" id="hertCertifiedTab" data-training-section="HERT_CERTIFIED" aria-current="page">HERT Certified <span class="tab-count" data-count="hert-certified">(0)</span></button><button type="button" class="log-tab" id="hertInstructorTab" data-training-section="HERT_INSTRUCTOR">Instructor <span class="tab-count" data-count="hert-instructor">(0)</span></button><button type="button" class="log-tab" id="hertLoiTab" data-training-section="HERT_LOI">LOI <span class="tab-count" data-count="hert-loi">(0)</span></button></div>
-    <section data-training-subpanel="HERT_CERTIFIED"><div class="toolbar"><input type="text" autocomplete="off" id="hertCertifiedSearch" aria-label="Search HERT Certified members" placeholder="Search callsign or member"></div><div id="hertTrainingTable" class="table-wrap"></div></section>
-    <section data-training-subpanel="HERT_INSTRUCTOR" hidden><div class="toolbar"><input type="text" autocomplete="off" id="hertInstructorSearch" aria-label="Search HERT instructors" placeholder="Search callsign or member"></div><div id="hertInstructorTable" class="table-wrap"></div></section>
-    <section data-training-subpanel="HERT_LOI" hidden><div class="toolbar"><input id="hertLoiSearch" type="text" autocomplete="off" placeholder="Search member"></div><div id="hertLoiTable" class="table-wrap"></div></section>
-  </section>
-  <section class="training-directory-view" data-training-panel="FORT" hidden>
-    <div class="training-directory-tabs"><button type="button" class="log-tab active" id="fortTrainingSectionTab" data-training-section="FORT_TRAINING">FORT Training <span class="tab-count" data-count="fort-training">(0)</span></button><button type="button" class="log-tab" id="fortInstructorTab" data-training-section="FORT_INSTRUCTOR">Instructor <span class="tab-count" data-count="fort-instructor">(0)</span></button><button type="button" class="log-tab" id="fortLoiTab" data-training-section="FORT_LOI">LOI <span class="tab-count" data-count="fort-loi">(0)</span></button></div>
-    <section data-training-subpanel="FORT_TRAINING"><div class="toolbar"><input type="text" autocomplete="off" id="fortTrainingSearch" aria-label="Search FORT members" placeholder="Search callsign or member"><select id="fortTrainingFilter" aria-label="Filter FORT training"><option value="all">All</option><option value="basic">Only Basic</option><option value="advanced">Only Advanced</option></select></div><div id="fortTrainingTable" class="table-wrap"></div></section>
-    <section data-training-subpanel="FORT_INSTRUCTOR" hidden><div class="toolbar"><input type="text" autocomplete="off" id="fortInstructorSearch" aria-label="Search FORT instructors" placeholder="Search callsign or member"></div><div id="fortInstructorTable" class="table-wrap"></div></section>
-    <section data-training-subpanel="FORT_LOI" hidden><div class="toolbar"><input id="fortLoiSearch" type="text" autocomplete="off" placeholder="Search member"></div><div id="fortLoiTable" class="table-wrap"></div></section>
-  </section>
-  <section class="training-directory-view" data-training-panel="HOURS" hidden><div class="toolbar"><input id="trainingHoursSearch" type="text" autocomplete="off" aria-label="Search Training Hours" placeholder="Search callsign or member"></div><div id="trainingHoursTable" class="table-wrap"></div></section>
-  <div id="trainingHoursAddDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="trainingHoursAddTitle"><div class="modal-box"><button type="button" class="close" id="closeTrainingHoursAdd" aria-label="Close">&times;</button><h2 id="trainingHoursAddTitle">Add Training Record</h2><label class="training-directory-search">Search members<input id="trainingHoursAddSearch" type="search" placeholder="Search callsign or member"></label><div id="trainingHoursAddChoices" class="training-action-choices"></div></div></div>
-  <div id="loiAddDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="loiAddTitle"><div class="modal-box"><button type="button" class="close" id="closeLoiAdd" aria-label="Close">&times;</button><h2 id="loiAddTitle">Add LOI</h2><label class="training-directory-search">Search members<input id="loiAddSearch" type="search" placeholder="Search callsign or member"></label><div id="loiAddChoices" class="training-action-choices"></div></div></div>
-  <div id="fortPassDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="fortPassTitle"><div class="modal-box fort-pass-box"><button type="button" class="close" id="closeFortPass" aria-label="Close">&times;</button><h2 id="fortPassTitle">Passed FORT LOI</h2><p class="fort-pass-subtitle" id="fortPassMember"></p><p class="fort-pass-hint">Select the training to certify. You can choose Basic, Advanced, or both.</p><div id="fortPassOptions" class="fort-pass-options"></div><div class="fort-pass-actions"><button type="button" class="secondary" id="cancelFortPass">Cancel</button><button type="button" class="primary" id="fortPassSave">Save</button></div></div></div>
-  <div id="trainingActionDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="trainingActionTitle"><div class="modal-box"><button type="button" class="close" id="closeTrainingAction" aria-label="Close">&times;</button><h2 id="trainingActionTitle"></h2><label class="training-directory-search">Search members<input id="trainingActionSearch" type="search" placeholder="Search callsign or member"></label><div id="trainingActionChoices" class="training-action-choices"></div></div></div>
-</section>
-
-
-<!-- =========================================================
-     ELIGIBLE
-     ========================================================= -->
-
-<section
-    id="eligible"
-    class="panel"
->
-
-
-    <div class="section-head">
-
-
-        <div>
-
-            <h2>
-                Eligible for Promotion <span class="tab-count" data-count="eligible">(0)</span>
-            </h2>
-
-
-        </div>
-        <button type="button" class="list-refresh" id="refreshEligibleBtn" aria-label="Refresh eligible list" title="Refresh eligible list"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button>
-
-
-    </div>
-
-    <div class="eligible-filter-toolbar">
-        <select id="eligibleRankFilter" aria-label="Filter eligible members by rank">
-            <option value="all">All eligible ranks</option>
-            <option value="volunteer">Volunteer</option>
-            <option value="emt">EMT</option>
-            <option value="aemt">AEMT</option>
-        </select>
-    </div>
-
-
-    <div
-        id="eligibleTable"
-        class="table-wrap"
-    ></div>
-
-
-</section>
-
-
-<!-- =========================================================
-     Do not Promote
-     ========================================================= -->
-
-<section id="doNotPromote" class="panel">
-    <div class="section-head"><div><h2>Do Not Promote/Terminate</h2></div><button type="button" class="list-refresh" id="refreshDoNotPromoteBtn" aria-label="Refresh Do Not Promote/Terminate lists" title="Refresh Do Not Promote/Terminate lists"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
-    <div class="log-tabs" role="tablist" aria-label="Do Not Promote or Do Not Terminate list">
-        <button type="button" class="log-tab active" data-dnp-view="promote" aria-current="page">Do Not Promote <span class="tab-count" data-count="dnp-promote">(0)</span></button>
-        <button type="button" class="log-tab" data-dnp-view="terminate">Do Not Terminate <span class="tab-count" data-count="dnp-terminate">(0)</span></button>
-    </div>
-    <div data-dnp-panel="promote">
-        <div class="list-filter-row"><select id="doNotPromoteRankFilter" aria-label="Filter by rank"><option value="all">All ranks</option></select></div>
-        <div class="table-wrap" id="doNotPromoteTable"></div>
-    </div>
-    <div data-dnp-panel="terminate" hidden>
-        <p class="muted list-note">Members on this list cannot be terminated.</p>
-        <div class="list-filter-row"><select id="doNotTerminateRankFilter" aria-label="Filter Do Not Terminate by rank"><option value="all">All ranks</option></select></div>
-        <div class="table-wrap" id="doNotTerminateTable"></div>
-    </div>
-</section>
-
-
-<!-- =========================================================
-     INACTIVE / CAN BE TERMINATED
-     ========================================================= -->
-
-<section
-    id="inactive"
-    class="panel"
->
-
-
-    <div class="section-head">
-
-
-        <div>
-
-            <h2>
-                Termination
-            </h2>
-
-
-        </div>
-        <button type="button" class="list-refresh" id="refreshInactiveBtn" aria-label="Refresh termination list" title="Refresh termination list"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button>
-
-
-    </div>
-
-
-    <!-- =====================================================
-         REAL-TIME SEARCH
-         ===================================================== -->
-
-    <div class="training-directory-tabs" style="margin-top:14px">
-        <button type="button" class="log-tab active" id="inactiveActivityTab" data-inactive-view="activity" aria-current="page">Due to Activity <span class="tab-count" data-inactive-count="activity">(0)</span></button>
-        <button type="button" class="log-tab" id="inactiveOverdueTab" data-inactive-view="overdue">Training Overdue <span class="tab-count" data-inactive-count="overdue">(0)</span></button>
-    </div>
-
-    <div class="inactive-toolbar">
-
-
-        <input
-            id="inactiveSearch"
-            type="text"
-            placeholder="Search by name or Callsign"
-            autocomplete="off"
-        >
-
-
-        <button
-            type="button"
-            id="inactiveClearBtn"
-        >
-            Clear
-        </button>
-
-
-    </div>
-
-
-    <section data-inactive-panel="activity">
-        <div class="list-filter-row"><select id="inactiveRankFilter" aria-label="Filter by rank"><option value="all">All ranks</option></select></div>
-        <div
-            id="inactiveTable"
-            class="table-wrap"
-        ></div>
+  </header>
+  <main>
+    <section class="portal-options" aria-label="Available applications">
+      <a class="portal-card" id="emsCard" href="/ems" hidden>
+        <div><h2>LVFR EMS Operations</h2><p>Open the member directory, training, ranks, and operations tools.</p></div>
+        <span>Open application →</span>
+      </a>
+      <a class="portal-card" id="watchCommandCard" href="/watch-command" hidden>
+        <div><h2>Watch Command</h2><p>Open the Watch Command workspace.</p></div>
+        <span>Open Watch Command →</span>
+      </a>
+      <a class="portal-card" id="administrationCard" href="/administration" hidden>
+        <div><h2>Operation Command</h2><p>Manage account access, roles, and account history.</p></div>
+        <span>Manage accounts</span>
+      </a>
     </section>
-
-    <section data-inactive-panel="overdue" hidden>
-        <div class="list-filter-row"><select id="overdueMissingFilter" aria-label="Filter by missing training">
-            <option value="all">Missing Basic or Advanced</option>
-            <option value="basic">Missing Basic FORT</option>
-            <option value="advanced">Missing Advanced FORT</option>
-            <option value="both">Missing both</option>
-        </select></div>
-        <div
-            id="trainingOverdueTable"
-            class="table-wrap"
-        ></div>
-    </section>
-
-
-</section>
-
-
-<!-- =========================================================
-     MEMBERS LOG
-     ========================================================= -->
-
-<section
-    id="membersLog"
-    class="panel"
->
-
-
-    <div class="section-head">
-
-
-        <div>
-
-            <h2>
-                Members Log
-            </h2>
-
-
-        </div>
-
-
-        <button type="button" class="list-refresh" id="refreshMembersLogBtn" aria-label="Refresh member log" title="Refresh member log"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button>
-    </div>
-
-
-    <!-- =====================================================
-         LOG TABS
-         ===================================================== -->
-
-    <div class="log-tabs">
-
-
-        <button
-            type="button"
-            class="log-tab active"
-            data-log="promotion"
-        >
-            Promotion/Demotion
-        </button>
-
-
-        <button
-            type="button"
-            class="log-tab"
-            data-log="callsign"
-        >
-            Callsign Changes
-        </button>
-
-
-        <button
-            type="button"
-            class="log-tab"
-            data-log="termination"
-            id="terminationLogTab"
-        >
-            Termination
-        </button>
-
-
-        <button
-            type="button"
-            class="log-tab"
-            data-log="training"
-        >
-            Training
-        </button>
-
-        <button type="button" class="log-tab" id="trainingTimeLogTab" data-log="training_time">Training Time Log</button>
-
-        <button type="button" class="log-tab" id="loiLogTab" data-log="loi">LOI Log</button>
-
-
-        <button
-            type="button"
-            class="log-tab"
-            data-log="exam"
-        >
-            Exam
-        </button>
-
-
-        <button
-            type="button"
-            class="log-tab"
-            data-log="note"
-        >
-            Note
-        </button>
-
-        <button
-            type="button"
-            class="log-tab"
-            data-log="activity"
-        >
-            Activity
-        </button>
-
-        <button type="button" class="log-tab" id="instructorLogTab" data-log="instructor" style="display:none">
-            Instructor
-        </button>
-        <button type="button" class="log-tab" id="doNotPromoteLogTab" data-log="do_not_promote" style="display:none">
-            Do Not Promote
-        </button>
-        <button type="button" class="log-tab" id="doNotTerminateLogTab" data-log="do_not_terminate" style="display:none">
-            Do Not Terminate
-        </button>
-
-    </div>
-
-
-    <div id="membersLogContent">
-    <!-- =====================================================
-         LOG SEARCH
-         ===================================================== -->
-
-    <div class="log-toolbar">
-
-
-        <input
-            id="membersLogSearch"
-            type="text"
-            placeholder="Search current log"
-            autocomplete="off"
-        >
-
-
-        <button
-            type="button"
-            id="membersLogClearBtn"
-        >
-            Clear
-        </button>
-
-        <button type="button" id="membersLogDeleteBtn" class="danger" hidden>
-            Delete this log from D1
-        </button>
-
-
-    </div>
-
-    <div id="logFilters" class="log-filters">
-        <label id="promotionFilterWrap">
-            Promotion/Demotion
-            <select id="promotionFilter" aria-label="Filter promotions and demotions">
-                <option value="all">All</option>
-                <option value="promotion">Promotion</option>
-                <option value="demotion">Demotion</option>
-            </select>
-        </label>
-        <label id="trainingFilterWrap" style="display:none">
-            Training
-            <select id="trainingFilter" aria-label="Filter training log">
-                <option value="all">All</option>
-                <option value="basic_firefighting">Basic</option>
-                <option value="advanced_firefighting">Advanced</option>
-                <option value="hert">HERT</option>
-            </select>
-        </label>
-        <label id="noteFilterWrap" style="display:none">
-            Action
-            <select id="noteFilter" aria-label="Filter note actions">
-                <option value="all">All</option>
-                <option value="add">Add</option>
-                <option value="delete">Delete</option>
-                <option value="edit">Edit</option>
-            </select>
-        </label>
-    </div>
-
-
-    <div
-        id="membersLogTable"
-        class="table-wrap"
-    ></div>
-
-    </div>
-
-    <div id="instructorLog" style="display:none">
-        <div class="section-head"><div><h2>Instructor Log</h2></div></div>
-        <div class="log-toolbar">
-            <input id="instructorLogSearch" type="text" placeholder="Search instructor log" autocomplete="off">
-            <button type="button" id="instructorLogClearBtn">Clear</button>
-            <button type="button" id="instructorLogDeleteBtn" class="danger" hidden>Delete this log from D1</button>
-        </div>
-        <div id="instructorLogTable" class="table-wrap"></div>
-    </div>
-
-</section>
-
-
-<section id="statistics" class="panel">
-    <div class="section-head"><div><h2>Statistics</h2><p>Training and instructor coverage</p></div><button type="button" class="list-refresh" id="refreshStatisticsBtn" aria-label="Refresh statistics" title="Refresh statistics"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
-    <div class="statistics-filters">
-        <div class="statistics-rank-control">
-            <span>Include ranks <small>(none selected means all)</small></span>
-            <details id="statisticsIncludeRanks" class="statistics-rank-picker">
-                <summary>All ranks</summary>
-                <div class="statistics-rank-picker-menu">
-                    <input type="search" data-rank-search placeholder="Search ranks" aria-label="Search ranks to include">
-                    <button type="button" data-rank-clear>Clear selection</button>
-                    <div class="statistics-rank-options" role="group" aria-label="Ranks to include"></div>
-                </div>
-            </details>
-        </div>
-        <div class="statistics-rank-control">
-            <span>Exclude ranks</span>
-            <details id="statisticsExcludeRanks" class="statistics-rank-picker">
-                <summary>No ranks excluded</summary>
-                <div class="statistics-rank-picker-menu">
-                    <input type="search" data-rank-search placeholder="Search ranks" aria-label="Search ranks to exclude">
-                    <button type="button" data-rank-clear>Clear selection</button>
-                    <div class="statistics-rank-options" role="group" aria-label="Ranks to exclude"></div>
-                </div>
-            </details>
-        </div>
-        <fieldset>
-            <legend>Show statistics for</legend>
-            <label><input type="checkbox" value="exam" data-stat-metric checked> Supervisor Exam</label>
-            <label><input type="checkbox" value="basic" data-stat-metric checked> Basic FORT</label>
-            <label><input type="checkbox" value="advanced" data-stat-metric checked> Advanced FORT</label>
-            <label><input type="checkbox" value="hert" data-stat-metric checked> HERT</label>
-            <label><input type="checkbox" value="fortInstructor" data-stat-metric checked> FORT Instructors</label>
-            <label><input type="checkbox" value="hertInstructor" data-stat-metric checked> HERT Instructors</label>
-        </fieldset>
-    </div>
-    <p id="statisticsPopulation" class="statistics-population" aria-live="polite"></p>
-    <div id="statisticsCards" class="statistics-cards"></div>
-</section>
-
-
-<!-- =========================================================
-     ACCOUNT MANAGEMENT
-     ========================================================= -->
-
-</main>
-
-<!-- =========================================================
-     MODAL
-     ========================================================= -->
-
-<div
-    id="modal"
-    class="modal hidden"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Member details"
->
-
-
-    <div class="modal-box">
-
-
-        <button
-            class="close"
-            data-action="close-modal"
-        >&times;</button>
-
-
-        <div id="modalContent"></div>
-
-
-    </div>
-
-
-</div>
-
-
-<!-- =========================================================
-     TOAST
-     ========================================================= -->
-
-<div id="toast" aria-live="polite"></div>
-
-
-<!-- =========================================================
-     APPLICATION JAVASCRIPT
-     ========================================================= -->
-
-<script src="/static/date-format.js?v=ops-20261022-2"></script>
-
-<script src="/static/session-auth.js?v=ops-20261021-6"></script>
-<script src="/static/notifications.js?v=ops-20261021-6"></script>
-<script src="/static/rank-badges.js?v=ops-20261021-6"></script>
-<script src="/static/account-settings.js?v=ops-20261021-6"></script>
-<script src="/static/app.js?v=ops-20261022-13"></script>
-<script src="/static/sidebar.js?v=ops-20261021-6"></script>
-<script src="/static/mobile-popovers.js?v=ops-20261021-6"></script>
-
-
-<script src="/static/search-clear.js?v=ops-20261021-6" defer></script>
-<script src="/static/table-sort.js?v=ops-20261021-6"></script>
+  </main>
+  <script src="/static/date-format.js?v=ops-20261022-16"></script>
+  <script src="/static/session-auth.js?v=ops-20261022-16"></script>
+  <script src="/static/notifications.js?v=ops-20261022-16"></script>
+<script src="/static/rank-badges.js?v=ops-20261022-16"></script>
+<script src="/static/account-settings.js?v=ops-20261022-16"></script>
+  <script src="/static/header-controls.js?v=ops-20261022-16"></script>
+  <script src="/static/portal.js?v=ops-20261022-16"></script>
+  <script src="/static/sidebar.js?v=ops-20261022-16"></script>
+  <script src="/static/mobile-popovers.js?v=ops-20261022-16"></script>
+<script src="/static/table-sort.js?v=ops-20261022-16"></script>
 </body>
-
 </html>
