@@ -5,9 +5,12 @@ export async function onRequest(context) {
   const { request, env } = context;
   const incoming = new URL(request.url);
 
-  // The site address opens the portal by default.
+  // The site address opens the portal by default; EMS Operations lives at /ems.
   if (incoming.pathname === "/") {
     return Response.redirect(`${incoming.origin}/portal`, 303);
+  }
+  if (incoming.pathname === "/ems") {
+    return context.next(new Request(new URL("/index.html", incoming.origin), request));
   }
 
   if (!API_PATHS.some(prefix => incoming.pathname.startsWith(prefix))) {
