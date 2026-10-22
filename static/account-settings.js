@@ -85,7 +85,7 @@
     $('accountSettingsCallsign').textContent = user?.callsign || member?.callsign || '';
     const badge = typeof rankBadgeHtml === 'function' ? rankBadgeHtml(member?.rank, user?.callsign || member?.callsign) : '';
     $('accountSettingsRank').innerHTML = `${badge}${escapeHtml(member?.rank || '')}`;
-    $('accountSettingsDate').textContent = member?.rank_assigned_date || member?.date || '';
+    $('accountSettingsDate').textContent = window.lvfrDateOnly(member?.rank_assigned_date || member?.date) || '';
     $('accountSettingsActivity').innerHTML = activityBadge(member?.activity || '');
     const instructor = member?.instructor_type || user?.instructor_type || '';
     $('accountSettingsInstructor').innerHTML = instructor ? `<span class="badge active-status">${escapeHtml(instructor)}</span>` : flagBadge(false, '', 'Not an Instructor');

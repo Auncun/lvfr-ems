@@ -943,7 +943,7 @@ async function syncStatus() {
             ? `Roster: ${s.members} · ${window.lvfrDateOnly ? window.lvfrDateOnly(s.synced_at) : new Date(s.synced_at).toLocaleDateString()}`
             : `Roster: ${s.members} · Initial sync pending`;
         syncStatusElement.title = s.synced_at
-            ? `Roster snapshot: ${s.synced_at} | ${s.members} members`
+            ? `Roster snapshot: ${window.lvfrDateOnly(s.synced_at)} | ${s.members} members`
             : `Roster ready: ${s.members} members | waiting for initial sync`;
 
         syncStatusElement.style.color =
@@ -1562,7 +1562,7 @@ function renderTrainingHours() {
     table.innerHTML = `<table><thead><tr><th>Callsign</th><th><button type="button" id="trainingHoursNameSort" class="table-sort-button" aria-label="Sort Training Hours by name">Name${trainingHoursSortByName ? trainingHoursNameSortDescending ? " ↓" : " ↑" : ""}</button>${canEdit && canAddInstructorTraining(["HERT", "FORT"]) ? `<button type="button" class="primary th-action" id="openTrainingHoursAdd">Add Training Record</button>` : ""}</th><th>Date</th><th>Training Hours</th>${canEdit ? "<th>Actions</th>" : ""}</tr></thead><tbody>${rows.map(row => {
         const member = memberByName.get(String(row.name || "").trim().toLocaleLowerCase());
         const timeCell = canEdit ? `<div class="training-hours-time-edit"><input type="text" data-training-hours-time value="${esc(row.time)}" aria-label="Training hours for ${esc(row.name)} on ${esc(row.date)}"><button type="button" class="primary" data-training-hours-save data-id="${esc(row.id)}" data-name="${esc(row.name)}" data-callsign="${esc(row.callsign || member?.callsign || "")}">Save</button></div>` : esc(row.time);
-        return `<tr><td><strong>${esc(row.callsign || member?.callsign || "")}</strong></td><td>${esc(row.name)}</td><td>${esc(row.date)}</td><td>${timeCell}</td>${canEdit ? `<td><button type="button" class="danger" data-training-hours-remove data-id="${esc(row.id)}" data-name="${esc(row.name)}" data-callsign="${esc(row.callsign || member?.callsign || "")}">Remove</button></td>` : ""}</tr>`;
+        return `<tr><td><strong>${esc(row.callsign || member?.callsign || "")}</strong></td><td>${esc(row.name)}</td><td>${esc(window.lvfrDateOnly(row.date))}</td><td>${timeCell}</td>${canEdit ? `<td><button type="button" class="danger" data-training-hours-remove data-id="${esc(row.id)}" data-name="${esc(row.name)}" data-callsign="${esc(row.callsign || member?.callsign || "")}">Remove</button></td>` : ""}</tr>`;
     }).join("")}${rows.length ? "" : `<tr><td colspan="${canEdit ? 5 : 4}">No Training Hours records match this search.</td></tr>`}</tbody></table>`;
     table.querySelector("#trainingHoursNameSort")?.addEventListener("click", () => {
         if (trainingHoursSortByName) trainingHoursNameSortDescending = !trainingHoursNameSortDescending;
@@ -2073,7 +2073,7 @@ function renderLeaders() {
                     <tr>
                         <td>${esc(row.name || row.display_name)}</td>
                         <td>${esc(row.callsign || '—')}</td>
-                        <td>${esc(row.requested_at || row.linked_at)}</td>
+                        <td>${esc(window.lvfrDateOnly(row.requested_at || row.linked_at))}</td>
                         <td class="leader-request-actions">
                             <button type="button" class="primary" data-action="resolve-leader" data-account-id="${esc(row.account_id)}" data-resolution="allow">Allow</button>
                             <button type="button" class="danger" data-action="resolve-leader" data-account-id="${esc(row.account_id)}" data-resolution="deny">Deny</button>
@@ -2107,7 +2107,7 @@ function renderLeaders() {
                         <td data-label="Approved" class="leader-detail-cell"><span>${esc(row.approved_at || "—")}</span><small>By ${esc(row.approved_by || "—")}</small></td>
                         <td data-label="Role">${row.role === "admin" ? "Operation" : row.role === "commander" ? "Commander" : row.role === "member" ? "Member" : "Leader"}</td>
                         <td data-label="Presence"><span class="presence-badge ${row.online ? "online" : "offline"}">${row.online ? "Online" : "Offline"}</span></td>
-                        <td data-label="Role changed" class="leader-detail-cell">${row.admin_changed_at ? `<span>${esc(row.admin_changed_at)}</span><small>By ${esc(row.admin_changed_by || "—")}</small>` : "—"}</td>
+                        <td data-label="Role changed" class="leader-detail-cell">${row.admin_changed_at ? `<span>${esc(window.lvfrDateOnly(row.admin_changed_at))}</span><small>By ${esc(row.admin_changed_by || "—")}</small>` : "—"}</td>
                         <td data-label="Actions" class="leader-request-actions">${accountActions(row)}</td></tr>
                 `).join("")}</tbody>
             </table>
@@ -2126,7 +2126,7 @@ function renderLeaders() {
             <table>
                 <thead><tr><th>Instructor</th><th>Type</th><th>Since</th></tr></thead>
                 <tbody>${filteredInstructors.map(row => `
-                    <tr><td><strong>${esc(row.name)}</strong></td><td>${esc(row.type)}</td><td>${esc(row.date || "—")}</td></tr>
+                    <tr><td><strong>${esc(row.name)}</strong></td><td>${esc(row.type)}</td><td>${esc(window.lvfrDateOnly(row.date) || "—")}</td></tr>
                 `).join("")}</tbody>
             </table>
         ` : empty("No instructors found.");
@@ -2260,7 +2260,7 @@ function renderInstructors() {
     );
     table.innerHTML = rows.length ? `
         <table><thead><tr><th>Instructor</th><th>Type</th><th>Since</th></tr></thead>
-        <tbody>${rows.map(row => `<tr><td><strong>${esc(row.name)}</strong></td><td>${esc(row.type)}</td><td>${esc(row.date || "—")}</td></tr>`).join("")}</tbody></table>
+        <tbody>${rows.map(row => `<tr><td><strong>${esc(row.name)}</strong></td><td>${esc(row.type)}</td><td>${esc(window.lvfrDateOnly(row.date) || "—")}</td></tr>`).join("")}</tbody></table>
     ` : empty("No instructors found.");
 }
 
@@ -2717,7 +2717,7 @@ function renderMembersLog() {
     // ========================================================
 
     if (currentLogType === "do_not_promote" || currentLogType === "do_not_terminate") {
-        container.innerHTML = `<table><thead><tr><th>Date</th><th>Callsign</th><th>Member Name</th><th>Change</th><th>Changed By</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.log_date || "")}</td><td><strong>${esc(r.callsign || "")}</strong></td><td>${esc(r.member_name || "")}</td><td>${String(r.action || "").toUpperCase() === "ADDED" ? "Added to Do Not Promote" : "Removed from Do Not Promote"}</td><td>${esc(r.changed_by || "")}</td></tr>`).join("")}</tbody></table>`;
+        container.innerHTML = `<table><thead><tr><th>Date</th><th>Callsign</th><th>Member Name</th><th>Change</th><th>Changed By</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(window.lvfrDateOnly(r.log_date) || "")}</td><td><strong>${esc(r.callsign || "")}</strong></td><td>${esc(r.member_name || "")}</td><td>${String(r.action || "").toUpperCase() === "ADDED" ? "Added to Do Not Promote" : "Removed from Do Not Promote"}</td><td>${esc(r.changed_by || "")}</td></tr>`).join("")}</tbody></table>`;
         return;
     }
 
@@ -2908,7 +2908,7 @@ function renderMembersLog() {
                         <tr>
 
                             <td>
-                                ${esc(r.log_date)}
+                                ${esc(window.lvfrDateOnly(r.log_date))}
                             </td>
 
                             <td>
@@ -2957,7 +2957,7 @@ function renderMembersLog() {
 
     if (currentLogType === "training_time") {
         container.innerHTML = `<table><thead><tr><th>Date</th><th>Callsign</th><th>Member</th><th>Previous Time</th><th>New Time</th><th>Changed By</th></tr></thead><tbody>${rows.map(r => `
-            <tr><td>${esc(r.log_date)}</td><td>${esc(r.callsign)}</td><td>${esc(r.member_name)}</td><td>${esc(r.previous_time || "—")}</td><td>${esc(r.new_time || "—")}</td><td>${esc(r.changed_by)}</td></tr>
+            <tr><td>${esc(window.lvfrDateOnly(r.log_date))}</td><td>${esc(r.callsign)}</td><td>${esc(r.member_name)}</td><td>${esc(r.previous_time || "—")}</td><td>${esc(r.new_time || "—")}</td><td>${esc(r.changed_by)}</td></tr>
         `).join("")}</tbody></table>`;
         return;
     }
@@ -2991,7 +2991,7 @@ function renderMembersLog() {
                         <tr>
 
                             <td>
-                                ${esc(r.log_date)}
+                                ${esc(window.lvfrDateOnly(r.log_date))}
                             </td>
 
                             <td>
@@ -3066,7 +3066,7 @@ function renderMembersLog() {
                         <tr>
 
                             <td>
-                                ${esc(r.log_date)}
+                                ${esc(window.lvfrDateOnly(r.log_date))}
                             </td>
 
                             <td>
@@ -3126,7 +3126,7 @@ function renderMembersLog() {
                 <tbody>
                     ${rows.map(r => `
                         <tr>
-                            <td>${esc(r.changed_at)}</td>
+                            <td>${esc(window.lvfrDateOnly(r.changed_at))}</td>
                             <td>${esc(r.callsign)}</td>
                             <td>${esc(r.member_name)}</td>
                             <td>${esc(r.old_status)}</td>
@@ -3166,7 +3166,7 @@ function renderMembersLog() {
                 <thead><tr><th>Date</th><th>LOI</th><th>Callsign</th><th>Member</th><th>% on test</th><th>Result / Action</th><th>By</th></tr></thead>
                 <tbody>${rows.map(r => `
                     <tr>
-                        <td>${esc(r.log_date || "")}</td><td>${esc(r.loi_type || "")} LOI</td><td>${esc(r.callsign || "")}</td>
+                        <td>${esc(window.lvfrDateOnly(r.log_date) || "")}</td><td>${esc(r.loi_type || "")} LOI</td><td>${esc(r.callsign || "")}</td>
                         <td>${esc(r.member_name || "")}</td><td>${r.test_percent === "" || r.test_percent == null ? "—" : `${esc(r.test_percent)}%`}</td>
                         <td><strong>${esc(r.action || "")}</strong></td><td>${esc(r.changed_by || "")}</td>
                     </tr>`).join("")}</tbody>
@@ -5554,7 +5554,7 @@ function renderDoNotPromote() {
         <tbody>${visibleRows.map(member => `
             <tr>
                 <td>${esc(member.callsign)}</td><td>${esc(member.name)}</td>
-                <td>${esc(member.added_at)}</td><td>${esc(member.added_by)}</td>
+                <td>${esc(window.lvfrDateOnly(member.added_at))}</td><td>${esc(member.added_by)}</td>
                 <td>${currentUserHasPermission("profile_view") ? `<button type="button" data-action="profile" data-callsign="${esc(member.callsign)}">View</button>` : ""}
                     ${currentUserHasPermission("do_not_promote_manage") ? `<button type="button" class="danger" data-action="do-not-promote-remove" data-callsign="${esc(member.callsign)}">Remove</button>` : ""}</td>
             </tr>`).join("")}</tbody></table>` : empty("The Do not Promote list is empty.");
@@ -5584,7 +5584,7 @@ async function setMemberPromotionBlock(callsign, blocked) {
     }
     if (blocked) {
         if (!doNotPromoteRows.some(member => String(member.callsign || "").toUpperCase() === key)) {
-            doNotPromoteRows = [{ callsign: key, name: rosterMember?.name || "", added_at: new Date().toLocaleString(), added_by: "You" }, ...doNotPromoteRows];
+            doNotPromoteRows = [{ callsign: key, name: rosterMember?.name || "", added_at: new Date().toISOString(), added_by: "You" }, ...doNotPromoteRows];
         }
         removeEligibleRow(key);
     } else {
@@ -5762,7 +5762,7 @@ function renderDoNotTerminate() {
         <tbody>${visibleRows.map(member => `
             <tr>
                 <td>${esc(member.callsign)}</td><td>${esc(member.name)}</td>
-                <td>${esc(member.added_at)}</td><td>${esc(member.added_by)}</td>
+                <td>${esc(window.lvfrDateOnly(member.added_at))}</td><td>${esc(member.added_by)}</td>
                 <td>${currentUserHasPermission("profile_view") ? `<button type="button" data-action="profile" data-callsign="${esc(member.callsign)}">View</button>` : ""}
                     ${currentUserHasPermission("do_not_promote_manage") ? `<button type="button" class="danger" data-action="do-not-terminate-remove" data-callsign="${esc(member.callsign)}">Remove</button>` : ""}</td>
             </tr>`).join("")}</tbody></table>` : empty("The Do Not Terminate list is empty.");
@@ -5794,7 +5794,7 @@ async function setMemberTerminationBlock(callsign, blocked) {
     }
     if (blocked) {
         if (!doNotTerminateRows.some(member => String(member.callsign || "").toUpperCase() === key)) {
-            doNotTerminateRows = [{ callsign: key, name: rosterMember?.name || "", added_at: new Date().toLocaleString(), added_by: "You" }, ...doNotTerminateRows];
+            doNotTerminateRows = [{ callsign: key, name: rosterMember?.name || "", added_at: new Date().toISOString(), added_by: "You" }, ...doNotTerminateRows];
         }
     } else {
         doNotTerminateRows = doNotTerminateRows.filter(member => String(member.callsign || "").toUpperCase() !== key);

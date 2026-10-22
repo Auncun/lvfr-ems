@@ -157,7 +157,7 @@ const portalSyncButton = document.querySelector('#portalSyncButton');
 const portalSyncStatus = document.querySelector('#portalSyncStatus');
 function showPortalSyncTime(value) {
   if (!portalSyncStatus) return;
-  portalSyncStatus.textContent = value ? `Last sync: ${value}` : 'Roster has not been synced yet.';
+  portalSyncStatus.textContent = value ? `Last sync: ${window.lvfrDateOnly(value)}` : 'Roster has not been synced yet.';
 }
 async function loadPortalSyncStatus() {
   if (!portalSyncButton || portalSyncButton.hidden) return;

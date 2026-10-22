@@ -152,7 +152,7 @@ function renderAccounts() {
       <td data-label="Callsign">${esc(account.callsign || '—')}</td><td data-label="Status">${esc(account.status)}</td>
       <td data-label="Role">${account.status === 'pending' ? '—' : esc(roleTitle(account.role))}</td>
       <td data-label="Presence"><span class="presence-badge ${account.online ? 'online' : 'offline'}">${account.online ? 'Online' : 'Offline'}</span></td>
-      <td data-label="Created">${esc(account.requested_at || '—')}</td><td data-label="Actions"><div class="admin-actions">${accountActions(account)}</div></td></tr>`).join('');
+      <td data-label="Created">${esc(window.lvfrDateOnly(account.requested_at) || '—')}</td><td data-label="Actions"><div class="admin-actions">${accountActions(account)}</div></td></tr>`).join('');
 }
 function renderAudit() {
   const query = String(document.querySelector('#auditSearch')?.value || '').trim().toLocaleLowerCase();
@@ -527,7 +527,7 @@ function permissionLogRowsHtml(query) {
     if (!rows.length) return `<tr><td colspan="5">${q ? 'No matching changes.' : 'No changes yet.'}</td></tr>`;
     return rows.map(item => `
         <tr>
-            <td>${esc(item.changed_at || '')}</td>
+            <td>${esc(window.lvfrDateOnly(item.changed_at) || '')}</td>
             <td><strong>${esc(roleTitle(item.role))}</strong></td>
             <td>${esc(item.changed_by || 'Unknown')}</td>
             <td>${esc(changedPermissionLabels(item.before, item.after))}</td>
