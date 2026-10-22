@@ -1304,7 +1304,7 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 /* Phone layout: every column and every row is visible on one line, with no sideways scrolling and no tapping needed. Text is small. */
 @media(max-width:700px) {
     .table-wrap,.admin-table-wrap { overflow:hidden; max-width:100%; }
-    table { width:100%; table-layout:fixed; border-collapse:collapse; }
+    table, .promotion-table { width:100% !important; min-width:0 !important; table-layout:fixed; border-collapse:collapse; }
     th,td { padding:4px 2px; font-size:9px; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:clip; vertical-align:middle; }
     th { font-size:8px; letter-spacing:0; }
     td button,td a,th button { padding:2px 3px; font-size:8px; line-height:1.1; max-width:100%; overflow:hidden; text-overflow:clip; }
