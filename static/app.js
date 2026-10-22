@@ -4406,6 +4406,38 @@ async function promote(cs) {
 // TERMINATION
 // ============================================================
 
+// In-app text dialog. Used instead of window.prompt(), which returns an empty value in some browsers and apps.
+function askText(message, initial = "") {
+    return new Promise(resolve => {
+        const dialog = document.createElement("dialog");
+        dialog.innerHTML = `<form method="dialog" class="ask-text-form" style="display:grid;gap:12px;min-width:min(90vw,380px);padding:16px">
+            <p class="ask-text-message" style="margin:0;white-space:pre-line"></p>
+            <input type="text" class="ask-text-input" autocomplete="off" style="padding:8px;font:inherit;width:100%">
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+                <button type="button" class="ask-text-cancel">Cancel</button>
+                <button type="submit" class="primary ask-text-ok">OK</button>
+            </div>
+        </form>`;
+        dialog.querySelector(".ask-text-message").textContent = message;
+        const input = dialog.querySelector(".ask-text-input");
+        input.value = initial;
+        let finished = false;
+        const finish = value => {
+            if (finished) return;
+            finished = true;
+            dialog.close();
+            dialog.remove();
+            resolve(value);
+        };
+        dialog.querySelector(".ask-text-cancel").addEventListener("click", () => finish(null));
+        dialog.querySelector("form").addEventListener("submit", event => { event.preventDefault(); finish(input.value); });
+        dialog.addEventListener("cancel", event => { event.preventDefault(); finish(null); });
+        document.body.append(dialog);
+        dialog.showModal();
+        input.focus();
+    });
+}
+
 // A row's action button can keep an old callsign after a callsign change, so read the callsign shown on screen.
 function currentCallsignFor(control, fallback) {
     const row = control.closest("tr");
@@ -4426,7 +4458,7 @@ async function terminate(cs) {
     }
 
     // Typing the callsign is required, because termination clears the member's active data and cannot be undone here.
-    const typed = prompt(
+    const typed = await askText(
         `Terminating ${cs} clears the member's active data and cannot be undone here.\nType the callsign ${cs} to confirm:`,
         ""
     );
@@ -4440,7 +4472,7 @@ async function terminate(cs) {
     }
 
 
-    const reason = prompt(
+    const reason = await askText(
         "Termination reason (optional):",
         ""
     );
