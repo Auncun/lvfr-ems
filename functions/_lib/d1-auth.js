@@ -626,7 +626,7 @@ async function recordActionConfirmation(db,route,data,oldMember,result,actor){
   const callsign=String(oldMember.callsign||""), name=String(oldMember.name||"");
   const rank=String(oldMember.rank||"");
   let action="", needsDiscord=0, perms="", newRank=rank, newCallsign=callsign;
-  if(route==="/api/demote"){ action="Demotion"; needsDiscord=1; perms="rank_manage"; newRank=String(result.new_rank||rank); }
+  if(route==="/api/demote"){ action="Demotion"; needsDiscord=1; perms="rank_manage"; newRank=String(result.new_rank||rank); newCallsign=String(result.new_callsign||callsign); }
   else if(route==="/api/change-callsign"){ action="Callsign change"; needsDiscord=1; perms="callsign_manage"; newCallsign=String(result.new_callsign||data.new_callsign||callsign); }
   else if(route==="/api/terminate"){ action="Termination"; needsDiscord=1; perms="termination_manage"; newRank="Terminated"; }
   else if(route==="/api/exam"){ action=data.remove?"Supervisor exam removed":"Supervisor exam"; needsDiscord=0; perms="exam_manage"; }

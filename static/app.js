@@ -443,9 +443,18 @@ function promotionDetails(item) {
             <tr><th>Done by</th><td>${esc(item.created_by || "Unknown")}</td></tr>
         </table>`;
     }
+    // Show "from → to" only when something actually changed. Termination shows the member's last value only.
+    const isTermination = /^Termination/i.test(item.action || "");
+    const change = (from, to, empty) => {
+        const before = String(from || to || "").trim();
+        const after = String(to || "").trim();
+        if (!before) return esc(empty);
+        if (isTermination || !after || after === before) return esc(before);
+        return `${esc(before)} → ${esc(after)}`;
+    };
     return `<table class="promotion-table">
-            <tr><th>Rank</th><td>${esc(item.old_rank || "Not recorded")} → ${esc(item.new_rank)}</td></tr>
-            <tr><th>Callsign</th><td>${esc(item.old_callsign || "Not recorded")} → ${esc(item.new_callsign)}</td></tr>
+            <tr><th>Rank</th><td>${change(item.old_rank, item.new_rank, "Not recorded")}</td></tr>
+            <tr><th>Callsign</th><td>${change(item.old_callsign, item.new_callsign, "Not recorded")}</td></tr>
             <tr><th>Action</th><td>${esc(item.action || "Promotion")}</td></tr>
             <tr><th>Done by</th><td>${esc(item.created_by || "Unknown")}</td></tr>
         </table>`;
