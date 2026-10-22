@@ -135,7 +135,15 @@ function accountActions(account) {
     : `<button type="button" class="danger" data-action="delete" data-id="${id}">Delete</button>`;
   return `${memberButton}${roleButton}${permissionButton}${deactivateButton}${deleteButton}`;
 }
+// Shows how many accounts are in each status tab.
+function updateStatusCounts() {
+  const accounts = allAccounts() || [];
+  const counts = { all: accounts.length, pending: 0, approved: 0, deactivated: 0 };
+  accounts.forEach(account => { if (counts[account.status] !== undefined) counts[account.status]++; });
+  document.querySelectorAll('[data-status-count]').forEach(el => { el.textContent = `(${counts[el.dataset.statusCount] ?? 0})`; });
+}
 function renderAccounts() {
+  updateStatusCounts();
   const query = document.querySelector('#accountSearch').value.trim().toLowerCase();
   const rows = allAccounts().filter(account =>
     (selectedStatus === 'all' || account.status === selectedStatus)

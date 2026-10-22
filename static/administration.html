@@ -61,9 +61,9 @@
       <div class="admin-header"><div><h2 id="accountsHeading">Accounts</h2><p class="muted">Choose the account role here; role capabilities are managed in Access Permissions.</p></div><button type="button" class="list-refresh" id="refreshAccounts" aria-label="Refresh accounts" title="Refresh accounts"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
       <div class="admin-tabs" aria-label="Account status filter">
         <button type="button" data-status="all" aria-pressed="true">All</button>
-        <button type="button" data-status="pending" aria-pressed="false">Pending</button>
-        <button type="button" data-status="approved" aria-pressed="false">Active</button>
-        <button type="button" data-status="deactivated" aria-pressed="false">Deactivated</button>
+        <button type="button" data-status="pending" aria-pressed="false">Pending <span class="tab-count" data-status-count="pending">(0)</span></button>
+        <button type="button" data-status="approved" aria-pressed="false">Active <span class="tab-count" data-status-count="approved">(0)</span></button>
+        <button type="button" data-status="deactivated" aria-pressed="false">Deactivated <span class="tab-count" data-status-count="deactivated">(0)</span></button>
       </div>
       <p id="onlineAccountCount" class="online-account-count" aria-live="polite">Online now: —</p>
       <div class="admin-toolbar"><input id="accountSearch" type="search" placeholder="Search name or Callsign"><span id="accountCount" class="muted"></span></div>
@@ -120,13 +120,13 @@
       </form>
     </dialog>
   </main>
-  <script src="/static/date-format.js?v=ops-20261022-1"></script>
+  <script src="/static/date-format.js?v=ops-20261022-2"></script>
   <script src="/static/session-auth.js?v=ops-20261021-4"></script>
   <script src="/static/header-controls.js?v=ops-20261021-4"></script>
   <script src="/static/notifications.js?v=ops-20261021-4"></script>
 <script src="/static/rank-badges.js?v=ops-20261021-4"></script>
 <script src="/static/account-settings.js?v=ops-20261021-4"></script>
-  <script src="/static/administration.js?v=ops-20261021-4"></script>
+  <script src="/static/administration.js?v=ops-20261022-2"></script>
   <script src="/static/sidebar.js?v=ops-20261021-4"></script>
   <script src="/static/mobile-popovers.js?v=ops-20261021-4"></script>
 <script src="/static/search-clear.js?v=ops-20261021-4" defer></script>

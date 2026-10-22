@@ -391,13 +391,13 @@
   <div class="section-head"><div><h2>Training</h2></div><button type="button" class="list-refresh" id="refreshTrainingBtn" aria-label="Refresh training list" title="Refresh training list"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
   <div class="training-directory-tabs"><button type="button" class="log-tab active" id="hertTrainingTab" data-training-view="HERT" aria-current="page">HERT</button><button type="button" class="log-tab" id="fortTrainingTab" data-training-view="FORT">FORT</button><button type="button" class="log-tab" id="trainingHoursTab" data-training-view="HOURS">Training Hours</button></div>
   <section class="training-directory-view" data-training-panel="HERT">
-    <div class="training-directory-tabs"><button type="button" class="log-tab active" id="hertCertifiedTab" data-training-section="HERT_CERTIFIED" aria-current="page">HERT Certified</button><button type="button" class="log-tab" id="hertInstructorTab" data-training-section="HERT_INSTRUCTOR">Instructor</button><button type="button" class="log-tab" id="hertLoiTab" data-training-section="HERT_LOI">LOI</button></div>
+    <div class="training-directory-tabs"><button type="button" class="log-tab active" id="hertCertifiedTab" data-training-section="HERT_CERTIFIED" aria-current="page">HERT Certified <span class="tab-count" data-count="hert-certified">(0)</span></button><button type="button" class="log-tab" id="hertInstructorTab" data-training-section="HERT_INSTRUCTOR">Instructor <span class="tab-count" data-count="hert-instructor">(0)</span></button><button type="button" class="log-tab" id="hertLoiTab" data-training-section="HERT_LOI">LOI <span class="tab-count" data-count="hert-loi">(0)</span></button></div>
     <section data-training-subpanel="HERT_CERTIFIED"><div class="toolbar"><input type="text" autocomplete="off" id="hertCertifiedSearch" aria-label="Search HERT Certified members" placeholder="Search callsign or member"></div><div id="hertTrainingTable" class="table-wrap"></div></section>
     <section data-training-subpanel="HERT_INSTRUCTOR" hidden><div class="toolbar"><input type="text" autocomplete="off" id="hertInstructorSearch" aria-label="Search HERT instructors" placeholder="Search callsign or member"></div><div id="hertInstructorTable" class="table-wrap"></div></section>
     <section data-training-subpanel="HERT_LOI" hidden><div class="toolbar"><input id="hertLoiSearch" type="text" autocomplete="off" placeholder="Search member"></div><div id="hertLoiTable" class="table-wrap"></div></section>
   </section>
   <section class="training-directory-view" data-training-panel="FORT" hidden>
-    <div class="training-directory-tabs"><button type="button" class="log-tab active" id="fortTrainingSectionTab" data-training-section="FORT_TRAINING">FORT Training</button><button type="button" class="log-tab" id="fortInstructorTab" data-training-section="FORT_INSTRUCTOR">Instructor</button><button type="button" class="log-tab" id="fortLoiTab" data-training-section="FORT_LOI">LOI</button></div>
+    <div class="training-directory-tabs"><button type="button" class="log-tab active" id="fortTrainingSectionTab" data-training-section="FORT_TRAINING">FORT Training <span class="tab-count" data-count="fort-training">(0)</span></button><button type="button" class="log-tab" id="fortInstructorTab" data-training-section="FORT_INSTRUCTOR">Instructor <span class="tab-count" data-count="fort-instructor">(0)</span></button><button type="button" class="log-tab" id="fortLoiTab" data-training-section="FORT_LOI">LOI <span class="tab-count" data-count="fort-loi">(0)</span></button></div>
     <section data-training-subpanel="FORT_TRAINING"><div class="toolbar"><input type="text" autocomplete="off" id="fortTrainingSearch" aria-label="Search FORT members" placeholder="Search callsign or member"><select id="fortTrainingFilter" aria-label="Filter FORT training"><option value="all">All</option><option value="basic">Only Basic</option><option value="advanced">Only Advanced</option></select></div><div id="fortTrainingTable" class="table-wrap"></div></section>
     <section data-training-subpanel="FORT_INSTRUCTOR" hidden><div class="toolbar"><input type="text" autocomplete="off" id="fortInstructorSearch" aria-label="Search FORT instructors" placeholder="Search callsign or member"></div><div id="fortInstructorTable" class="table-wrap"></div></section>
     <section data-training-subpanel="FORT_LOI" hidden><div class="toolbar"><input id="fortLoiSearch" type="text" autocomplete="off" placeholder="Search member"></div><div id="fortLoiTable" class="table-wrap"></div></section>
@@ -426,7 +426,7 @@
         <div>
 
             <h2>
-                Eligible for Promotion
+                Eligible for Promotion <span class="tab-count" data-count="eligible">(0)</span>
             </h2>
 
 
@@ -462,8 +462,8 @@
 <section id="doNotPromote" class="panel">
     <div class="section-head"><div><h2>Do Not Promote/Terminate</h2></div><button type="button" class="list-refresh" id="refreshDoNotPromoteBtn" aria-label="Refresh Do Not Promote/Terminate lists" title="Refresh Do Not Promote/Terminate lists"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
     <div class="log-tabs" role="tablist" aria-label="Do Not Promote or Do Not Terminate list">
-        <button type="button" class="log-tab active" data-dnp-view="promote" aria-current="page">Do Not Promote</button>
-        <button type="button" class="log-tab" data-dnp-view="terminate">Do Not Terminate</button>
+        <button type="button" class="log-tab active" data-dnp-view="promote" aria-current="page">Do Not Promote <span class="tab-count" data-count="dnp-promote">(0)</span></button>
+        <button type="button" class="log-tab" data-dnp-view="terminate">Do Not Terminate <span class="tab-count" data-count="dnp-terminate">(0)</span></button>
     </div>
     <div data-dnp-panel="promote">
         <div class="list-filter-row"><select id="doNotPromoteRankFilter" aria-label="Filter by rank"><option value="all">All ranks</option></select></div>
@@ -812,7 +812,7 @@
         <button type="button" class="log-tab leader-view-tab" data-leader-view="pending">
             Requests <span id="pendingLeaderCount">0</span>
         </button>
-        <button type="button" class="log-tab leader-view-tab active" data-leader-view="all">All Members</button>
+        <button type="button" class="log-tab leader-view-tab active" data-leader-view="all">All Members <span class="tab-count" data-count="all-members">(0)</span></button>
         <button type="button" class="log-tab leader-view-tab" data-leader-view="audit">History</button>
     </div>
 
@@ -892,7 +892,7 @@
 <script src="/static/notifications.js?v=ops-20261021-6"></script>
 <script src="/static/rank-badges.js?v=ops-20261021-6"></script>
 <script src="/static/account-settings.js?v=ops-20261021-6"></script>
-<script src="/static/app.js?v=ops-20261022-5"></script>
+<script src="/static/app.js?v=ops-20261022-6"></script>
 <script src="/static/sidebar.js?v=ops-20261021-6"></script>
 <script src="/static/mobile-popovers.js?v=ops-20261021-6"></script>
 

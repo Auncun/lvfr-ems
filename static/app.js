@@ -1225,6 +1225,13 @@ function renderTrainingDirectory(members = allMembersCache || []) {
         return allowed ? `<div class="training-header-actions"><button type="button" class="primary" data-training-open data-group="${group}" data-field="${field}" data-skill="${skill}" data-remove="false">Add</button><button type="button" class="danger" data-training-open data-group="${group}" data-field="${field}" data-skill="${skill}" data-remove="true">Remove</button></div>` : "";
     };
     const fortFilter = $("#fortTrainingFilter")?.value || "all";
+    // Tab counts show the full size of each list, not the search result.
+    const countOf = predicate => members.filter(predicate).length;
+    setTabCount("hert-certified", countOf(member => has(member.has_hert)));
+    setTabCount("hert-instructor", countOf(member => instructorHas(member, "HERT")));
+    setTabCount("fort-training", countOf(member => fortTrainingMatches(member, "all")));
+    setTabCount("fort-instructor", countOf(member => instructorHas(member, "FORT")));
+    setTabCount("all-members", members.length);
     const render = (type, mode, searchId, tableId) => {
         const container = $(tableId);
         if (!container) return;
@@ -1325,6 +1332,8 @@ function viewRanksEmpty() {
 }
 
 function renderLoiLists() {
+    setTabCount("hert-loi", loiLists.hert.length);
+    setTabCount("fort-loi", loiLists.fort.length);
     const canManage = currentUserHasPermission("loi_manage");
     const memberByName = new Map((allMembersCache || []).map(member => [String(member.name || "").trim().toLocaleLowerCase(), member]));
     [["HERT", "hert", "#hertLoiTable", "#hertLoiSearch"], ["FORT", "fort", "#fortLoiTable", "#fortLoiSearch"]].forEach(([type,key,selector,searchSelector]) => {
@@ -1717,6 +1726,7 @@ function calculateMemberEligibility(member) {
 }
 
 function renderEligibleRows(loadedRows) {
+        setTabCount("eligible", loadedRows.length);
         const rankFilter = $("#eligibleRankFilter")?.value || "all";
         const rows = loadedRows.filter(m => {
             const rank = String(m.rank || "").trim().toLowerCase();
@@ -4447,6 +4457,11 @@ function askText(message, initial = "") {
     });
 }
 
+// Shows the full size of a list in its tab or heading, e.g. "(8)".
+function setTabCount(key, value) {
+    document.querySelectorAll(`[data-count="${key}"]`).forEach(el => { el.textContent = `(${value})`; });
+}
+
 // A row's action button can keep an old callsign after a callsign change, so read the callsign shown on screen.
 function currentCallsignFor(control, fallback) {
     const row = control.closest("tr");
@@ -5594,6 +5609,8 @@ async function loadDoNotPromote() {
 }
 
 function renderDoNotPromote() {
+    setTabCount("dnp-promote", doNotPromoteRows.length);
+    setTabCount("dnp-terminate", doNotTerminateRows.length);
     const container = $("#doNotPromoteTable");
     if (!container) return;
     const rankSelect = $("#doNotPromoteRankFilter");
@@ -5802,6 +5819,8 @@ async function loadDoNotTerminate() {
 }
 
 function renderDoNotTerminate() {
+    setTabCount("dnp-promote", doNotPromoteRows.length);
+    setTabCount("dnp-terminate", doNotTerminateRows.length);
     const container = $("#doNotTerminateTable");
     if (!container) return;
     const rankSelect = $("#doNotTerminateRankFilter");
