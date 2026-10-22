@@ -265,16 +265,6 @@
     </button>
 
 
-    <button
-        id="leadersTab"
-        data-tab="leaders"
-        class="tab"
-        style="display:none"
-    >
-        Supervisors
-    </button>
-
-
 </nav>
 
 
@@ -803,51 +793,6 @@
      ACCOUNT MANAGEMENT
      ========================================================= -->
 
-<section
-    id="leaders"
-    class="panel"
->
-    <div class="section-head">
-        <div>
-            <h2>Supervisors</h2>
-        </div>
-        <button type="button" class="list-refresh" id="refreshLeadersBtn" aria-label="Refresh supervisors" title="Refresh supervisors"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button>
-    </div>
-
-    <div class="log-tabs">
-        <button type="button" class="log-tab leader-view-tab" data-leader-view="pending">
-            Requests <span id="pendingLeaderCount">0</span>
-        </button>
-        <button type="button" class="log-tab leader-view-tab active" data-leader-view="all">All Members <span class="tab-count" data-count="all-members">(0)</span></button>
-        <button type="button" class="log-tab leader-view-tab" data-leader-view="audit">History</button>
-    </div>
-
-    <div id="pendingLeadersView" style="display:none">
-        <div id="pendingLeadersTable" class="table-wrap"></div>
-    </div>
-
-    <div id="allLeadersView">
-        <p id="onlineAccountCount" class="online-account-count" aria-live="polite">Online now: —</p>
-        <div class="log-filters leader-role-filter">
-            <label for="leaderRoleFilter">Role</label>
-            <select id="leaderRoleFilter" aria-label="Filter Supervisors by role">
-                <option value="all">All roles</option>
-                <option value="leader">Leader</option>
-                <option value="member">Member</option>
-                <option value="commander">Commander</option>
-                <option value="admin">Operation</option>
-            </select>
-        </div>
-        <div id="allLeadersTable" class="table-wrap"></div>
-    </div>
-
-    <div id="leaderAuditView" style="display:none">
-        <div id="leaderAuditTable" class="table-wrap"></div>
-    </div>
-
-</section>
-
-
 </main>
 
 <!-- =========================================================
@@ -898,7 +843,7 @@
 <script src="/static/notifications.js?v=ops-20261021-6"></script>
 <script src="/static/rank-badges.js?v=ops-20261021-6"></script>
 <script src="/static/account-settings.js?v=ops-20261021-6"></script>
-<script src="/static/app.js?v=ops-20261022-9"></script>
+<script src="/static/app.js?v=ops-20261022-10"></script>
 <script src="/static/sidebar.js?v=ops-20261021-6"></script>
 <script src="/static/mobile-popovers.js?v=ops-20261021-6"></script>
 

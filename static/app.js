@@ -2004,6 +2004,7 @@ async function refreshOnlineCount() {
 
 
 async function loadLeaders() {
+    if (!$("#leaders") && !$("#allLeadersTable")) return; // Supervisors section was removed from the page
     const pending = $("#pendingLeadersTable");
     const all = $("#allLeadersTable");
     const audit = $("#leaderAuditTable");
@@ -2046,6 +2047,7 @@ async function loadLeaders() {
 
 
 function renderLeaders() {
+    if (!$("#leaders") && !$("#allLeadersTable")) return; // Supervisors section was removed from the page
     const pending = $("#pendingLeadersTable");
     const pendingCount = $("#pendingLeaderCount");
     const approvedRows = Array.isArray(leaderRows.approved) ? leaderRows.approved : [];
