@@ -940,7 +940,7 @@ async function syncStatus() {
         }
 
         syncStatusElement.textContent = s.synced_at
-            ? `Roster: ${s.members} · ${new Date(s.synced_at).toLocaleString()}`
+            ? `Roster: ${s.members} · ${window.lvfrDateOnly ? window.lvfrDateOnly(s.synced_at) : new Date(s.synced_at).toLocaleDateString()}`
             : `Roster: ${s.members} · Initial sync pending`;
         syncStatusElement.title = s.synced_at
             ? `Roster snapshot: ${s.synced_at} | ${s.members} members`
@@ -2144,7 +2144,7 @@ function renderLeaders() {
                         <td>${esc(row.name || row.display_name)}</td>
                         <td>${esc(row.action)}</td>
                         <td>${esc(row.actor_name)}</td>
-                        <td>${esc(row.created_at)}</td>
+                        <td>${esc(window.lvfrDateOnly ? window.lvfrDateOnly(row.created_at) : row.created_at)}</td>
                     </tr>
                 `).join("")}</tbody>
             </table>
@@ -3147,7 +3147,7 @@ function renderMembersLog() {
                 <thead><tr><th>Date</th><th>Callsign</th><th>Member</th><th>Type</th><th>Action</th><th>Changed By</th></tr></thead>
                 <tbody>${rows.map(r => `
                     <tr>
-                        <td>${esc(r.log_date || r.created_at || "—")}</td>
+                        <td>${esc(window.lvfrDateOnly ? window.lvfrDateOnly(r.log_date || r.created_at) || "—" : (r.log_date || r.created_at || "—"))}</td>
                         <td>${esc(r.callsign)}</td>
                         <td>${esc(r.member_name)}</td>
                         <td>${esc(r.instructor_type)}</td>

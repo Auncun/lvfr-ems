@@ -159,7 +159,7 @@ function renderAudit() {
   const rows = (overview.audit || []).filter(entry => !query || [entry.created_at, entry.name, entry.callsign, entry.action, entry.actor_name]
     .join(' ').toLocaleLowerCase().includes(query));
   auditRows.innerHTML = rows.length ? rows.map(entry => `
-    <tr><td data-label="Date">${esc(entry.created_at || '—')}</td><td data-label="Account">${esc(entry.name || 'N/A')}${entry.callsign ? ` (${esc(entry.callsign)})` : ''}</td>
+    <tr><td data-label="Date">${esc(window.lvfrDateOnly ? window.lvfrDateOnly(entry.created_at) || '—' : entry.created_at || '—')}</td><td data-label="Account">${esc(entry.name || 'N/A')}${entry.callsign ? ` (${esc(entry.callsign)})` : ''}</td>
       <td data-label="Action">${esc(String(entry.action || '—').replace(/\bAdmin\b/g, 'Operation'))}</td><td data-label="By">${esc(String(entry.actor_name || '—').replace(/\bWeb Admin\b/g, 'Web Operation'))}</td></tr>`).join('')
     : `<tr><td colspan="4">${query ? 'No matching history.' : 'No account history yet.'}</td></tr>`;
 }

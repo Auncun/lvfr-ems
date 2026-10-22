@@ -34,7 +34,7 @@ function renderPortalNotifications(items = []) {
     <button type="button" class="portal-notification ${Number(item.is_read) ? '' : 'unread'}" data-notification-id="${Number(item.id)}">
       <strong>${escapePortalText(item.title || 'Notification')}</strong>
       <span>${escapePortalText(item.message || '')}</span>
-      <small>${escapePortalText(item.created_at || '')}</small>
+      <small>${escapePortalText(window.lvfrDateOnly ? window.lvfrDateOnly(item.created_at) : String(item.created_at || '').split('T')[0])}</small>
     </button>`).join('') : '<p>No notifications.</p>';
   notificationList.querySelectorAll('[data-notification-id]').forEach(button => {
     button.addEventListener('click', async () => {

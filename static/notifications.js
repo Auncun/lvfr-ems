@@ -9,6 +9,7 @@
 
   const accountId = () => String(window.lvfrCachedUser?.()?.account_id || window.lvfrCachedUser?.()?.id || '');
   const cacheKey = () => `lvfr.portal.notifications.v2:${accountId()}`;
+  const dateOnly = value => (window.lvfrDateOnly ? window.lvfrDateOnly(value) : String(value || '').split('T')[0]);
   const notify = message => (typeof window.toast === 'function' ? window.toast(message) : console.warn(message));
   const panel = () => $('notificationPanel');
   const bellButton = () => $('notificationButton');
@@ -78,7 +79,7 @@
       <button type="button" class="notification-item ${Number(item.is_read) ? '' : 'unread'}" data-notification-id="${Number(item.id)}">
         <strong>${esc(item.title)}</strong>
         <p>${esc(item.message)}</p>
-        <small>${esc(item.created_at || '')}</small>
+        <small>${esc(dateOnly(item.created_at))}</small>
       </button>`).join('') : '<div class="empty">No notifications.</div>';
   }
 
@@ -190,8 +191,9 @@
     document.addEventListener('notification-prefs-loaded', render);
 
     void load();
-    setInterval(() => { if (!document.hidden) void load(); }, 60000);
+    setInterval(() => { void load(); }, 60000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) void load(); });
+    window.addEventListener('focus', () => { void load(); });
   }
 
   window.lvfrNotifications = { load, markRead, applyRead, render, find };

@@ -109,7 +109,7 @@
       const message = document.createElement('p');
       message.textContent = item.message || '';
       const date = document.createElement('small');
-      date.textContent = item.created_at || '';
+      date.textContent = window.lvfrDateOnly ? window.lvfrDateOnly(item.created_at) : String(item.created_at || '').split('T')[0];
       button.append(title, message, date);
       button.addEventListener('click', async () => {
         await fetch('/api/notifications/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [Number(item.id)] }) }).catch(() => {});
@@ -168,7 +168,7 @@
   });
   if (notificationButton) {
     void loadNotifications();
-    window.setInterval(() => { if (!document.hidden) void loadNotifications(); }, 60000);
+    window.setInterval(() => { void loadNotifications(); }, 60000);
     document.addEventListener('click', event => {
       if (event.target.closest('.notification-control')) return;
       if (notificationPanel) notificationPanel.hidden = true;
