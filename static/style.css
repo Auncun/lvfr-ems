@@ -1301,13 +1301,11 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 @media(max-width:700px){ .sync-control .command-sync-panel { right:auto; left:0 } }
 
 
-/* Phone layout: tables wrap their text instead of forcing sideways scrolling. */
+/* Phone layout: keep table rows as lines, with enough room to read each row on one or two lines. */
 @media(max-width:700px) {
-    .table-wrap,.admin-table-wrap { overflow-x:hidden; max-width:100%; }
-    table { width:100%; min-width:0; table-layout:fixed; border-collapse:collapse; }
-    th,td { white-space:normal; overflow-wrap:anywhere; word-break:break-word; padding:8px 6px; font-size:12px; line-height:1.35; vertical-align:top; }
-    th .th-action { white-space:normal; }
-    td button,td a { white-space:normal; max-width:100%; }
-    pre,code { white-space:pre-wrap; overflow-wrap:anywhere; }
-    .notification-panel,.online-users-panel,.command-sync-panel { max-width:calc(100vw - 24px); }
+    .table-wrap,.admin-table-wrap { max-width:100%; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:10px 8px; font-size:13px; line-height:1.4; vertical-align:middle; white-space:normal; overflow-wrap:anywhere; }
+    th { font-size:12px; }
+    td button,td a { white-space:nowrap; }
 }
