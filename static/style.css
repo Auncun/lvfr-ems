@@ -1299,3 +1299,15 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 .sync-control .sync-status-group { display:grid; gap:8px }
 .sync-control .sync-actions { display:flex; flex-wrap:wrap; gap:8px }
 @media(max-width:700px){ .sync-control .command-sync-panel { right:auto; left:0 } }
+
+
+/* Phone layout: tables wrap their text instead of forcing sideways scrolling. */
+@media(max-width:700px) {
+    .table-wrap,.admin-table-wrap { overflow-x:hidden; max-width:100%; }
+    table { width:100%; min-width:0; table-layout:fixed; border-collapse:collapse; }
+    th,td { white-space:normal; overflow-wrap:anywhere; word-break:break-word; padding:8px 6px; font-size:12px; line-height:1.35; vertical-align:top; }
+    th .th-action { white-space:normal; }
+    td button,td a { white-space:normal; max-width:100%; }
+    pre,code { white-space:pre-wrap; overflow-wrap:anywhere; }
+    .notification-panel,.online-users-panel,.command-sync-panel { max-width:calc(100vw - 24px); }
+}
