@@ -1310,3 +1310,12 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
     td:has(> button), td:has(> a), td:has(> .row-actions) { white-space:nowrap; }
     td > button, td > a, td > .row-actions > button, td > .row-actions > a { display:inline-block; margin:1px 2px; }
 }
+
+/* Shared confirmation card: action buttons at the bottom. */
+.confirm-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:14px; }
+.confirm-actions button { min-width:96px; }
+
+/* Confirmation card as a modal dialog: the box fills the dialog, the dim backdrop sits behind it. */
+.confirm-dialog { width:min(92vw,520px); max-height:92vh; padding:0; border:0; background:transparent; color:inherit; overflow:visible; }
+.confirm-dialog::backdrop { background:rgba(4,8,14,.72); backdrop-filter:blur(3px); }
+.confirm-dialog .promotion-box { width:100%; margin:0; }

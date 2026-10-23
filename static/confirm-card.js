@@ -1,4 +1,5 @@
 // One confirmation style for the whole app: a card that shows what will change and who made the change, then asks to confirm.
+// It opens as a modal <dialog>, so it always sits above the page and other open dialogs.
 (() => {
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -8,11 +9,11 @@
     const shownRows = [...rows];
     if (doneBy) shownRows.push(['Done by', doneBy]);
 
-    const overlay = document.createElement('div');
-    overlay.className = 'promotion-overlay confirm-overlay';
-    overlay.innerHTML = `<div class="promotion-box" role="dialog" aria-modal="true" aria-labelledby="confirmCardTitle">
+    const dialog = document.createElement('dialog');
+    dialog.className = 'confirm-dialog';
+    dialog.innerHTML = `<div class="promotion-box" role="document">
       <div class="promotion-head">
-        <h2 id="confirmCardTitle">${esc(title)}</h2>
+        <h2>${esc(title)}</h2>
         <button type="button" class="promotion-close" data-confirm-cancel aria-label="Close">×</button>
       </div>
       <div class="promotion-body">
@@ -28,18 +29,21 @@
       </div>
     </div>`;
 
-    const onKey = event => { if (event.key === 'Escape') finish(false); };
+    let answered = false;
     const finish = answer => {
-      document.removeEventListener('keydown', onKey);
-      overlay.remove();
+      if (answered) return;
+      answered = true;
+      dialog.close();
+      dialog.remove();
       resolve(answer);
     };
-    overlay.addEventListener('click', event => {
+    dialog.addEventListener('click', event => {
       if (event.target.closest('[data-confirm-ok]')) finish(true);
-      else if (event.target === overlay || event.target.closest('[data-confirm-cancel]')) finish(false);
+      else if (event.target === dialog || event.target.closest('[data-confirm-cancel]')) finish(false);
     });
-    document.addEventListener('keydown', onKey);
-    document.body.append(overlay);
-    overlay.querySelector('[data-confirm-ok]')?.focus();
+    dialog.addEventListener('cancel', event => { event.preventDefault(); finish(false); });
+    document.body.append(dialog);
+    dialog.showModal();
+    dialog.querySelector('[data-confirm-ok]')?.focus();
   });
 })();
