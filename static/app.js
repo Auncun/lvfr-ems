@@ -4429,9 +4429,11 @@ async function dateChange(cs) {
 // ============================================================
 
 async function promote(cs) {
+    const who = confirmMemberFor(cs);
+    const nextRank = await confirmNextRankFor(cs);
 
     if (
-        !(await lvfrConfirm({ title: "Promotion", subject: cs, message: "Promote this member using the normal eligibility rules?", confirmText: "Promote" }))
+        !(await lvfrConfirm({ title: "Promotion", subject: who.name || cs, rows: [["Callsign", cs], ["Current rank", who.rank], ["New rank", nextRank || "Not available"], ["New callsign", confirmNewCallsignFor(nextRank)]], message: "Promote this member using the normal eligibility rules?", confirmText: "Promote" }))
     ) {
         return;
     }
@@ -4807,9 +4809,35 @@ async function changeCS(
 // FORCE PROMOTE
 // ============================================================
 
+// The callsign a member moves to when a rank changes: the first empty slot for that rank.
+function confirmNewCallsignFor(rankName) {
+    return (config && config.available_callsigns && config.available_callsigns[rankName]) || "Not available";
+}
+
+// The next rank for a member who is eligible for normal promotion.
+async function confirmNextRankFor(cs) {
+    try {
+        const response = await api("/api/eligible");
+        const list = Array.isArray(response) ? response : (response?.rows || response?.members || []);
+        const key = String(cs || "").trim().toUpperCase();
+        const match = list.find(row => String(row.callsign || "").trim().toUpperCase() === key);
+        return match?.next_rank || "";
+    } catch (error) {
+        return "";
+    }
+}
+
+// Looks up the member shown on a confirmation card by callsign.
+function confirmMemberFor(cs) {
+    const key = String(cs || "").trim().toUpperCase();
+    const member = (Array.isArray(allMembersCache) ? allMembersCache : []).find(m => String(m.callsign || "").trim().toUpperCase() === key) || {};
+    return { name: member.name || "", rank: member.rank || "" };
+}
+
 async function forcePromote(cs) {
     const pendingRank = $("#newrank")?.value || "";
-    if (!(await lvfrConfirm({ title: "Force Promotion", subject: cs, rows: [["Callsign", cs], ["New rank", pendingRank]], message: "Force this member to the selected rank? The normal eligibility rules are skipped.", confirmText: "Force Promote", danger: true }))) return;
+    const who = confirmMemberFor(cs);
+    if (!(await lvfrConfirm({ title: "Force Promotion", subject: who.name || cs, rows: [["Callsign", cs], ["Current rank", who.rank], ["New rank", pendingRank], ["New callsign", confirmNewCallsignFor(pendingRank)]], message: "Force this member to the selected rank? The normal eligibility rules are skipped.", confirmText: "Force Promote", danger: true }))) return;
 
     try {
 
@@ -4870,7 +4898,8 @@ async function forcePromote(cs) {
 
 async function demote(cs) {
     const pendingRank = $("#newrank")?.value || "";
-    if (!(await lvfrConfirm({ title: "Demotion", subject: cs, rows: [["Callsign", cs], ["New rank", pendingRank]], message: "Demote this member to the selected rank?", confirmText: "Demote", danger: true }))) return;
+    const who = confirmMemberFor(cs);
+    if (!(await lvfrConfirm({ title: "Demotion", subject: who.name || cs, rows: [["Callsign", cs], ["Current rank", who.rank], ["New rank", pendingRank], ["New callsign", confirmNewCallsignFor(pendingRank)]], message: "Demote this member to the selected rank?", confirmText: "Demote", danger: true }))) return;
 
     try {
 
