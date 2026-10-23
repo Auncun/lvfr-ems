@@ -1,7 +1,72 @@
-// Fallback if confirm-card.js did not load: keeps the actions working with the browser's own confirmation.
-if (typeof window.lvfrConfirm !== "function") {
-  window.lvfrConfirm = async (options = {}) => window.confirm([options.title, options.message].filter(Boolean).join("\n\n"));
-}
+// Shared confirmation card. It carries its own styles, so it looks the same on every page.
+(() => {
+  if (!document.getElementById('lvfr-confirm-style')) {
+    const style = document.createElement('style');
+    style.id = 'lvfr-confirm-style';
+    style.textContent = `
+      .lvfr-confirm-dialog { width:min(92vw,520px); max-height:92vh; padding:0; border:0; background:transparent; color:#f3f6fa; overflow:visible; }
+      .lvfr-confirm-dialog::backdrop { background:rgba(4,8,14,.72); backdrop-filter:blur(3px); }
+      .lvfr-confirm-box { background:#111720; border:1px solid #303945; border-radius:14px; padding:18px; box-shadow:0 18px 50px #000a; }
+      .lvfr-confirm-head { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; }
+      .lvfr-confirm-head h2 { margin:0; font-size:18px; }
+      .lvfr-confirm-close { background:transparent; border:0; color:#9aa4b2; font-size:26px; line-height:1; cursor:pointer; padding:0 4px; }
+      .lvfr-confirm-box h3 { margin:0 0 10px; font-size:16px; }
+      .lvfr-confirm-table { width:100%; border-collapse:collapse; margin:0 0 12px; }
+      .lvfr-confirm-table th, .lvfr-confirm-table td { text-align:left; padding:7px 6px; border-bottom:1px solid #1d2630; font-size:14px; vertical-align:top; }
+      .lvfr-confirm-table th { width:38%; color:#8a95a5; font-size:12px; font-weight:600; text-transform:uppercase; }
+      .lvfr-confirm-table td { color:#e6edf3; font-weight:600; overflow-wrap:anywhere; }
+      .lvfr-confirm-note { margin:0; color:#c9d1d9; font-size:14px; line-height:1.5; }
+      .lvfr-confirm-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:16px; }
+      .lvfr-confirm-actions button { min-width:96px; padding:9px 14px; border-radius:9px; border:1px solid #374454; background:#1b2430; color:#f3f6fa; font:inherit; cursor:pointer; }
+      .lvfr-confirm-actions .lvfr-ok { background:#1f6feb; border-color:#1f6feb; }
+      .lvfr-confirm-actions .lvfr-ok.danger { background:#da3633; border-color:#da3633; }
+    `;
+    document.head.append(style);
+  }
+
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  window.lvfrConfirm = ({ title = 'Confirmation', subject = '', rows = [], message = '', confirmText = 'Confirm', cancelText = 'Cancel', danger = false } = {}) => new Promise(resolve => {
+    const user = window.lvfrCachedUser?.() || {};
+    const doneBy = user.name || user.display_name || user.callsign || '';
+    const shownRows = [...rows];
+    if (doneBy) shownRows.push(['Done by', doneBy]);
+
+    const dialog = document.createElement('dialog');
+    dialog.className = 'lvfr-confirm-dialog';
+    dialog.innerHTML = `<div class="lvfr-confirm-box" role="document">
+      <div class="lvfr-confirm-head">
+        <h2>${esc(title)}</h2>
+        <button type="button" class="lvfr-confirm-close" data-confirm-cancel aria-label="Close">&times;</button>
+      </div>
+      ${subject ? `<h3>${esc(subject)}</h3>` : ''}
+      ${shownRows.length ? `<table class="lvfr-confirm-table">${shownRows.map(([label, value]) => `<tr><th>${esc(label)}</th><td>${esc(value)}</td></tr>`).join('')}</table>` : ''}
+      ${message ? `<p class="lvfr-confirm-note">${esc(message)}</p>` : ''}
+      <div class="lvfr-confirm-actions">
+        <button type="button" data-confirm-cancel>${esc(cancelText)}</button>
+        <button type="button" class="lvfr-ok${danger ? ' danger' : ''}" data-confirm-ok>${esc(confirmText)}</button>
+      </div>
+    </div>`;
+
+    let answered = false;
+    const finish = answer => {
+      if (answered) return;
+      answered = true;
+      dialog.close();
+      dialog.remove();
+      resolve(answer);
+    };
+    dialog.addEventListener('click', event => {
+      if (event.target.closest('[data-confirm-ok]')) finish(true);
+      else if (event.target === dialog || event.target.closest('[data-confirm-cancel]')) finish(false);
+    });
+    dialog.addEventListener('cancel', event => { event.preventDefault(); finish(false); });
+    document.body.append(dialog);
+    dialog.showModal();
+    dialog.querySelector('[data-confirm-ok]')?.focus();
+  });
+})();
+
 const $ = s => document.querySelector(s);
 
 let config = {};
