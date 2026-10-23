@@ -4433,7 +4433,7 @@ async function promote(cs) {
     const nextRank = await confirmNextRankFor(cs);
 
     if (
-        !(await lvfrConfirm({ title: "Promotion", subject: who.name || cs, rows: [["Callsign", cs], ["Current rank", who.rank], ["New rank", nextRank || "Not available"], ["New callsign", confirmNewCallsignFor(nextRank)]], message: "Promote this member using the normal eligibility rules?", confirmText: "Promote" }))
+        !(await lvfrConfirm({ title: "Promotion", subject: [cs, who.name].filter(Boolean).join(" "), rows: [["Rank", `${who.rank || "—"} → ${nextRank || "Not available"}`], ["Callsign", `${cs} → ${confirmNewCallsignFor(nextRank)}`]], message: "Promote this member using the normal eligibility rules?", confirmText: "Promote" }))
     ) {
         return;
     }
@@ -4837,7 +4837,7 @@ function confirmMemberFor(cs) {
 async function forcePromote(cs) {
     const pendingRank = $("#newrank")?.value || "";
     const who = confirmMemberFor(cs);
-    if (!(await lvfrConfirm({ title: "Force Promotion", subject: who.name || cs, rows: [["Callsign", cs], ["Current rank", who.rank], ["New rank", pendingRank], ["New callsign", confirmNewCallsignFor(pendingRank)]], message: "Force this member to the selected rank? The normal eligibility rules are skipped.", confirmText: "Force Promote", danger: true }))) return;
+    if (!(await lvfrConfirm({ title: "Force Promotion", subject: [cs, who.name].filter(Boolean).join(" "), rows: [["Rank", `${who.rank || "—"} → ${pendingRank || "—"}`], ["Callsign", `${cs} → ${confirmNewCallsignFor(pendingRank)}`]], message: "Force this member to the selected rank? The normal eligibility rules are skipped.", confirmText: "Force Promote", danger: true }))) return;
 
     try {
 
@@ -4899,7 +4899,7 @@ async function forcePromote(cs) {
 async function demote(cs) {
     const pendingRank = $("#newrank")?.value || "";
     const who = confirmMemberFor(cs);
-    if (!(await lvfrConfirm({ title: "Demotion", subject: who.name || cs, rows: [["Callsign", cs], ["Current rank", who.rank], ["New rank", pendingRank], ["New callsign", confirmNewCallsignFor(pendingRank)]], message: "Demote this member to the selected rank?", confirmText: "Demote", danger: true }))) return;
+    if (!(await lvfrConfirm({ title: "Demotion", subject: [cs, who.name].filter(Boolean).join(" "), rows: [["Rank", `${who.rank || "—"} → ${pendingRank || "—"}`], ["Callsign", `${cs} → ${confirmNewCallsignFor(pendingRank)}`]], message: "Demote this member to the selected rank?", confirmText: "Demote", danger: true }))) return;
 
     try {
 
