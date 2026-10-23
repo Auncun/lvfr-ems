@@ -4668,6 +4668,7 @@ function openRankTools(cs) {
 
     if (!currentUserHasPermission("rank_manage")) {
         $("#modalContent").innerHTML = `
+        <button type="button" class="back-link" data-action="open-manage" data-callsign="${esc(cs)}">← Back to Manage</button>
             <h2>Change callsign for ${esc(cs)}</h2>
             <label>
                 New callsign
@@ -4684,6 +4685,7 @@ function openRankTools(cs) {
     const currentRank = String(currentMember?.rank || "").trim().toLowerCase();
 
     $("#modalContent").innerHTML = `
+        <button type="button" class="back-link" data-action="open-manage" data-callsign="${esc(cs)}">← Back to Manage</button>
 
         <h2>
             Rank / Callsign Tools
@@ -4771,13 +4773,30 @@ async function changeCS(
     cs,
     force = false
 ) {
-    if (!force) {
-        const pendingCallsign = $("#newcs")?.value || "";
-        if (!(await lvfrConfirm({ title: "Change Callsign", subject: cs, rows: [["Current callsign", cs], ["New callsign", pendingCallsign]], message: "Change this member's callsign?", confirmText: "Change callsign", danger: true }))) return;
-    }
-
     const newcsHint = $("#newcsHint");
     if (newcsHint) newcsHint.textContent = "";
+    const newcsInput = $("#newcs");
+    const pendingCallsign = newcsInput ? String(newcsInput.value || "").trim() : "";
+
+    if (!force) {
+        // Check the choice first. If it cannot be done, the reason shows under the field and no confirmation is asked.
+        let check;
+        try {
+            check = await api("/api/change-callsign", {
+                method: "POST",
+                body: JSON.stringify({ callsign: cs, new_callsign: pendingCallsign, force: false, dry_run: true })
+            });
+        } catch (error) {
+            if (newcsHint) newcsHint.textContent = error.message;
+            else toast(error.message);
+            return;
+        }
+        if (check?.rank_change_needed) {
+            if (!(await lvfrConfirm({ title: "Rank Change", subject: cs, rows: [["Current callsign", cs], ["New callsign", pendingCallsign]], message: "This callsign belongs to a different rank. Continue and change the member's rank too?", confirmText: "Change rank", danger: true }))) return;
+            return changeCS(cs, true);
+        }
+        if (!(await lvfrConfirm({ title: "Change Callsign", subject: cs, rows: [["Current callsign", cs], ["New callsign", pendingCallsign]], message: "Change this member's callsign?", confirmText: "Change callsign", danger: true }))) return;
+    }
 
     try {
 

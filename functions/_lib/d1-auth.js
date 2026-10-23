@@ -469,10 +469,12 @@ async function applyRosterMutationD1(db, route, data, actor) {
     const slotRank=String(slot.rank||"").trim().toLowerCase();
     if(route!=="/api/change-callsign" && slotRank!==nextRank.toLowerCase()) throw new Error("The destination Callsign does not match the selected rank.");
     if(route==="/api/change-callsign" && !admin && slotRank!==String(old.rank||"").trim().toLowerCase()) throw new Error("Supervisors may only change a Callsign while keeping the member’s current rank.");
-    if(route==="/api/change-callsign" && admin && slotRank!==String(old.rank||"").trim().toLowerCase() && !data.force) throw new Error("The Callsign belongs to a different rank. Confirm a rank change first.");
+    const rankChangeNeeded=route==="/api/change-callsign" && admin && slotRank!==String(old.rank||"").trim().toLowerCase();
+    if(route==="/api/change-callsign" && rankChangeNeeded && !data.force && !data.dry_run) throw new Error("The Callsign belongs to a different rank. Confirm a rank change first.");
     if(old.do_not_promote && (RANK_LEVEL[nextRank]||0)>(RANK_LEVEL[old.rank]||0)) throw new Error("This member is on the Do not Promote list.");
     if(route==="/api/force-promote" && (RANK_LEVEL[nextRank]||0)<=(RANK_LEVEL[old.rank]||0)) throw new Error("You can only promote to a higher rank.");
     if(route==="/api/demote" && (RANK_LEVEL[nextRank]||0)>=(RANK_LEVEL[old.rank]||0)) throw new Error("You can only demote to a lower rank.");
+    if(data.dry_run && route==="/api/change-callsign") return {ok:true, dry_run:true, rank_change_needed:rankChangeNeeded, new_callsign:nextCs};
     if(route==="/api/promote") { const elig=rankEligibility(memberFromRow(old)); if(!elig.eligible) throw new Error(elig.reason); if(!admin&&(old.rank!=="EMT"||elig.next_rank!=="AEMT")) throw new Error("Supervisors may only promote EMT members to AEMT."); }
     if(route==="/api/change-rank" && !["EMT|AEMT","AEMT|Senior Volunteer","EMT|Volunteer","Senior Volunteer|AEMT","Volunteer|EMT"].includes(old.rank+"|"+nextRank)) throw new Error("This rank change is not supported.");
     const finalRank=route==="/api/change-callsign"?(admin?slot.rank:old.rank):nextRank;
