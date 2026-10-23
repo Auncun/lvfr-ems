@@ -274,6 +274,27 @@ function compareRosterMembers(a, b) {
     return String(a.callsign || "").localeCompare(String(b.callsign || ""), undefined, { numeric: true, sensitivity: "base" });
 }
 
+// Shows a changed callsign on screen at once, in the roster and in the open lists.
+function patchCallsignOnScreen(oldCallsign, newCallsign) {
+    const oldKey = String(oldCallsign || "").trim().toUpperCase();
+    const newKey = String(newCallsign || "").trim().toUpperCase();
+    if (!oldKey || !newKey || oldKey === newKey) return;
+    if (Array.isArray(allMembersCache)) {
+        const index = allMembersCache.findIndex(member => String(member.callsign || "").trim().toUpperCase() === oldKey);
+        if (index >= 0) allMembersCache[index] = { ...allMembersCache[index], callsign: newKey };
+        allMembersCacheAt = Date.now();
+        memberListRenderKey = "";
+    }
+    document.querySelectorAll("[data-callsign]").forEach(element => {
+        if (String(element.dataset.callsign || "").trim().toUpperCase() !== oldKey) return;
+        element.dataset.callsign = newKey;
+        if (element.tagName === "BUTTON" && element.textContent.trim().toUpperCase() === oldKey) element.textContent = newKey;
+    });
+    document.querySelectorAll("#membersTable td, #inactiveTable td, #trainingOverdueTable td").forEach(cell => {
+        if (cell.textContent.trim().toUpperCase() === oldKey) cell.textContent = newKey;
+    });
+}
+
 function applyOptimisticMutation(route, payload, callsign) {
     if (route.startsWith("/api/leaders/")) {
         applyOptimisticAccountMutation(route);
@@ -330,6 +351,7 @@ function applyOptimisticMutation(route, payload, callsign) {
         updated.callsign = String(payload.new_callsign || previous.callsign).toUpperCase();
         updated.rank = rankForCallsign(updated.callsign) || previous.rank;
         updated.optimistic_from = key;
+        patchCallsignOnScreen(key, updated.callsign);
     } else if (route === "/api/terminate") {
         memberCache.delete(key);
         removeCachedMemberRow(key);
@@ -1113,6 +1135,7 @@ async function loadMembers(silent = false, forceFresh = false) {
         renderTrainingDirectory(loadedRows);
         renderTrainingActionChoices();
         renderTrainingHoursAddChoices();
+        void loadLoiLists(true);
         const profileCallsign = String(activeProfileMember?.callsign || "").trim().toUpperCase();
         if (profileCallsign && !$("#modal")?.classList.contains("hidden")) {
             const latestProfileRow = loadedRows.find(member => String(member.callsign || "").trim().toUpperCase() === profileCallsign);
