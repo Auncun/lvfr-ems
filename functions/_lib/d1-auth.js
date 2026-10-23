@@ -1661,6 +1661,8 @@ export async function handleD1(context) {
       if(instructorWrite) mutationData.callsign=decodeURIComponent(instructorWrite[1]).toUpperCase();
       const oldMember=await db.prepare("SELECT * FROM members WHERE upper(callsign)=upper(?)").bind(mutationData.callsign).first();
       const result=await applyRosterMutationD1(db,route,mutationData,user);
+      // A check only (dry run): nothing is written to D1, the logs or the Sheet.
+      if(mutationData.dry_run) return json({...result,changed:false});
       if(result.changed!==false && oldMember) await writeOperationalLog(db,oldMember,route,mutationData,result,user);
       if(oldMember) await recordActionConfirmation(db,route,mutationData,oldMember,result,user);
       // Sheets can be out of sync with D1 (for example after a manual edit or

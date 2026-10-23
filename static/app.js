@@ -4675,7 +4675,7 @@ function openRankTools(cs) {
                 <input id="newcs" value="${esc(cs)}" placeholder="New callsign">
             </label>
             <p id="newcsHint" class="field-hint" role="alert"></p>
-            <button type="button" class="primary" data-action="change-callsign" data-callsign="${esc(cs)}">Change Callsign</button>
+            <button type="button" class="primary" id="changeCallsignButton" disabled data-action="change-callsign" data-callsign="${esc(cs)}">Change Callsign</button>
         `;
         return;
     }
@@ -4711,7 +4711,7 @@ function openRankTools(cs) {
 
             <button
                 type="button"
-                data-action="change-callsign" data-callsign="${esc(cs)}"
+                id="changeCallsignButton" disabled data-action="change-callsign" data-callsign="${esc(cs)}"
             >
                 Change Callsign
             </button>
@@ -4781,6 +4781,7 @@ async function changeCS(
     if (!force) {
         // Check the choice first. If it cannot be done, the reason shows under the field and no confirmation is asked.
         let check;
+        if (newcsHint) newcsHint.textContent = "Checking…";
         try {
             check = await api("/api/change-callsign", {
                 method: "POST",
@@ -4791,6 +4792,7 @@ async function changeCS(
             else toast(error.message);
             return;
         }
+        if (newcsHint) newcsHint.textContent = "";
         if (check?.rank_change_needed) {
             if (!(await lvfrConfirm({ title: "Rank Change", subject: cs, rows: [["Current callsign", cs], ["New callsign", pendingCallsign]], message: "This callsign belongs to a different rank. Continue and change the member's rank too?", confirmText: "Change rank", danger: true }))) return;
             return changeCS(cs, true);
@@ -4883,6 +4885,20 @@ async function confirmNextRankFor(cs) {
         return "";
     }
 }
+
+// Change Callsign stays disabled until the new callsign is different from the current one.
+function updateChangeCallsignButton() {
+    const input = $("#newcs");
+    const button = $("#changeCallsignButton");
+    if (!input || !button) return;
+    const current = String(button.dataset.callsign || "").trim().toUpperCase();
+    const next = String(input.value || "").trim().toUpperCase();
+    button.disabled = !next || next === current;
+}
+
+document.addEventListener("input", event => {
+    if (event.target?.id === "newcs") updateChangeCallsignButton();
+});
 
 // In Rank / Callsign Tools: Demote is only for a lower rank, Force Promote only for a higher rank.
 function updateRankToolButtons() {
