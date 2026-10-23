@@ -14,7 +14,7 @@
     dialog.innerHTML = `<div class="promotion-box" role="document">
       <div class="promotion-head">
         <h2>${esc(title)}</h2>
-        <button type="button" class="promotion-close" data-confirm-cancel aria-label="Close">×</button>
+        <button type="button" class="promotion-close" data-confirm-cancel aria-label="Close">&times;</button>
       </div>
       <div class="promotion-body">
         <section class="promotion-item">
