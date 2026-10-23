@@ -153,7 +153,7 @@ function isBackgroundMutationRequest(url, options) {
     return new Set([
         "/api/activity", "/api/note", "/api/date", "/api/training", "/api/exam",
         "/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank",
-        "/api/change-callsign", "/api/terminate"
+        "/api/terminate"
     ]).has(path) || /^\/api\/member\/[^/]+\/instructor$/.test(path) ||
         /^\/api\/leaders\/[^/]+(?:\/(?:allow|deny|admin|demote|member|leader|deactivate|reactivate))?$/.test(path);
 }
