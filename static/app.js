@@ -1429,7 +1429,7 @@ document.addEventListener("click", async event => {
             if (!entered || !Number.isFinite(Number(entered)) || Number(entered) < 0 || Number(entered) > 100) return toast("Enter a FORT LOI percentage from 0 to 100.");
             extra.test_percent = Number(entered);
         }
-    } else if (!window.confirm(`Mark ${button.dataset.loiName}'s ${type} LOI as ${action}? This removes the entry from D1 and syncs the Sheet.`)) return;
+    } else if (!(await lvfrConfirm({ title: "LOI Change", subject: button.dataset.loiName, rows: [["Type", `${type} LOI`], ["Action", action]], message: "This removes the entry from D1 and syncs the Sheet.", confirmText: action, danger: true }))) return;
     await saveLoiChange(button, action, extra);
 });
 // Shows the change in D1 at once; the Sheet mirror runs in the background on the server.
@@ -2304,7 +2304,7 @@ async function resolveLeader(discordId, decision) {
 
 
 async function removeLeader(discordId) {
-    if (!confirm("Permanently delete this account? This cannot be undone.")) return;
+    if (!(await lvfrConfirm({ title: "Delete Account", message: "Permanently delete this account? This cannot be undone.", confirmText: "Delete", danger: true }))) return;
     try {
         await api(`/api/leaders/${encodeURIComponent(discordId)}`, { method: "DELETE" });
         toast("Deletion queued; saving in background.");
@@ -2317,7 +2317,7 @@ async function removeLeader(discordId) {
 
 async function setAccountStatus(discordId, action) {
     const activating = action === "reactivate";
-    if (!activating && !confirm("Deactivate this account? The account and its history will be kept.")) return;
+    if (!activating && !(await lvfrConfirm({ title: "Deactivate Account", message: "The account and its history will be kept.", confirmText: "Deactivate", danger: true }))) return;
     try {
         await api(`/api/leaders/${encodeURIComponent(discordId)}/${action}`, { method: "POST" });
         toast(activating ? "Reactivated" : "Deactivation queued; saving in background.");
@@ -2330,7 +2330,7 @@ async function setAccountStatus(discordId, action) {
 
 
 async function setLeaderAdmin(discordId, makeAdmin) {
-        if (!makeAdmin && !confirm("Change this account to the next lower role?")) return;
+        if (!makeAdmin && !(await lvfrConfirm({ title: "Role Change", message: "Change this account to the next lower role?", confirmText: "Change role", danger: true }))) return;
     try {
         await api(`/api/leaders/${encodeURIComponent(discordId)}/${makeAdmin ? "admin" : "demote"}`, { method: "POST" });
         toast(makeAdmin ? "Operation role queued; saving in background." : "Role change queued; saving in background.");
@@ -2354,7 +2354,7 @@ async function setLeaderCommander(accountId) {
 
 async function setMemberRole(discordId, role) {
     const makeMember = role === "member";
-    if (makeMember && !confirm("Limit this account to Watch Command access?")) return;
+    if (makeMember && !(await lvfrConfirm({ title: "Role Change", message: "Limit this account to Watch Command access.", confirmText: "Limit access", danger: true }))) return;
     try {
         await api(`/api/leaders/${encodeURIComponent(discordId)}/${makeMember ? "member" : "leader"}`, { method: "POST" });
         toast(makeMember ? "Member role queued; access will be limited to Watch Command." : "Supervisor role queued.");
@@ -4374,9 +4374,7 @@ async function dateChange(cs) {
 async function promote(cs) {
 
     if (
-        !confirm(
-            "Promote this member using the normal eligibility rules?"
-        )
+        !(await lvfrConfirm({ title: "Promotion", subject: cs, message: "Promote this member using the normal eligibility rules?", confirmText: "Promote" }))
     ) {
         return;
     }
@@ -4734,9 +4732,7 @@ async function changeCS(
         if (isBackgroundPending(e)) return;
 
         const selectedCallsignRank = rankForCallsign(newcsElement?.value || "");
-        if (currentUserIsAdmin && selectedCallsignRank && /belongs to a different rank/i.test(e.message || "") && confirm(
-            `This callsign corresponds to ${selectedCallsignRank}. Continue and change the member's rank too?`
-        )) return changeCS(cs, true);
+        if (currentUserIsAdmin && selectedCallsignRank && /belongs to a different rank/i.test(e.message || "") && await lvfrConfirm({ title: "Rank Change", subject: cs, rows: [["Callsign", cs], ["Rank", selectedCallsignRank]], message: "This callsign belongs to a different rank. Continue and change the member's rank too?", confirmText: "Change rank", danger: true })) return changeCS(cs, true);
 
 
         toast(
@@ -5127,7 +5123,7 @@ if (syncButton) {
 // Log sync: copies operational logs from the Sheet into D1. Only for operation rank, and separate from sync.
 const logSyncButton = $("#logSyncBtn");
 logSyncButton?.addEventListener("click", async () => {
-    if (!window.confirm("Log sync copies logs from the Google Sheet into D1. Continue?")) return;
+    if (!(await lvfrConfirm({ title: "Log Sync", message: "Log sync copies logs from the Google Sheet into D1.", confirmText: "Run Log Sync" }))) return;
     logSyncButton.disabled = true;
     logSyncButton.textContent = "Syncing logs...";
     try {
@@ -5143,7 +5139,7 @@ logSyncButton?.addEventListener("click", async () => {
 });
 const fullSyncButton = $("#fullSyncBtn");
 fullSyncButton?.addEventListener("click", async () => {
-    if (!currentUserCanFullSync || !window.confirm("Full Sync will replace the D1 roster and Callsign slots from the current Google Sheet. Continue?")) return;
+    if (!currentUserCanFullSync || !(await lvfrConfirm({ title: "Full Sync", message: "Full Sync will replace the D1 roster and Callsign slots from the current Google Sheet.", confirmText: "Run Full Sync", danger: true }))) return;
     fullSyncButton.disabled = true;
     fullSyncButton.textContent = "Full Syncing...";
     try {
@@ -5454,7 +5450,7 @@ const membersLogDelete = $("#membersLogDeleteBtn");
 async function deleteCurrentD1Log(button) {
     if (!currentUserHasPermission("logs_delete_d1") || !currentLogType) return;
     const kind = currentLogType;
-    if (!window.confirm(`Delete all ${kind} entries from the website's D1 log? Google Sheets will remain unchanged.`)) return;
+    if (!(await lvfrConfirm({ title: "Delete Logs", subject: kind, message: "Delete all entries from the website's D1 log. Google Sheets will remain unchanged.", confirmText: "Delete", danger: true }))) return;
     button.disabled = true;
     try {
         await api("/api/members-log/clear", { method: "POST", body: JSON.stringify({ log_type: kind }) });
@@ -5659,7 +5655,7 @@ function renderDoNotPromote() {
 
 async function setMemberPromotionBlock(callsign, blocked) {
     if (!currentUserHasPermission("do_not_promote_manage")) return toast("You do not have permission to edit this list.");
-    if (blocked && !confirm(`Add ${callsign} to Do not Promote? They will be excluded from Eligible and cannot be promoted.`)) return;
+    if (blocked && !(await lvfrConfirm({ title: "Do Not Promote", subject: callsign, message: "They will be excluded from Eligible and cannot be promoted.", confirmText: "Add to list", danger: true }))) return;
     const key = String(callsign).trim().toUpperCase();
     const rosterMember = memberCache.get(key) || allMembersCache?.find(member => String(member.callsign || "").toUpperCase() === key);
     const oldBlocked = Boolean(rosterMember?.do_not_promote);
@@ -5869,7 +5865,7 @@ function renderDoNotTerminate() {
 
 async function setMemberTerminationBlock(callsign, blocked) {
     if (!currentUserHasPermission("do_not_promote_manage")) return toast("You do not have permission to edit this list.");
-    if (blocked && !confirm(`Add ${callsign} to Do Not Terminate? Terminate will be disabled for this member.`)) return;
+    if (blocked && !(await lvfrConfirm({ title: "Do Not Terminate", subject: callsign, message: "Terminate will be disabled for this member.", confirmText: "Add to list", danger: true }))) return;
     const key = String(callsign).trim().toUpperCase();
     const rosterMember = memberCache.get(key) || allMembersCache?.find(member => String(member.callsign || "").toUpperCase() === key);
     const oldBlocked = Boolean(rosterMember?.do_not_terminate);

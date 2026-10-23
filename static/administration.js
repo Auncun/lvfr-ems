@@ -65,7 +65,7 @@ function allAccounts() {
 }
 const canClearAllNotifications = () => currentUser?.role === 'admin' || currentUser?.permissions?.notifications_clear_all === true;
 const clearAllNotificationsHandler = async event => {
-  if (!window.confirm('Clear notifications for everyone? They will be deleted from D1 and Google Sheets.')) return;
+  if (!(await lvfrConfirm({ title: "Clear Notifications", message: "Notifications for everyone will be deleted from D1 and Google Sheets.", confirmText: "Clear", danger: true }))) return;
   const button = event.currentTarget;
   button.disabled = true;
   try {
@@ -175,7 +175,7 @@ document.querySelector('#auditSearch')?.addEventListener('input', renderAudit);
 document.querySelector('#clearAccountAuditBtn')?.addEventListener('click', async event => {
   const button = event.currentTarget;
   if (!currentUser?.is_admin) return;
-  if (!window.confirm("Clear the account audit from D1 and the website? Google Sheets will remain unchanged.")) return;
+  if (!(await lvfrConfirm({ title: "Clear Account Audit", message: "The audit is cleared from D1 and the website. Google Sheets will remain unchanged.", confirmText: "Clear", danger: true }))) return;
   button.disabled = true;
   try {
     await api('/api/leaders/audit/clear', { method: 'POST' });
@@ -217,7 +217,7 @@ document.querySelector('#confirmFullCleaning')?.addEventListener('click', async 
   const status = document.querySelector('#fullCleaningStatus');
   if (!items.length) { status.textContent = 'Select at least one log or choose All.'; status.className = 'admin-status error'; return; }
   const description = cleanAllLogs.checked ? 'all logs and notifications' : `${items.length} selected item(s)`;
-  if (!window.confirm(`Permanently delete ${description} from D1 and Google Sheets?`)) return;
+  if (!(await lvfrConfirm({ title: "Permanent Delete", subject: description, message: "This is removed from D1 and Google Sheets and cannot be undone.", confirmText: "Delete", danger: true }))) return;
   const button = event.currentTarget;
   button.disabled = true; status.textContent = 'Cleaning selected data...'; status.className = 'admin-status';
   try {
@@ -289,7 +289,7 @@ async function performAction(button) {
     demote: account.role === 'admin' ? `Change ${accountLabel} from Operation to Commander?` : `Change ${accountLabel} from Commander to Leader?`,
     member: `Limit ${accountLabel} to Watch Command access?`,
   };
-  if (confirmations[action] && !window.confirm(confirmations[action])) return;
+  if (confirmations[action] && !(await lvfrConfirm({ title: "Account Change", subject: accountLabel, rows: [["Action", action]], message: confirmations[action], confirmText: "Confirm", danger: ["delete", "deactivate", "demote"].includes(action) }))) return;
   const paths = {
     allow: `/api/leaders/${encodeURIComponent(id)}/allow`,
     deny: `/api/leaders/${encodeURIComponent(id)}/deny`,
@@ -635,7 +635,7 @@ document.addEventListener('click', async event => {
     const all = event.target.closest('[data-clear-history]');
     if (!single && !all) return;
     const message = single ? 'Delete this log entry from D1?' : 'Delete logs from D1? This cannot be undone.';
-    if (!window.confirm(message)) return;
+    if (!(await lvfrConfirm({ title: "Delete History", message, confirmText: "Delete", danger: true }))) return;
     try {
         await api(single ? `/api/role-permissions/history/${single.dataset.deleteHistory}` : '/api/role-permissions/history', { method: 'DELETE' });
         void renderPermissionHistory(true);
@@ -865,7 +865,7 @@ document.querySelector('#rolePermissionsPanel').addEventListener('click', async 
   const remove=event.target.closest('[data-delete-role]');
   if(remove){
     const role=remove.dataset.deleteRole;
-    if(!window.confirm(`Delete the ${roleTitle(role)} rank? It must have no assigned accounts.`)) return;
+    if(!(await lvfrConfirm({ title: "Delete Rank", subject: roleTitle(role), message: "It must have no assigned accounts.", confirmText: "Delete", danger: true }))) return;
     remove.disabled=true;
     try{await api(`/api/role-permissions/${encodeURIComponent(role)}`,{method:'DELETE'});delete rolePermissionProfiles[role];permissionRoleOrder=permissionRoleOrder.filter(item=>item.role!==role);selectedPermissionRole='';renderRolePermissions();document.querySelector('#permissionStatus').textContent=`${roleTitle(role)} deleted.`;document.querySelector('#permissionStatus').className='permission-status success';}
     catch(error){document.querySelector('#permissionStatus').textContent=`Could not delete rank: ${error.message}`;document.querySelector('#permissionStatus').className='permission-status error';remove.disabled=false;}
@@ -1057,7 +1057,7 @@ document.querySelector('#individualPermissionMode')?.addEventListener('change', 
     renderIndividualPermissions();
     return;
   }
-  if (!individualPermissionTarget || !window.confirm('Restore this account to its role permissions? Its account role will stay the same.')) {
+  if (!individualPermissionTarget || !(await lvfrConfirm({ title: "Restore Permissions", message: "Restore this account to its role permissions. Its account role will stay the same.", confirmText: "Restore" }))) {
     event.currentTarget.value = 'customize';
     return;
   }
@@ -1096,7 +1096,7 @@ document.querySelector('#individualPermissionsCustomize')?.addEventListener('cli
 });
 document.querySelector('#individualPermissionsClose')?.addEventListener('click', () => { document.querySelector('#individualPermissionsDialog').hidden = true; });
 document.querySelector('#individualPermissionsReset')?.addEventListener('click', async event => {
-  if (!individualPermissionTarget || !window.confirm('Restore this account to its role permissions? Its account role will stay the same.')) return;
+  if (!individualPermissionTarget || !(await lvfrConfirm({ title: "Restore Permissions", message: "Restore this account to its role permissions. Its account role will stay the same.", confirmText: "Restore" }))) return;
   const button = event.currentTarget; button.disabled = true;
   try {
     individualPermissionState = await api(`/api/leaders/${encodeURIComponent(individualPermissionTarget.account_id)}/permissions`, {method:'POST',body:JSON.stringify({reset:true})});
