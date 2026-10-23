@@ -3627,10 +3627,19 @@ function updateManageButtons() {
         if (addButton) addButton.disabled = has;
         if (deleteButton) deleteButton.disabled = !has;
     }
+    const instructorSelect = $("#instructorType");
+    if (instructorSelect) {
+        const types = String(instructorSelect.dataset.ownedTypes || "");
+        const isInstructor = types.includes(String(instructorSelect.value || "").toUpperCase());
+        const addInstructor = $("#addInstructorButton");
+        const deleteInstructor = $("#deleteInstructorButton");
+        if (addInstructor) addInstructor.disabled = isInstructor;
+        if (deleteInstructor) deleteInstructor.disabled = !isInstructor;
+    }
 }
 
 document.addEventListener("change", event => {
-    if (event.target?.id === "activity" || event.target?.id === "training") updateManageButtons();
+    if (["activity", "training", "instructorType"].includes(event.target?.id)) updateManageButtons();
 });
 
 function openManage(cs) {
@@ -3839,14 +3848,14 @@ function openManage(cs) {
                 <div class="instructor-admin-controls">
                     <label>
                         Instructor
-                        <select id="instructorType">
+                        <select id="instructorType" data-owned-types="${esc(String(activeProfileMember?.instructor_type || "").toUpperCase())}">
                             <option value="HERT" ${String(activeProfileMember?.instructor_type || "").includes("HERT") ? "selected" : ""}>HERT</option>
                             <option value="FORT" ${String(activeProfileMember?.instructor_type || "").includes("FORT") ? "selected" : ""}>FORT</option>
                         </select>
                     </label>
                     <div class="actions">
-                        <button type="button" data-action="instructor-add" data-callsign="${esc(cs)}">Add Instructor</button>
-                        <button type="button" data-action="instructor-remove" data-callsign="${esc(cs)}">Delete Instructor</button>
+                        <button type="button" id="addInstructorButton" data-action="instructor-add" data-callsign="${esc(cs)}">Add Instructor</button>
+                        <button type="button" id="deleteInstructorButton" data-action="instructor-remove" data-callsign="${esc(cs)}">Delete Instructor</button>
                     </div>
                 </div>
             ` : ""}
