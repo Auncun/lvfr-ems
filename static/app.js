@@ -6138,3 +6138,5 @@ document.querySelectorAll("[data-dnp-view]").forEach(button => {
     button.addEventListener("click", () => setDoNotView(button.dataset.dnpView));
 });
 window.lvfrOpenNotification = openNotification;
+
+:
