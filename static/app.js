@@ -227,6 +227,8 @@ function startBackgroundMutation(url, options) {
     }).catch(error => {
         if (path.startsWith("/api/leaders/")) void loadLeaders();
         rollbackOptimisticMutation(path, callsign, rollbackMember);
+        pendingPromotions = pendingPromotions.filter(item => !item.local);
+        renderPromotionBanner();
         toast(`Save failed: ${error.message || "Network error"}. Local change was reverted. Please run Sync now to reload the correct data.`);
     });
     // Let the click handler stop waiting while fetch continues independently.
@@ -608,6 +610,10 @@ document.addEventListener('click', async event => {
     }
     const save = event.target.closest('[data-promotion-save]');
     if (!save) return;
+    if (String(save.dataset.promotionSave || '').startsWith('local-')) {
+        toast('Still saving this change. Try again in a moment.');
+        return;
+    }
     const section = save.closest('[data-promotion-id]');
     const portal = section.querySelector('[data-promotion-check="portal"]').checked;
     const discordBox = section.querySelector('[data-promotion-check="discord"]');
