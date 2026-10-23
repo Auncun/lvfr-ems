@@ -16,10 +16,7 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   window.lvfrConfirm = ({ title = 'Confirmation', subject = '', rows = [], message = '', confirmText = 'Confirm', cancelText = 'Cancel', danger = false } = {}) => new Promise(resolve => {
-    const user = window.lvfrCachedUser?.() || {};
-    const doneBy = user.name || user.display_name || user.callsign || '';
     const shownRows = [...rows];
-    if (doneBy) shownRows.push(['Done by', doneBy]);
 
     const dialog = document.createElement('dialog');
     dialog.className = 'lvfr-confirm-dialog';
@@ -507,7 +504,6 @@ function promotionDetails(item) {
             <tr><th>Name</th><td>${esc(item.name || "Unknown")}</td></tr>
             <tr><th>Callsign</th><td>${esc(item.callsign || item.new_callsign)}</td></tr>
             <tr><th>Action</th><td>${esc(item.action)}</td></tr>
-            <tr><th>Done by</th><td>${esc(item.created_by || "Unknown")}</td></tr>
         </table>`;
     }
     // Show "from → to" only when something actually changed. Termination shows the member's last value only.
@@ -523,7 +519,6 @@ function promotionDetails(item) {
             <tr><th>Rank</th><td>${change(item.old_rank, item.new_rank, "Not recorded")}</td></tr>
             <tr><th>Callsign</th><td>${change(item.old_callsign, item.new_callsign, "Not recorded")}</td></tr>
             <tr><th>Action</th><td>${esc(item.action || "Promotion")}</td></tr>
-            <tr><th>Done by</th><td>${esc(item.created_by || "Unknown")}</td></tr>
         </table>`;
 }
 function openPromotionDialog() {
