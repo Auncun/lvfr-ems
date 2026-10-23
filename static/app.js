@@ -4673,6 +4673,7 @@ function openRankTools(cs) {
                 New callsign
                 <input id="newcs" value="${esc(cs)}" placeholder="New callsign">
             </label>
+            <p id="newcsHint" class="field-hint" role="alert"></p>
             <button type="button" class="primary" data-action="change-callsign" data-callsign="${esc(cs)}">Change Callsign</button>
         `;
         return;

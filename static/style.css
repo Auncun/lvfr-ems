@@ -1327,7 +1327,7 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 .field-hint:empty { display:none; }
 /* Manage panel: same width as the member view, as tall as the screen, and more compact in height. The options stay in one column so the width does not change. */
 @media (min-width: 820px) {
-    #modal.manage-mode .modal-box { height:96vh; max-height:96vh; padding:14px 18px; }
+    #modal.manage-mode .modal-box { height:auto; max-height:96vh; padding:14px 18px; }
     #modal.manage-mode #modalContent { gap:6px; }
     #modal.manage-mode #modalContent > h2 { margin:0 0 2px; font-size:17px; }
     #modal.manage-mode #modalContent > hr { margin:2px 0; }
