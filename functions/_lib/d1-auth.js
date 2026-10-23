@@ -465,10 +465,14 @@ async function applyRosterMutationD1(db, route, data, actor) {
     }
     if(!nextCs||nextCs===old.callsign) throw new Error("No empty Callsign slot is available for " + nextRank + ". Run Sync now to refresh the available slots.");
     if(!slot) slot=await db.prepare("SELECT rank,callsign,sheet_row FROM callsign_slots WHERE upper(callsign)=?").bind(nextCs).first();
-    if(!slot) throw new Error("That Callsign is not an available roster slot. Run Sync now and try again.");
+    if(!slot) throw new Error("This callsign doesn't exist.");
+    if(route==="/api/change-callsign") {
+      const taken=await db.prepare("SELECT callsign FROM members WHERE upper(callsign)=? AND upper(callsign)<>upper(?) LIMIT 1").bind(nextCs,old.callsign).first();
+      if(taken) throw new Error("This callsign is already taken.");
+    }
     const slotRank=String(slot.rank||"").trim().toLowerCase();
     if(route!=="/api/change-callsign" && slotRank!==nextRank.toLowerCase()) throw new Error("The destination Callsign does not match the selected rank.");
-    if(route==="/api/change-callsign" && !admin && slotRank!==String(old.rank||"").trim().toLowerCase()) throw new Error("Supervisors may only change a Callsign while keeping the member’s current rank.");
+    if(route==="/api/change-callsign" && !admin && slotRank!==String(old.rank||"").trim().toLowerCase()) throw new Error("This callsign is not available for "+(String(old.rank||"").trim()||"this rank")+".");
     const rankChangeNeeded=route==="/api/change-callsign" && admin && slotRank!==String(old.rank||"").trim().toLowerCase();
     if(route==="/api/change-callsign" && rankChangeNeeded && !data.force && !data.dry_run) throw new Error("The Callsign belongs to a different rank. Confirm a rank change first.");
     if(old.do_not_promote && (RANK_LEVEL[nextRank]||0)>(RANK_LEVEL[old.rank]||0)) throw new Error("This member is on the Do not Promote list.");
