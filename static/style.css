@@ -1329,3 +1329,10 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 @media (min-width: 820px) {
     #modal.manage-mode .modal-box { height:auto; max-height:96vh; padding:14px 18px; }
 }
+
+/* Choice lists in the training dialogs: Callsign column, then Name column. */
+.training-choice-callsign { display:inline-block; min-width:96px; font-weight:700; }
+.training-choice-name { display:inline-block; min-width:0; flex:1 1 auto; }
+
+/* Manage panel: a shorter Note box. */
+#modal.manage-mode #modalContent textarea { height:56px; min-height:56px; max-height:72px; }

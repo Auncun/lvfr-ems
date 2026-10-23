@@ -16,8 +16,6 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   window.lvfrConfirm = ({ title = 'Confirmation', subject = '', rows = [], message = '', confirmText = 'Confirm', cancelText = 'Cancel', danger = false } = {}) => new Promise(resolve => {
-    const shownRows = [...rows];
-
     const dialog = document.createElement('dialog');
     dialog.className = 'lvfr-confirm-dialog';
     dialog.innerHTML = `<div class="promotion-box" role="document">
@@ -28,7 +26,7 @@
       <div class="promotion-body">
         <section class="promotion-item">
           ${subject ? `<h3>${esc(subject)}</h3>` : ''}
-          ${shownRows.length ? `<table class="promotion-table">${shownRows.map(([label, value]) => `<tr><th>${esc(label)}</th><td>${esc(value)}</td></tr>`).join('')}</table>` : ''}
+          ${rows.length ? `<table class="promotion-table">${rows.map(([label, value]) => `<tr><th>${esc(label)}</th><td>${esc(value)}</td></tr>`).join('')}</table>` : ''}
           ${message ? `<p class="promotion-note">${esc(message)}</p>` : ''}
           <div class="lvfr-confirm-actions">
             <button type="button" data-confirm-cancel>${esc(cancelText)}</button>
@@ -1428,7 +1426,7 @@ function renderLoiAddChoices() {
         ? isTrainingHeld(member.has_hert)
         : isTrainingHeld(member.has_basic_firefighting) && isTrainingHeld(member.has_advanced_firefighting);
     const members = (allMembersCache || []).filter(member => !alreadyHeld(member) && (!query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query)));
-    choices.innerHTML = members.length ? members.map(member => `<div class="training-action-choice"><span>${esc(member.name)} / ${esc(member.callsign)}</span>${loiAddType === "FORT" ? `<label>% on test <input type="number" min="0" max="100" step="any" data-loi-percent placeholder="Enter percent"></label>` : ""}<button type="button" class="primary" data-loi-add data-loi-type="${loiAddType}" data-loi-name="${esc(member.name)}" data-loi-callsign="${esc(member.callsign)}">Add</button></div>`).join("") : '<div class="empty">No members match this search.</div>';
+    choices.innerHTML = members.length ? members.map(member => `<div class="training-action-choice"><span class="training-choice-callsign">${esc(member.callsign)}</span><span class="training-choice-name">${esc(member.name)}</span>${loiAddType === "FORT" ? `<label>% on test <input type="number" min="0" max="100" step="any" data-loi-percent placeholder="Enter percent"></label>` : ""}<button type="button" class="primary" data-loi-add data-loi-type="${loiAddType}" data-loi-name="${esc(member.name)}" data-loi-callsign="${esc(member.callsign)}">Add</button></div>`).join("") : '<div class="empty">No members match this search.</div>';
 }
 document.addEventListener("click", async event => {
     const button = event.target.closest("[data-open-loi-add]");
@@ -1545,7 +1543,7 @@ function renderTrainingActionChoices() {
             if (has(value) === remove) choices.push({ member, kind: skill, label: skill === "Basic Firefighting" ? "Basic FORT" : "Advanced FORT", type: "training" });
         }
     });
-    trainingActionChoices.innerHTML = choices.length ? choices.map(choice => `<div class="training-action-choice"><span>${esc(choice.member.name)} / ${esc(choice.member.callsign)}</span><button type="button" class="${remove ? "danger" : "primary"}" data-training-action data-callsign="${esc(choice.member.callsign)}" data-kind="${esc(choice.kind)}" data-remove="${remove}" data-type="${choice.type}">${remove ? "Remove" : "Add"} ${esc(choice.label)}</button></div>`).join("") : '<div class="empty">No members match this action.</div>';
+    trainingActionChoices.innerHTML = choices.length ? choices.map(choice => `<div class="training-action-choice"><span class="training-choice-callsign">${esc(choice.member.callsign)}</span><span class="training-choice-name">${esc(choice.member.name)}</span><button type="button" class="${remove ? "danger" : "primary"}" data-training-action data-callsign="${esc(choice.member.callsign)}" data-kind="${esc(choice.kind)}" data-remove="${remove}" data-type="${choice.type}">${remove ? "Remove" : "Add"} ${esc(choice.label)}</button></div>`).join("") : '<div class="empty">No members match this action.</div>';
 }
 document.addEventListener("click", event => {
     const button = event.target.closest("[data-training-open]");
@@ -1652,8 +1650,9 @@ function renderTrainingHoursAddChoices() {
     const choices = $("#trainingHoursAddChoices");
     if (!choices) return;
     const query = String($("#trainingHoursAddSearch")?.value || "").trim().toLocaleLowerCase();
-    const members = (allMembersCache || []).filter(member => !query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query));
-    choices.innerHTML = members.length ? members.map(member => `<div class="training-action-choice"><span>${esc(member.name)} / ${esc(member.callsign)}</span><label>Training Hours <input type="text" data-training-hours-new-time placeholder="Enter hours"></label><button type="button" class="primary" data-training-hours-add data-name="${esc(member.name)}" data-callsign="${esc(member.callsign)}">Add Record</button></div>`).join("") : '<div class="empty">No members match this search.</div>';
+    const isInstructor = member => /HERT|FORT/i.test(String(member.instructor_type || ""));
+    const members = (allMembersCache || []).filter(member => isInstructor(member) && (!query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query)));
+    choices.innerHTML = members.length ? members.map(member => `<div class="training-action-choice"><span class="training-choice-callsign">${esc(member.callsign)}</span><span class="training-choice-name">${esc(member.name)}</span><label>Training Hours <input type="text" data-training-hours-new-time placeholder="Enter hours"></label><button type="button" class="primary" data-training-hours-add data-name="${esc(member.name)}" data-callsign="${esc(member.callsign)}">Add Record</button></div>`).join("") : '<div class="empty">No members match this search.</div>';
 }
 $("#trainingHoursSearch")?.addEventListener("input", renderTrainingHours);
 $("#trainingHoursAddSearch")?.addEventListener("input", renderTrainingHoursAddChoices);
@@ -4847,7 +4846,7 @@ async function changeCS(
 
 
     } catch (e) {
-        if (isBackgroundPending(e)) return;
+        if (isBackgroundPending(e)) { closeModal(); return; }
 
         const selectedCallsignRank = rankForCallsign(newcsElement?.value || "");
         if (currentUserIsAdmin && selectedCallsignRank && /belongs to a different rank/i.test(e.message || "") && await lvfrConfirm({ title: "Rank Change", subject: cs, rows: [["Callsign", cs], ["Rank", selectedCallsignRank]], message: "This callsign belongs to a different rank. Continue and change the member's rank too?", confirmText: "Change rank", danger: true })) return changeCS(cs, true);
