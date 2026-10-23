@@ -2,7 +2,7 @@
   const currentPath = location.pathname.replace(/\/$/, '') || '/';
   const pages = [
     {
-      href: '/ems', title: 'LVFR EMS Operations', items: [
+      href: '/', title: 'LVFR EMS Operations', items: [
         { label: 'Members', tab: 'members' },
         { label: 'Training', children: [
           { label: 'HERT', tab: 'trainingDirectory', training: 'HERT', availability: '#hertTrainingTab', children: [
@@ -288,7 +288,7 @@
   }
 
   function refreshActiveNavigation() {
-    if (currentPath === '/ems') {
+    if (currentPath === '/') {
       const tab = document.querySelector('.tabs .tab.active')?.dataset.tab;
       if (!tab) return setActiveMenuItem(null);
       let selector = `[data-sidebar-item][data-tab="${tab}"]`;
@@ -412,7 +412,7 @@
     if (!event.isTrusted) return;
     if (!event.target.closest('.tabs, .log-tabs, .training-directory-tabs, .admin-tabs')) return;
     requestAnimationFrame(() => {
-      if (currentPath !== '/ems') return;
+      if (currentPath !== '/') return;
       const tab = document.querySelector('.tabs .tab.active')?.dataset.tab;
       if (!tab) return;
       rememberSidebarView({
