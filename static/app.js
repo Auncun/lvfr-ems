@@ -184,6 +184,7 @@ function startBackgroundMutation(url, options) {
     }
     apiReadCache.clear();
     applyOptimisticMutation(path, payload, callsign);
+    addLocalPromotionPlaceholder(path, previous, optimisticRank ? (path === "/api/promote" ? optimisticRank : String(payload.new_rank || optimisticRank)) : "", optimisticTarget, callsign);
     const pendingRank = path === "/api/promote" ? optimisticRank : String(payload.new_rank || optimisticRank);
     if (path === "/api/promote") toast(`PROMOTED TO ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
     else if (path === "/api/force-promote" || path === "/api/change-rank") toast(`RANK CHANGED TO ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
@@ -491,6 +492,32 @@ function renderPromotionBanner() {
     const needsDiscord = pendingPromotions.some(item => Number(item.needs_discord) === 1);
     banner.textContent = `${needsDiscord ? 'Portal and Discord' : 'Portal'} Confirmation Needed (${pendingPromotions.length})`;
 }
+// Shows the Portal and Discord confirmation at once, before the server has saved it.
+// The real record replaces this one when the next load arrives.
+function addLocalPromotionPlaceholder(path, previous, newRank, newCallsign, oldCallsign) {
+    const actions = {
+        "/api/promote": "Promotion",
+        "/api/force-promote": "Promotion",
+        "/api/demote": "Demotion",
+        "/api/change-rank": "Rank change",
+        "/api/change-callsign": "Callsign change"
+    };
+    if (!actions[path]) return;
+    const isCallsignOnly = path === "/api/change-callsign";
+    pendingPromotions = [{
+        id: `local-${Date.now()}`,
+        local: true,
+        action: actions[path],
+        name: previous?.name || "",
+        callsign: newCallsign || oldCallsign || "",
+        old_rank: previous?.rank || "",
+        new_rank: isCallsignOnly ? (previous?.rank || "") : (newRank || ""),
+        old_callsign: oldCallsign || "",
+        new_callsign: newCallsign || ""
+    }, ...pendingPromotions];
+    renderPromotionBanner();
+}
+
 async function loadPromotionConfirmations() {
     try {
         // A unique address skips the page's short read cache, so the banner shows the new promotion at once.
