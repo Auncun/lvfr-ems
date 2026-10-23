@@ -3608,6 +3608,31 @@ function closeModal() {
 // MANAGE
 // ============================================================
 
+// Manage panel: Set Activity only when the activity is different; Add Training only when the member lacks that training; Delete Training only when they have it.
+function updateManageButtons() {
+    const activitySelect = $("#activity");
+    const setActivityButton = $("#setActivityButton");
+    if (activitySelect && setActivityButton) {
+        setActivityButton.disabled = activitySelect.value === (activitySelect.dataset.currentActivity || "");
+    }
+    const trainingSelect = $("#training");
+    if (trainingSelect) {
+        let owned = {};
+        try { owned = JSON.parse(trainingSelect.dataset.owned || "{}"); } catch (error) { owned = {}; }
+        const name = String(trainingSelect.value || "").toLowerCase();
+        const key = name.includes("hert") ? "hert" : name.includes("advanced") ? "advanced" : name.includes("basic") ? "basic" : "";
+        const has = key ? Boolean(owned[key]) : false;
+        const addButton = $("#addTrainingButton");
+        const deleteButton = $("#deleteTrainingButton");
+        if (addButton) addButton.disabled = has;
+        if (deleteButton) deleteButton.disabled = !has;
+    }
+}
+
+document.addEventListener("change", event => {
+    if (event.target?.id === "activity" || event.target?.id === "training") updateManageButtons();
+});
+
 function openManage(cs) {
 
     profileRenderToken++;
@@ -3643,6 +3668,8 @@ function openManage(cs) {
         : memberCache.get(String(cs || "").trim().toUpperCase()) || {};
 
     $("#modalContent").innerHTML = `
+        <button type="button" class="back-link" data-action="profile" data-callsign="${esc(cs)}">← Back to view</button>
+
 
         <h2>
             Manage ${esc(cs)}
@@ -3665,7 +3692,7 @@ function openManage(cs) {
 
                     Training
 
-                    <select id="training" data-action="update-training-permission">
+                    <select id="training" data-action="update-training-permission" data-owned="${esc(JSON.stringify({ basic: Boolean(managedMember.has_basic_firefighting), advanced: Boolean(managedMember.has_advanced_firefighting), hert: Boolean(managedMember.has_hert) }))}">
 
                         ${config.trainings.map(
                             x => {
@@ -3685,7 +3712,7 @@ function openManage(cs) {
 
                     Activity
 
-                    <select id="activity">
+                    <select id="activity" data-current-activity="${esc(currentActivity)}">
 
                         ${config.activities.map(
                             x => {
@@ -3741,7 +3768,7 @@ function openManage(cs) {
 
                     <button
                         type="button"
-                        data-action="activity" data-callsign="${esc(cs)}"
+                        id="setActivityButton" data-action="activity" data-callsign="${esc(cs)}"
                     >
                         Set Activity
                     </button>
@@ -3789,7 +3816,7 @@ function openManage(cs) {
 
                 <button
                     type="button"
-                    data-action="exam-add" data-callsign="${esc(cs)}"
+                    data-action="exam-add" data-callsign="${esc(cs)}" ${managedMember.has_supervisor_exam ? "disabled" : ""}
                 >
                     Add Exam
                 </button>
@@ -3797,7 +3824,7 @@ function openManage(cs) {
 
                 <button
                     type="button"
-                    data-action="exam-remove" data-callsign="${esc(cs)}"
+                    data-action="exam-remove" data-callsign="${esc(cs)}" ${managedMember.has_supervisor_exam ? "" : "disabled"}
                 >
                     Delete Exam
                 </button>
@@ -3900,11 +3927,11 @@ function openManage(cs) {
                 </button>` : ""}
 
 
-                ${currentUserHasPermission("promotion_manage") && (currentUserIsAdmin && !managedMember.do_not_promote || (managedMember.eligible && String(managedMember.rank || "").trim().toLowerCase() === "emt" && String(managedMember.next_rank || "").trim().toLowerCase() === "aemt")) ? `<button
+                ${currentUserHasPermission("promotion_manage") ? `<button
                     type="button"
                     class="primary"
                     data-action="promote"
-                    data-callsign="${esc(cs)}"
+                    data-callsign="${esc(cs)}" ${(managedMember.eligible && !managedMember.do_not_promote) ? "" : "disabled"}
                 >
                     Promote
                 </button>` : ""}
@@ -3931,6 +3958,7 @@ function openManage(cs) {
         </div>
 
     `;
+    updateManageButtons();
 
     updateTrainingPermission();
 }
@@ -4664,6 +4692,7 @@ function openRankTools(cs) {
                     value="${esc(cs)}"
                     placeholder="New callsign"
                 >
+                <p id="newcsHint" class="field-hint" role="alert"></p>
 
             </label>
 
@@ -4737,6 +4766,9 @@ async function changeCS(
         if (!(await lvfrConfirm({ title: "Change Callsign", subject: cs, rows: [["Current callsign", cs], ["New callsign", pendingCallsign]], message: "Change this member's callsign?", confirmText: "Change callsign", danger: true }))) return;
     }
 
+    const newcsHint = $("#newcsHint");
+    if (newcsHint) newcsHint.textContent = "";
+
     try {
 
         const newcsElement =
@@ -4790,6 +4822,10 @@ async function changeCS(
         if (currentUserIsAdmin && selectedCallsignRank && /belongs to a different rank/i.test(e.message || "") && await lvfrConfirm({ title: "Rank Change", subject: cs, rows: [["Callsign", cs], ["Rank", selectedCallsignRank]], message: "This callsign belongs to a different rank. Continue and change the member's rank too?", confirmText: "Change rank", danger: true })) return changeCS(cs, true);
 
 
+        if (newcsHint) {
+            newcsHint.textContent = e.message;
+            return;
+        }
         toast(
             e.message
         );
