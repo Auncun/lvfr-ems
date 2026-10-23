@@ -147,11 +147,13 @@ async function api(url, options = {}) {
 function isBackgroundMutationRequest(url, options) {
     const method = String(options.method || "GET").toUpperCase();
     if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return false;
+    // A check of a callsign (dry run) is not a save, so it stays a normal request.
+    if (String(options.body || "").includes('"dry_run":true')) return false;
     const path = new URL(url, location.href).pathname;
     return new Set([
         "/api/activity", "/api/note", "/api/date", "/api/training", "/api/exam",
         "/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank",
-        "/api/terminate"
+        "/api/change-callsign", "/api/terminate"
     ]).has(path) || /^\/api\/member\/[^/]+\/instructor$/.test(path) ||
         /^\/api\/leaders\/[^/]+(?:\/(?:allow|deny|admin|demote|member|leader|deactivate|reactivate))?$/.test(path);
 }

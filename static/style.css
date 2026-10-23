@@ -1327,7 +1327,9 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 .field-hint:empty { display:none; }
 /* Manage panel: same width as the member view, as tall as its content. Buttons, fields and text keep their normal size. */
 @media (min-width: 820px) {
-    #modal.manage-mode .modal-box { height:auto; max-height:96vh; padding:14px 18px; }
+    #modal.manage-mode .modal-box { height:auto; max-height:96vh; padding:8px 18px 14px; }
+    #modal.manage-mode #modalContent > h2 { font-size:15px; line-height:1.2; margin:0 0 2px; }
+    #modal.manage-mode .back-link { margin:0; padding:0 0 2px; font-size:12px; line-height:1.2; }
 }
 
 /* Choice lists in the training dialogs: Callsign column, then Name column. */
