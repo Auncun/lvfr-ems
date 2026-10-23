@@ -1325,8 +1325,20 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 .back-link:hover { text-decoration:underline; }
 .field-hint { margin:6px 0 0; min-height:0; color:#f85149; font-size:12px; line-height:1.4; }
 .field-hint:empty { display:none; }
-
-/* Manage panel: same width as the member view, and taller so every option is visible without scrolling. */
+/* Manage panel: same width as the member view and as tall as the screen. Options sit in two columns and are a little tighter, so everything fits without scrolling. */
 @media (min-width: 820px) {
-    #modal.manage-mode .modal-box { height:96vh; max-height:96vh; }
+    #modal.manage-mode .modal-box { height:96vh; max-height:96vh; padding:14px 18px; }
+    #modal.manage-mode #modalContent { display:grid; grid-template-columns:1fr 1fr; gap:8px 18px; align-items:start; }
+    #modal.manage-mode #modalContent > h2,
+    #modal.manage-mode #modalContent > hr,
+    #modal.manage-mode #modalContent > .actions,
+    #modal.manage-mode #modalContent > p { grid-column:1 / -1; }
+    #modal.manage-mode #modalContent > h2 { margin:0 0 2px; font-size:17px; }
+    #modal.manage-mode #modalContent > hr { margin:2px 0; }
+    #modal.manage-mode #modalContent label { font-size:12px; margin:0; gap:3px; }
+    #modal.manage-mode #modalContent input,
+    #modal.manage-mode #modalContent select { padding:5px 8px; font-size:13px; }
+    #modal.manage-mode #modalContent button { padding:5px 9px; font-size:12px; }
+    #modal.manage-mode #modalContent .actions { gap:6px; }
+    #modal.manage-mode .back-link { padding:2px 0; margin:0 0 2px; }
 }
