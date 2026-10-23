@@ -4,10 +4,7 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   window.lvfrConfirm = ({ title = 'Confirmation', subject = '', rows = [], message = '', confirmText = 'Confirm', cancelText = 'Cancel', danger = false } = {}) => new Promise(resolve => {
-    const user = window.lvfrCachedUser?.() || {};
-    const doneBy = user.name || user.display_name || user.callsign || '';
     const shownRows = [...rows];
-    if (doneBy) shownRows.push(['Done by', doneBy]);
 
     const dialog = document.createElement('dialog');
     dialog.className = 'confirm-dialog';

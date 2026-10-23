@@ -707,7 +707,6 @@ document.addEventListener("click", event => {
         case "update-training-permission": updateTrainingPermission(); break;
         case "force-promote": forcePromote(callsign); break;
         case "demote": demote(callsign); break;
-        case "change-rank": changeRank(callsign); break;
         case "leader-menu": toggleLeaderActions(event, control.parentElement); break;
         case "set-admin": setLeaderAdmin(accountId, control.dataset.enabled === "true"); break;
         case "set-commander": setLeaderCommander(accountId); break;
@@ -3592,6 +3591,7 @@ function closeModal() {
 
     profileRenderToken++;
     activeProfileMember = null;
+    $("#modal")?.classList.remove("manage-mode");
 
     const modal =
         $("#modal");
@@ -3611,6 +3611,7 @@ function closeModal() {
 function openManage(cs) {
 
     profileRenderToken++;
+    $("#modal")?.classList.add("manage-mode");
 
     const existingNote =
         activeProfileMember?.callsign === cs
@@ -4682,7 +4683,7 @@ function openRankTools(cs) {
 
                 New rank
 
-                <select id="newrank">
+                <select id="newrank" data-current-rank="${esc(currentMember?.rank || "")}">
 
                     ${config.ranks.map(x => {
                         const selected = String(x).trim().toLowerCase() === currentRank ? " selected" : "";
@@ -4700,7 +4701,7 @@ function openRankTools(cs) {
                 <button
                     type="button"
                     class="primary"
-                    data-action="force-promote" data-callsign="${esc(cs)}"
+                    id="forcePromoteRankButton" data-action="force-promote" data-callsign="${esc(cs)}"
                 >
                     Force Promote
                 </button>
@@ -4709,26 +4710,17 @@ function openRankTools(cs) {
                 <button
                     type="button"
                     class="warn"
-                    data-action="demote" data-callsign="${esc(cs)}"
+                    id="demoteRankButton" data-action="demote" data-callsign="${esc(cs)}"
                 >
                     Demote
                 </button>
-
-
-                <button
-                    type="button"
-                    data-action="change-rank" data-callsign="${esc(cs)}"
-                >
-                    Change Rank
-                </button>
-
-
             </div>
 
 
         </div>
 
     `;
+    updateRankToolButtons();
 }
 
 
@@ -4826,6 +4818,29 @@ async function confirmNextRankFor(cs) {
         return "";
     }
 }
+
+// In Rank / Callsign Tools: Demote is only for a lower rank, Force Promote only for a higher rank.
+function updateRankToolButtons() {
+    const select = $("#newrank");
+    const forceButton = $("#forcePromoteRankButton");
+    const demoteButton = $("#demoteRankButton");
+    if (!select || !forceButton || !demoteButton) return;
+    const ranks = (Array.isArray(config?.ranks) ? config.ranks : []).map(rank => String(rank).trim().toLowerCase());
+    const current = ranks.indexOf(String(select.dataset.currentRank || "").trim().toLowerCase());
+    const chosen = ranks.indexOf(String(select.value || "").trim().toLowerCase());
+    if (current < 0 || chosen < 0) {
+        forceButton.disabled = false;
+        demoteButton.disabled = false;
+        return;
+    }
+    // Lower index = higher rank in the list.
+    forceButton.disabled = !(chosen < current);
+    demoteButton.disabled = !(chosen > current);
+}
+
+document.addEventListener("change", event => {
+    if (event.target?.id === "newrank") updateRankToolButtons();
+});
 
 // Looks up the member shown on a confirmation card by callsign.
 function confirmMemberFor(cs) {
@@ -4957,61 +4972,6 @@ async function demote(cs) {
 // ============================================================
 // CHANGE RANK
 // ============================================================
-
-async function changeRank(cs) {
-
-    try {
-
-        const newrankElement =
-            $("#newrank");
-
-        const r =
-            await api(
-                "/api/change-rank",
-                {
-                    method: "POST",
-
-                    body: JSON.stringify({
-
-                        callsign: cs,
-
-                        new_rank:
-                            newrankElement
-                                ? newrankElement.value
-                                : "",
-
-                    })
-                }
-            );
-
-
-        toast(
-            `Changed to ${r.new_rank} — ${r.new_callsign}`
-        );
-
-
-        closeModal();
-
-
-        await Promise.all([
-
-            loadMembers(),
-
-            loadMembersLog(
-                "promotion"
-            )
-
-        ]);
-
-
-    } catch (e) {
-        if (isBackgroundPending(e)) return;
-        toast(
-            e.message
-        );
-    }
-}
-
 
 // ============================================================
 // MAIN TABS
