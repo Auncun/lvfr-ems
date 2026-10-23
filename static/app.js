@@ -4738,6 +4738,10 @@ async function changeCS(
     cs,
     force = false
 ) {
+    if (!force) {
+        const pendingCallsign = $("#newcs")?.value || "";
+        if (!(await lvfrConfirm({ title: "Change Callsign", subject: cs, rows: [["Current callsign", cs], ["New callsign", pendingCallsign]], message: "Change this member's callsign?", confirmText: "Change callsign", danger: true }))) return;
+    }
 
     try {
 
@@ -4804,6 +4808,8 @@ async function changeCS(
 // ============================================================
 
 async function forcePromote(cs) {
+    const pendingRank = $("#newrank")?.value || "";
+    if (!(await lvfrConfirm({ title: "Force Promotion", subject: cs, rows: [["Callsign", cs], ["New rank", pendingRank]], message: "Force this member to the selected rank? The normal eligibility rules are skipped.", confirmText: "Force Promote", danger: true }))) return;
 
     try {
 
@@ -4863,6 +4869,8 @@ async function forcePromote(cs) {
 // ============================================================
 
 async function demote(cs) {
+    const pendingRank = $("#newrank")?.value || "";
+    if (!(await lvfrConfirm({ title: "Demotion", subject: cs, rows: [["Callsign", cs], ["New rank", pendingRank]], message: "Demote this member to the selected rank?", confirmText: "Demote", danger: true }))) return;
 
     try {
 
