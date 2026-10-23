@@ -1,3 +1,7 @@
+// Fallback if confirm-card.js did not load: keeps the actions working with the browser's own confirmation.
+if (typeof window.lvfrConfirm !== "function") {
+  window.lvfrConfirm = async (options = {}) => window.confirm([options.title, options.message].filter(Boolean).join("\n\n"));
+}
 const $ = s => document.querySelector(s);
 
 let config = {};
