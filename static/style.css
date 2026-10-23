@@ -1320,14 +1320,15 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 .confirm-dialog::backdrop { background:rgba(4,8,14,.72); backdrop-filter:blur(3px); }
 .confirm-dialog .promotion-box { width:100%; margin:0; }
 
-/* Manage panel on wide screens: two columns, so every option fits without scrolling. */
+
+/* Manage panel on wide screens: the window keeps its normal width, and the options sit in two columns so less height is needed. */
 @media (min-width: 820px) {
-    #modal.manage-mode .modal-box { width:min(1040px,96vw); padding:20px 24px; }
-    #modal.manage-mode #modalContent { display:grid; grid-template-columns:1fr 1fr; gap:14px 22px; align-items:start; }
+    #modal.manage-mode .modal-box { max-height:96vh; padding:16px 20px; }
+    #modal.manage-mode #modalContent { display:grid; grid-template-columns:1fr 1fr; gap:10px 20px; align-items:start; }
     #modal.manage-mode #modalContent > h2,
     #modal.manage-mode #modalContent > hr,
     #modal.manage-mode #modalContent > .actions,
     #modal.manage-mode #modalContent > p { grid-column:1 / -1; }
-    #modal.manage-mode #modalContent > h2 { margin:0; }
-    #modal.manage-mode #modalContent > hr { margin:0; }
+    #modal.manage-mode #modalContent > h2 { margin:0 0 4px; }
+    #modal.manage-mode #modalContent > hr { margin:4px 0; }
 }
