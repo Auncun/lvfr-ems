@@ -472,7 +472,7 @@ async function applyRosterMutationD1(db, route, data, actor) {
     }
     const slotRank=String(slot.rank||"").trim().toLowerCase();
     if(route!=="/api/change-callsign" && slotRank!==nextRank.toLowerCase()) throw new Error("The destination Callsign does not match the selected rank.");
-    if(route==="/api/change-callsign" && !admin && slotRank!==String(old.rank||"").trim().toLowerCase()) throw new Error("This callsign is not available for "+(String(old.rank||"").trim()||"this rank")+".");
+    if(route==="/api/change-callsign" && !admin && slotRank!==String(old.rank||"").trim().toLowerCase()) throw new Error("This callsign doesn't belong to \""+(String(old.rank||"").trim()||"this rank")+"\".");
     const rankChangeNeeded=route==="/api/change-callsign" && admin && slotRank!==String(old.rank||"").trim().toLowerCase();
     if(route==="/api/change-callsign" && rankChangeNeeded && !data.force && !data.dry_run) throw new Error("The Callsign belongs to a different rank. Confirm a rank change first.");
     if(old.do_not_promote && (RANK_LEVEL[nextRank]||0)>(RANK_LEVEL[old.rank]||0)) throw new Error("This member is on the Do not Promote list.");

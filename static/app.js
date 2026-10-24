@@ -3719,10 +3719,10 @@ function openManage(cs) {
         activeProfileMember?.callsign === cs
             ? String(activeProfileMember.activity || "Active").trim()
             : "Active";
-    const rankDateValue =
-        activeProfileMember?.callsign === cs
-            ? String(activeProfileMember.rank_assigned_date || "")
-            : "";
+    const rankDateSource = activeProfileMember?.callsign === cs
+        ? activeProfileMember
+        : memberCache.get(String(cs || "").trim().toUpperCase()) || {};
+    const rankDateValue = String(rankDateSource.rank_assigned_date || rankDateSource.date || "");
     const rankDateMatch = rankDateValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     const currentRankDate = rankDateMatch
         ? `${rankDateMatch[2]}/${rankDateMatch[3]}/${rankDateMatch[1]}`
@@ -3969,13 +3969,14 @@ function openManage(cs) {
                     <input
                         id="date"
                         value="${esc(currentRankDate)}"
+                        data-current-date="${esc(currentRankDate)}"
                         placeholder="MM/DD/YYYY"
                     >
                 </label>
 
                 <button
                     type="button"
-                    data-action="date" data-callsign="${esc(cs)}"
+                    id="changeDateButton" disabled data-action="date" data-callsign="${esc(cs)}"
                 >
                     Change Date
                 </button>
@@ -4948,6 +4949,20 @@ async function confirmNextRankFor(cs) {
         return "";
     }
 }
+
+// Change Date stays disabled until the rank date is different from the one shown.
+function updateChangeDateButton() {
+    const input = $("#date");
+    const button = $("#changeDateButton");
+    if (!input || !button) return;
+    const current = String(input.dataset.currentDate || "").trim();
+    const next = String(input.value || "").trim();
+    button.disabled = !next || next === current;
+}
+
+document.addEventListener("input", event => {
+    if (event.target?.id === "date") updateChangeDateButton();
+});
 
 // Change Callsign stays disabled until the new callsign is different from the current one.
 function updateChangeCallsignButton() {
