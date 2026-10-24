@@ -17,7 +17,7 @@ const LVFR = Object.freeze({
     'Commissioners', 'Chief', 'County Command', 'Division Commander',
     'Captain', 'Lieutenant', 'Lead Paramedic', 'Paramedic', 'AEMT', 'EMT',
     'Probationary', 'Senior Volunteer', 'Volunteer',
-    'Probationary Volunteer', 'EMR', 'EMR/Volunteer'
+    'Probationary Volunteer', 'EMR', 'EMR/Volunteer', 'Liaison'
   ],
   ignoredCallsigns: new Set(['B-01'])
 });
