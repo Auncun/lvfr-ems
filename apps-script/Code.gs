@@ -1866,7 +1866,7 @@ function nextEmptyCallsign_(rank) {
     'Commissioners': 'COM', 'Chief': 'CHIEF', 'County Command': 'B', 'Division Commander': 'DIV',
     'Captain': 'C', 'Lieutenant': 'E', 'Lead Paramedic': 'L', 'Paramedic': 'M',
     'AEMT': 'A', 'Advanced EMT': 'A', 'EMT': 'R', 'Probationary': 'P', 'EMR': 'P',
-    'Senior Volunteer': 'S', 'Volunteer': 'V', 'Probationary Volunteer': 'V', 'EMR/Volunteer': 'P'
+    'Senior Volunteer': 'S', 'Volunteer': 'V', 'Probationary Volunteer': 'V', 'EMR/Volunteer': 'P', 'Liaison': 'F'
   };
   const prefix = prefixes[rank];
   if (!prefix) throw new Error('Unknown rank: ' + rank);
@@ -1882,7 +1882,7 @@ function nextEmptyCallsign_(rank) {
 function rankLevel_(rank) {
   const levels = {
     'Probationary Volunteer': 1, 'Probie Volunteer': 1, 'Probationary': 1, 'Probie': 1, 'EMR': 1,
-    'Volunteer': 2, 'Senior Volunteer': 3, 'EMT': 4, 'AEMT': 5, 'Advanced EMT': 5,
+    'Liaison': 0, 'Volunteer': 2, 'Senior Volunteer': 3, 'EMT': 4, 'AEMT': 5, 'Advanced EMT': 5,
     'Paramedic': 6, 'Lead Paramedic': 7, 'Lieutenant': 8, 'Captain': 9,
     'Division Commander': 10, 'County Command': 11, 'Chief': 12, 'Commissioners': 13, 'EMR/Volunteer': 1
   };
@@ -2634,7 +2634,7 @@ function availableCallsigns_() {
     'Commissioners': 'COM', 'Chief': 'CHIEF', 'County Command': 'B', 'Division Commander': 'DIV',
     'Captain': 'C', 'Lieutenant': 'E', 'Lead Paramedic': 'L', 'Paramedic': 'M',
     'AEMT': 'A', 'EMT': 'R', 'Probationary': 'P', 'EMR': 'P',
-    'Senior Volunteer': 'S', 'Volunteer': 'V', 'Probationary Volunteer': 'V', 'EMR/Volunteer': 'P'
+    'Senior Volunteer': 'S', 'Volunteer': 'V', 'Probationary Volunteer': 'V', 'EMR/Volunteer': 'P', 'Liaison': 'F'
   };
   const result = {};
   Object.keys(prefixes).forEach(rank => {
@@ -3029,7 +3029,7 @@ function rankFromCallsign_(callsign) {
     const probationary = [1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 21, 22, 23, 24, 25, 26, 27, 28, 29, 36, 37, 38, 39, 40];
     return probationary.includes(number) ? 'Probationary Volunteer' : 'Volunteer';
   }
-  const map = { COM: 'Commissioners', CHIEF: 'Chief', B: 'County Command', DIV: 'Division Commander', C: 'Captain', E: 'Lieutenant', L: 'Lead Paramedic', M: 'Paramedic', A: 'AEMT', R: 'EMT', P: 'Probationary', S: 'Senior Volunteer', V: 'Volunteer' };
+  const map = { COM: 'Commissioners', CHIEF: 'Chief', B: 'County Command', DIV: 'Division Commander', C: 'Captain', E: 'Lieutenant', L: 'Lead Paramedic', M: 'Paramedic', A: 'AEMT', R: 'EMT', P: 'Probationary', S: 'Senior Volunteer', V: 'Volunteer', F: 'Liaison' };
   return map[prefix[0]] || '';
 }
 

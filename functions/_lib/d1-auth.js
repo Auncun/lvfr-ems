@@ -380,8 +380,8 @@ async function replaceMembers(db, members, syncedAt = new Date().toISOString()) 
   return { ok: true, members: members.length, synced_at: syncedAt };
 }
 const MEMBER_WRITE_ROUTES = new Set(["/api/activity", "/api/note", "/api/date", "/api/training", "/api/exam", "/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign", "/api/terminate", "/api/do-not-promote", "/api/do-not-terminate"]);
-const RANK_PREFIX = { Commissioners:"COM", Chief:"CHIEF", "County Command":"B", "Division Commander":"DIV", Captain:"C", Lieutenant:"E", "Lead Paramedic":"L", Paramedic:"M", AEMT:"A", EMT:"R", Probationary:"P", EMR:"P", "Senior Volunteer":"S", Volunteer:"V", "Probationary Volunteer":"V", "EMR/Volunteer":"P" };
-function rankForCallsign(cs) { const p=String(cs||"").match(/^[A-Z]+/); if(!p)return ""; if(p[0]==="V") return [1,2,3,4,5,6,7,8,9,14,21,22,23,24,25,26,27,28,29,36,37,38,39,40].includes(Number(cs.split("-")[1]))?"Probationary Volunteer":"Volunteer"; return ({COM:"Commissioners",CHIEF:"Chief",B:"County Command",DIV:"Division Commander",C:"Captain",E:"Lieutenant",L:"Lead Paramedic",M:"Paramedic",A:"AEMT",R:"EMT",P:"Probationary",S:"Senior Volunteer"})[p[0]]||""; }
+const RANK_PREFIX = { Commissioners:"COM", Chief:"CHIEF", "County Command":"B", "Division Commander":"DIV", Captain:"C", Lieutenant:"E", "Lead Paramedic":"L", Paramedic:"M", AEMT:"A", EMT:"R", Probationary:"P", EMR:"P", "Senior Volunteer":"S", Volunteer:"V", "Probationary Volunteer":"V", "EMR/Volunteer":"P", Liaison:"F" };
+function rankForCallsign(cs) { const p=String(cs||"").match(/^[A-Z]+/); if(!p)return ""; if(p[0]==="V") return [1,2,3,4,5,6,7,8,9,14,21,22,23,24,25,26,27,28,29,36,37,38,39,40].includes(Number(cs.split("-")[1]))?"Probationary Volunteer":"Volunteer"; return ({COM:"Commissioners",CHIEF:"Chief",B:"County Command",DIV:"Division Commander",C:"Captain",E:"Lieutenant",L:"Lead Paramedic",M:"Paramedic",A:"AEMT",R:"EMT",P:"Probationary",S:"Senior Volunteer",F:"Liaison"})[p[0]]||""; }
 let orderedMembersViewReady = false;
 async function ensureOrderedMembersView(db) {
   if(orderedMembersViewReady) return;
@@ -397,7 +397,7 @@ async function ensureOrderedMembersView(db) {
       callsign COLLATE NOCASE`).run();
   orderedMembersViewReady = true;
 }
-const RANK_LEVEL = { "Probationary Volunteer":1, "Probationary":1, EMR:1, "EMR/Volunteer":1, Volunteer:2, "Senior Volunteer":3, EMT:4, AEMT:5, "Advanced EMT":5, Paramedic:6, "Lead Paramedic":7, Lieutenant:8, Captain:9, "Division Commander":10, "County Command":11, Chief:12, Commissioners:13 };
+const RANK_LEVEL = { Liaison:0, "Probationary Volunteer":1, "Probationary":1, EMR:1, "EMR/Volunteer":1, Volunteer:2, "Senior Volunteer":3, EMT:4, AEMT:5, "Advanced EMT":5, Paramedic:6, "Lead Paramedic":7, Lieutenant:8, Captain:9, "Division Commander":10, "County Command":11, Chief:12, Commissioners:13 };
 async function applyRosterMutationD1(db, route, data, actor) {
   await ensureCallsignSlotsTable(db);
   const admin=["admin","commander"].includes(String(actor.role||""));
@@ -527,7 +527,7 @@ async function readMembers(db, search = "", env = null, token = "") {
   const result = q
     ? await db.prepare("SELECT * FROM members_roster_ordered WHERE lower(callsign) LIKE ? OR lower(name) LIKE ? OR lower(rank) LIKE ?").bind(`%${q}%`,`%${q}%`,`%${q}%`).all()
     : await db.prepare("SELECT * FROM members_roster_ordered").all();
-  const rankOrder=["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer"];
+  const rankOrder=["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer","Liaison"];
   const sortRank = member => {
     const fromCallsign=rankForCallsign(member.callsign);
     if(fromCallsign) return rankOrder.indexOf(fromCallsign)<0?999:rankOrder.indexOf(fromCallsign);
@@ -1353,10 +1353,15 @@ export async function handleD1(context) {
     if(route==="/api/notifications/clear" && method==="POST") {
       const assertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
       const {proxyToAppsScript}=await import("../[[path]].js");
-      const sheetMirror=await proxyToAppsScript(context,"/internal/notifications/clear",url,assertion,{});
-      const mirrorResult=await sheetMirror.json().catch(()=>({}));
-      if(!sheetMirror.ok||mirrorResult.ok!==true) throw Object.assign(new Error("Could not clear notifications from the Google Sheet: "+String(mirrorResult.detail||mirrorResult.error||"mirror failed")),{status:502});
+      // Clear the website first, so the result never depends on the Sheet being reachable.
       await db.batch([db.prepare("DELETE FROM notification_hidden"),db.prepare("DELETE FROM notification_reads"),db.prepare("DELETE FROM notifications")]);
+      context.waitUntil((async()=>{
+        try {
+          const sheetMirror=await proxyToAppsScript(context,"/internal/notifications/clear",url,assertion,{});
+          const mirrorResult=await sheetMirror.json().catch(()=>({}));
+          if(!sheetMirror.ok||mirrorResult.ok!==true) console.error("Notification clear in Google Sheet failed:",mirrorResult.detail||mirrorResult.error||"mirror failed");
+        } catch(error) { console.error("Notification clear in Google Sheet failed:",error); }
+      })());
       return json({ok:true,cleared:true});
     }
     if(route==="/api/members-log/clear" && method==="POST") {
@@ -1602,7 +1607,7 @@ export async function handleD1(context) {
       await ensureCallsignSlotsTable(db);
       const slots=await db.prepare("SELECT rank,callsign,sheet_row AS row FROM callsign_slots ORDER BY CASE WHEN sheet_row IS NULL THEN 1 ELSE 0 END,sheet_row,callsign").all();
       const available={}; for(const x of slots.results||[]) if(!available[x.rank]) available[x.rank]=x.callsign;
-      return json({ranks:["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer"],available_callsigns:available,trainings:["Basic Firefighting","Advanced Firefighting","Hert"],activities:["Active","Semi Active","Inactive","Can Be Terminated"],exams:["Supervisor Exam"]});
+      return json({ranks:["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer","Liaison"],available_callsigns:available,trainings:["Basic Firefighting","Advanced Firefighting","Hert"],activities:["Active","Semi Active","Inactive","Can Be Terminated"],exams:["Supervisor Exam"]});
     }
     if(route==="/api/eligible" && method==="GET") {
       const viewableEligible=await viewRanks(db,user);

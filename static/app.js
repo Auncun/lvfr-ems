@@ -259,7 +259,7 @@ function isBackgroundPending(error) {
 
 function rankForCallsign(callsign) {
     const prefix = String(callsign || "").toUpperCase().match(/^[A-Z]+/);
-    const map = { COM: "Commissioners", CHIEF: "Chief", B: "County Command", DIV: "Division Commander", C: "Captain", E: "Lieutenant", L: "Lead Paramedic", M: "Paramedic", A: "AEMT", R: "EMT", P: "Probationary", S: "Senior Volunteer", V: "Volunteer" };
+    const map = { COM: "Commissioners", CHIEF: "Chief", B: "County Command", DIV: "Division Commander", C: "Captain", E: "Lieutenant", L: "Lead Paramedic", M: "Paramedic", A: "AEMT", R: "EMT", P: "Probationary", S: "Senior Volunteer", V: "Volunteer", F: "Liaison" };
     if (prefix?.[0] === "V") {
         const number = Number(String(callsign || "").split("-", 2)[1]);
         const probationary = [1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 21, 22, 23, 24, 25, 26, 27, 28, 29, 36, 37, 38, 39, 40];
@@ -269,7 +269,7 @@ function rankForCallsign(callsign) {
 }
 
 function compareRosterMembers(a, b) {
-    const rankOrder = ["Commissioners", "Chief", "County Command", "Division Commander", "Captain", "Lieutenant", "Lead Paramedic", "Paramedic", "AEMT", "EMT", "Probationary", "Senior Volunteer", "Volunteer", "Probationary Volunteer", "EMR", "EMR/Volunteer"];
+    const rankOrder = ["Commissioners", "Chief", "County Command", "Division Commander", "Captain", "Lieutenant", "Lead Paramedic", "Paramedic", "AEMT", "EMT", "Probationary", "Senior Volunteer", "Volunteer", "Probationary Volunteer", "EMR", "EMR/Volunteer", "Liaison"];
     const rankOf = member => rankForCallsign(member.callsign) || rankOrder.find(rank => rank.toLowerCase() === String(member.rank || "").trim().toLowerCase());
     const rankA = rankOrder.indexOf(rankOf(a));
     const rankB = rankOrder.indexOf(rankOf(b));
@@ -827,7 +827,7 @@ function toast(msg) {
 
 try { Object.keys(localStorage).filter(key => key.startsWith('lvfr.portal.notifications.v1:')).forEach(key => localStorage.removeItem(key)); } catch {}
 // Rank order used in every rank filter, from highest to lowest.
-const RANK_FILTER_ORDER = ['commissioners', 'chief', 'county command', 'division commander', 'captain', 'lieutenant', 'lead paramedic', 'paramedic', 'aemt', 'advanced emt', 'emt', 'probationary', 'senior volunteer', 'volunteer', 'probationary volunteer', 'emr', 'emr/volunteer'];
+const RANK_FILTER_ORDER = ['commissioners', 'chief', 'county command', 'division commander', 'captain', 'lieutenant', 'lead paramedic', 'paramedic', 'aemt', 'advanced emt', 'emt', 'probationary', 'senior volunteer', 'volunteer', 'probationary volunteer', 'emr', 'emr/volunteer', 'liaison'];
 // Fills a rank dropdown with the ranks present in the list, keeping the chosen rank when it still exists.
 function fillRankFilter(select, rows) {
     if (!select) return;
@@ -1686,7 +1686,7 @@ function renderTrainingHours() {
         const member = memberByName.get(String(row.name || "").trim().toLocaleLowerCase());
         return !query || `${row.name} ${member?.callsign || ""} ${row.date} ${row.time}`.toLocaleLowerCase().includes(query);
     });
-    const rankOrder = Array.isArray(config?.ranks) ? config.ranks : ["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer"];
+    const rankOrder = Array.isArray(config?.ranks) ? config.ranks : ["Commissioners","Chief","County Command","Division Commander","Captain","Lieutenant","Lead Paramedic","Paramedic","AEMT","EMT","Probationary","Senior Volunteer","Volunteer","Probationary Volunteer","EMR","EMR/Volunteer","Liaison"];
     const rankIndex = value => { const rank = String(value || "").trim().toLocaleLowerCase(); const index = rankOrder.findIndex(item => String(item).trim().toLocaleLowerCase() === rank); return index < 0 ? 999 : index; };
     rows.sort((a, b) => {
         const memberA = memberByName.get(String(a.name || "").trim().toLocaleLowerCase());
