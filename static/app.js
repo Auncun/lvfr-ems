@@ -482,6 +482,8 @@ function rosterMatchesMutation(rows, detail) {
 // Promotions waiting for confirmation in the NARCOS Portal and Discord. Shown to everyone until Save.
 let pendingPromotions = [];
 function renderPromotionBanner() {
+    // Share the list with the other pages (Portal) so the banner appears there at once.
+    try { localStorage.setItem("lvfr.pending-confirmations", JSON.stringify(pendingPromotions)); } catch {}
     let banner = document.querySelector('#promotionConfirmBanner');
     if (!pendingPromotions.length) { banner?.remove(); return; }
     if (!banner) {
@@ -6138,5 +6140,3 @@ document.querySelectorAll("[data-dnp-view]").forEach(button => {
     button.addEventListener("click", () => setDoNotView(button.dataset.dnpView));
 });
 window.lvfrOpenNotification = openNotification;
-
-:
