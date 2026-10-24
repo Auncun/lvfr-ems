@@ -1349,7 +1349,7 @@ export async function handleD1(context) {
     if(route==="/api/members-log/clear" && method==="POST") {
       requireRolePermission(user,user.permissions,"logs_delete_d1");
       const kind=String(data.log_type||"").trim().toLowerCase();
-      const allowed=["promotion","callsign","termination","training","training_time","loi","exam","note","activity","instructor"];
+      const allowed=["promotion","callsign","termination","training","training_time","loi","exam","note","activity","instructor","do_not_promote","do_not_terminate"];
       if(!allowed.includes(kind)) throw new Error("Choose a valid log category.");
       if(kind==="training_time") await db.prepare("DELETE FROM training_hours_log").run();
       else await db.prepare("DELETE FROM operational_logs WHERE kind=?").bind(kind).run();
