@@ -2088,8 +2088,7 @@ function findOrCreateNamedSheetRow_(sheet, nameColumn, name, create, ignoredRows
     // Full list: insert a new row at the end of the list. The HERT LOI block moves down with it.
     const at = zoneLast + 1;
     sheet.insertRowBefore(at);
-    sheet.getRange(at, 1, 1, Math.max(sheet.getLastColumn(), 6)).setBackground('#ffffff');
-    SpreadsheetApp.flush();
+    hertFormatNewRow_(sheet, at);
     return at;
   }
   // The LOI list starts right below this block, so a row cannot be appended here
@@ -2652,6 +2651,14 @@ function changeInstructor_(callsign, data, user) {
   return { ok: true, changed: !current, assigned: true, instructor_type: type, status: current ? 'unchanged' : 'queued' };
 }
 
+// New HERT rows: white background, with the separator columns A, C, E, G, I set to black.
+function hertFormatNewRow_(sheet, row) {
+  const width = Math.max(sheet.getLastColumn(), 9);
+  sheet.getRange(row, 1, 1, width).setBackground('#ffffff');
+  [1, 3, 5, 7, 9].forEach(column => sheet.getRange(row, column).setBackground('#000000'));
+  SpreadsheetApp.flush();
+}
+
 // HERT instructors are kept at the top of the HERT list, directly under the last current instructor.
 // An existing member row is moved there (with its training data); a new member takes an empty row
 // if one exists, otherwise a new row is inserted. The HERT LOI block below moves with the list.
@@ -2688,7 +2695,7 @@ function hertPlaceInstructorRow_(sheet, existingRow) {
     sheet.deleteRow(source);
   } else {
     // Inserted rows inherit the formatting above them (green instructor / training cells), so reset it.
-    sheet.getRange(target, 1, 1, width).setBackground('#ffffff');
+    hertFormatNewRow_(sheet, target);
   }
   SpreadsheetApp.flush();
   return target;
