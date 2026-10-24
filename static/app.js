@@ -184,7 +184,6 @@ function startBackgroundMutation(url, options) {
     }
     apiReadCache.clear();
     applyOptimisticMutation(path, payload, callsign);
-    addLocalPromotionPlaceholder(path, previous, optimisticRank ? (path === "/api/promote" ? optimisticRank : String(payload.new_rank || optimisticRank)) : "", optimisticTarget, callsign);
     const pendingRank = path === "/api/promote" ? optimisticRank : String(payload.new_rank || optimisticRank);
     if (path === "/api/promote") toast(`PROMOTED TO ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
     else if (path === "/api/force-promote" || path === "/api/change-rank") toast(`RANK CHANGED TO ${pendingRank}${optimisticTarget ? ` - ${optimisticTarget}` : ""}`);
@@ -511,6 +510,8 @@ function addLocalPromotionPlaceholder(path, previous, newRank, newCallsign, oldC
     pendingPromotions = [{
         id: `local-${Date.now()}`,
         local: true,
+        // The server marks these changes as needing Discord too, so the banner is complete from the start.
+        needs_discord: 1,
         action: actions[path],
         name: previous?.name || "",
         callsign: newCallsign || oldCallsign || "",
@@ -656,7 +657,8 @@ function paintCachedMemberRow(member, oldCallsign) {
 window.addEventListener("lvfr:background-updated", event => {
     const route = String(event.detail?.route || "");
     // Show the confirmation banner at once after a promotion.
-    if (route === "/api/promote" || route === "/api/force-promote") void loadPromotionConfirmations();
+    // Only the real saved record is shown: load it as soon as the change is confirmed.
+    if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign", "/api/terminate"].includes(route)) void loadPromotionConfirmations();
     const result = event.detail?.result || {};
     const actualCallsign = String(result.new_callsign || "").trim().toUpperCase();
     const predictedCallsign = String(event.detail?.optimisticCallsign || "").trim().toUpperCase();
