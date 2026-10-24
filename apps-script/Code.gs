@@ -1084,7 +1084,8 @@ function readRosterMembers_(readOnly) {
     const item = {
       callsign,
       name,
-      rank: rankByCallsign[callsign] || rankFromCallsign_(callsign) || rank,
+      // Liaison callsigns (F-xx) are always Liaison, even when the Sheet section says Volunteer.
+      rank: (/^F-/.test(callsign) ? 'Liaison' : (rankByCallsign[callsign] || rankFromCallsign_(callsign) || rank)),
       date: row[3] || '',
       rank_assigned_date: row[3] || '',
       days_in_rank: daysSince_(row[3]),
