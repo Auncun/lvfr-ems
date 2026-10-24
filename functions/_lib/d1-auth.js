@@ -313,9 +313,22 @@ async function ensureCallsignSlotsTable(db) {
   )`).run();
 }
 async function replaceMembers(db, members, syncedAt = new Date().toISOString()) {
+  // A callsign can appear twice in the Sheet roster; D1 allows it only once.
+  // Keep the first row, skip the rest, and log them so the Sheet can be corrected.
+  const seenCallsigns = new Set();
+  const uniqueMembers = [];
+  const duplicateCallsigns = [];
+  for (const member of members) {
+    const key = String(member.callsign || "").trim().toUpperCase();
+    if (!key) continue;
+    if (seenCallsigns.has(key)) { duplicateCallsigns.push(key); continue; }
+    seenCallsigns.add(key);
+    uniqueMembers.push(member);
+  }
+  if (duplicateCallsigns.length) console.warn("Roster sync skipped duplicate callsigns:", duplicateCallsigns.join(", "));
   const statements = [db.prepare("DELETE FROM members")];
 
-  for (const member of members) {
+  for (const member of uniqueMembers) {
     statements.push(
       db.prepare(`
         INSERT INTO members (
