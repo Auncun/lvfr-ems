@@ -1698,14 +1698,16 @@ export async function handleD1(context) {
         context.waitUntil(mirrorToSheetInBackground(context,"Training",route,url,assertion,mutationData));
       } else if(result.changed!==false) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
+        // D1 is already committed, so reply at once and mirror to the Sheet in the background.
         const { proxyToAppsScript } = await import("../[[path]].js");
-        try {
-          const response=await proxyToAppsScript(context,route,url,assertion,mutationData);
-          if(!response.ok) return json({detail:"D1 was updated, but Google Sheets could not be updated: "+String(await response.text()).slice(0,500)},502);
-        } catch(error) {
-          console.error("Google Sheets write failed after D1 commit:",error);
-          return json({detail:"D1 was updated, but Google Sheets could not be updated: "+String(error?.message||error).slice(0,400)},502);
-        }
+        context.waitUntil((async()=>{
+          try {
+            const response=await proxyToAppsScript(context,route,url,assertion,mutationData);
+            if(!response.ok) console.error("Google Sheets background write failed:",String(await response.text()).slice(0,500));
+          } catch(error) {
+            console.error("Google Sheets background write failed:",error);
+          }
+        })());
       }
       return json(result);
     }
