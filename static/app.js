@@ -658,7 +658,7 @@ window.addEventListener("lvfr:background-updated", event => {
     const route = String(event.detail?.route || "");
     // Show the confirmation banner at once after a promotion.
     // Only the real saved record is shown: load it as soon as the change is confirmed.
-    if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign", "/api/terminate"].includes(route)) void loadPromotionConfirmations();
+    if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign", "/api/terminate", "/api/exam", "/api/training"].includes(route) || /^\/api\/member\/[^/]+\/instructor$/.test(route)) void loadPromotionConfirmations();
     const result = event.detail?.result || {};
     const actualCallsign = String(result.new_callsign || "").trim().toUpperCase();
     const predictedCallsign = String(event.detail?.optimisticCallsign || "").trim().toUpperCase();
@@ -1566,6 +1566,8 @@ async function saveLoiChange(button, action, extra = {}) {
     }
     try {
         const saved = await api("/api/loi", { method: "POST", body: JSON.stringify(payload) });
+        // A passed LOI can add trainings, which are confirmed on the server at once.
+        void loadPromotionConfirmations();
         if (saved && saved.sheet_synced === false) toast(`${type} LOI saved on the website, but the Sheet was NOT updated: ${saved.sheet_sync_error || "unknown Apps Script error"}`);
         else if (saved?.training_added) {
             const labels = (saved.trainings || []).map(item => loiTrainingLabels[item] || item).join(" and ");
