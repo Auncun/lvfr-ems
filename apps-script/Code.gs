@@ -2261,13 +2261,9 @@ function mutateLoiSheet_(data) {
       const cell = config.sheet.getRange(row, config.percentColumn);
       percent = loiPercentFromCell_(cell.getValue(), cell.getDisplayValue(), cell.getNumberFormat());
     }
-    // A passed LOI leaves the list: the row is deleted, so the rows below move up.
-    // A failed LOI only clears the entry.
-    if (action === 'passed') config.sheet.deleteRow(row);
-    else {
-      config.sheet.getRange(row, config.nameColumn).clearContent();
-      if (config.percentColumn) config.sheet.getRange(row, config.percentColumn).clearContent();
-    }
+    // Passed and failed both clear the member's entry from the row; the row itself stays.
+    config.sheet.getRange(row, config.nameColumn).clearContent();
+    if (config.percentColumn) config.sheet.getRange(row, config.percentColumn).clearContent();
     SpreadsheetApp.flush();
     return { ok: true, changed: true, type, name, row, test_percent: percent };
   });
