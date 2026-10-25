@@ -1487,7 +1487,11 @@ function renderLoiAddChoices() {
     const alreadyHeld = member => loiAddType === "HERT"
         ? isTrainingHeld(member.has_hert)
         : isTrainingHeld(member.has_basic_firefighting) && isTrainingHeld(member.has_advanced_firefighting);
-    const members = (allMembersCache || []).filter(member => !alreadyHeld(member) && (!query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query)));
+    // Members already on this LOI list are not offered either.
+    const onList = loiLists[loiAddType.toLowerCase()] || [];
+    const alreadyOnList = member => onList.some(item => (item.callsign && String(item.callsign).toUpperCase() === String(member.callsign || "").toUpperCase())
+        || String(item.name || "").trim().toLocaleLowerCase() === String(member.name || "").trim().toLocaleLowerCase());
+    const members = (allMembersCache || []).filter(member => !alreadyHeld(member) && !alreadyOnList(member) && (!query || `${member.callsign} ${member.name}`.toLocaleLowerCase().includes(query)));
     choices.innerHTML = members.length ? members.map(member => `<div class="training-action-choice"><span class="training-choice-callsign">${esc(member.callsign)}</span><span class="training-choice-name">${esc(member.name)}</span>${loiAddType === "FORT" ? `<label>% on test <input type="number" min="0" max="100" step="any" data-loi-percent placeholder="Enter percent"></label>` : ""}<button type="button" class="primary" data-loi-add data-loi-type="${loiAddType}" data-loi-name="${esc(member.name)}" data-loi-callsign="${esc(member.callsign)}">Add</button></div>`).join("") : '<div class="empty">No members match this search.</div>';
 }
 document.addEventListener("click", async event => {

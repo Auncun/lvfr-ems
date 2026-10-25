@@ -1241,9 +1241,9 @@ function installRosterD1SyncTriggers() {
     const builder = ScriptApp.newTrigger(item.handler).forSpreadsheet(item.spreadsheetId);
     (item.event === 'edit' ? builder.onEdit() : builder.onChange()).create();
   });
-  // Automatic sync runs every 30 minutes. Replace any older fallback trigger so the interval is current.
+  // Recovery sync every 5 minutes, in case an edit trigger was missed. Replace any older fallback trigger so the interval is current.
   existing.filter(trigger => trigger.getHandlerFunction() === 'syncSheetSnapshotsFallback_').forEach(trigger => ScriptApp.deleteTrigger(trigger));
-  ScriptApp.newTrigger('syncSheetSnapshotsFallback_').timeBased().everyMinutes(30).create();
+  ScriptApp.newTrigger('syncSheetSnapshotsFallback_').timeBased().everyMinutes(5).create();
   if (!PropertiesService.getScriptProperties().getProperty('LVFR_D1_ACCOUNTS_SHEET_IDS')) saveAccountsSheetIds_();
   return diagnoseRosterD1Sync();
 }
@@ -1311,6 +1311,15 @@ function diagnoseTrainingHoursD1Sync() {
   return result;
 }
 
+// Sheets whose manual edits feed the LOI lists in D1.
+const LOI_SHEET_NAMES_ = ['HERT Certified', 'FIREFIGHTER CERT'];
+
+// A LOI sync failure is logged and must not stop the roster snapshot that follows it.
+function syncLoiSheetToD1OnEdit_() {
+  try { syncLoiSheetToD1_(); }
+  catch (error) { console.error('LOI D1 sync from sheet edit failed: ' + (error && error.message ? error.message : error)); }
+}
+
 function syncRosterToD1OnEdit_(event) {
   if (!event || !event.range) return;
   try {
@@ -1327,9 +1336,8 @@ function syncRosterToD1OnEdit_(event) {
       syncTrainingHoursSheetToD1_();
       return;
     }
-    if (event.source.getId() === rosterId && isLoiSheetEdit_(name, event.range)) {
-      syncLoiSheetToD1_();
-    }
+    // Any manual edit on the HERT or FORT sheet (names, % on test, dates, colors, deleted rows) can change a LOI list.
+    if (event.source.getId() === rosterId && LOI_SHEET_NAMES_.includes(name)) syncLoiSheetToD1OnEdit_();
     const allowed = event.source.getId() === rosterId
       ? [LVFR.rosterTab, 'HERT Certified', 'FIREFIGHTER CERT'].includes(name)
       : event.source.getId() === privateId && name === 'Do not Promote';
@@ -1368,6 +1376,7 @@ function syncRosterToD1OnChange_(event) {
       console.log('Roster D1 trigger skipped: onChange spreadsheet is not the configured roster.');
       return;
     }
+    syncLoiSheetToD1OnEdit_();
     syncRosterSnapshotToD1_('trigger:onChange:FORMAT', false);
   } catch (error) {
     console.error('Roster D1 onChange trigger failed: ' + (error && error.stack ? error.stack : error));
@@ -2238,8 +2247,13 @@ function mutateLoiSheet_(data) {
       const cell = config.sheet.getRange(row, config.percentColumn);
       percent = loiPercentFromCell_(cell.getValue(), cell.getDisplayValue(), cell.getNumberFormat());
     }
-    config.sheet.getRange(row, config.nameColumn).clearContent();
-    if (config.percentColumn) config.sheet.getRange(row, config.percentColumn).clearContent();
+    // A passed LOI leaves the list: the row is deleted, so the rows below move up.
+    // A failed LOI only clears the entry.
+    if (action === 'passed') config.sheet.deleteRow(row);
+    else {
+      config.sheet.getRange(row, config.nameColumn).clearContent();
+      if (config.percentColumn) config.sheet.getRange(row, config.percentColumn).clearContent();
+    }
     SpreadsheetApp.flush();
     return { ok: true, changed: true, type, name, row, test_percent: percent };
   });
