@@ -2169,6 +2169,20 @@ function loiSheetConfig_(type) {
   return { ...config, sheet, startRow: certLayout_(sheet).loiStart };
 }
 
+// "% on test" can be stored as a number (85), a percent-formatted number (0.85 shown
+// as 85%) or text ("85%"). Always return the percentage as a plain number string.
+function loiPercentFromCell_(value, display, format) {
+  if (typeof value === 'number') {
+    if (!isFinite(value)) return '';
+    const percent = /%/.test(String(format || '')) ? value * 100 : value;
+    return String(Math.round(percent * 100) / 100);
+  }
+  const text = String(display == null || display === '' ? value : display).replace(/[%\s]/g, '').replace(',', '.');
+  if (!text) return '';
+  const number = Number(text);
+  return isFinite(number) ? String(Math.round(number * 100) / 100) : '';
+}
+
 function listLoiSheet_() {
   const result = { hert: [], fort: [] };
   ['HERT', 'FORT'].forEach(type => {
