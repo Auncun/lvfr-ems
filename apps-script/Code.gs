@@ -2040,7 +2040,7 @@ function clearTerminatedMemberTraining_(data) {
   const fortSheet = spreadsheet.getSheetByName('FIREFIGHTER CERT');
   if (fortSheet) {
     fort += clearMatchingRows(fortSheet, 1, 2, Math.min(certZoneLastRow_(fortSheet), fortSheet.getLastRow()), [1, 2, 4]);
-    const config = LOI_SHEET_CONFIG.FORT;
+    const config = loiSheetConfig_('FORT');
     loi += clearMatchingRows(fortSheet, config.nameColumn, config.startRow, fortSheet.getLastRow(), [config.nameColumn, config.percentColumn]);
   }
   const hoursSheet = trainingHoursSheet_();
@@ -2067,9 +2067,7 @@ function clearTerminatedMemberTraining_(data) {
 // instructor lookup is limited to the top block so a name that is on the LOI list
 // is never mistaken for an instructor row (and never cleared by an instructor change).
 function certZoneLastRow_(sheet) {
-  const title = sheet.getName();
-  if (title === LOI_SHEET_CONFIG.HERT.sheet) return hertLayout_(sheet).zoneLast;
-  if (title === LOI_SHEET_CONFIG.FORT.sheet) return LOI_SHEET_CONFIG.FORT.startRow - 1;
+  if (loiConfigForSheet_(sheet.getName())) return certLayout_(sheet).zoneLast;
   return sheet.getMaxRows();
 }
 
@@ -2088,7 +2086,7 @@ function findOrCreateNamedSheetRow_(sheet, nameColumn, name, create, ignoredRows
     // Full list: insert a new row at the end of the list. The HERT LOI block moves down with it.
     const at = zoneLast + 1;
     sheet.insertRowBefore(at);
-    hertFormatNewRow_(sheet, at);
+    certFormatNewRow_(sheet, at);
     return at;
   }
   // The LOI list starts right below this block, so a row cannot be appended here
@@ -2120,31 +2118,35 @@ function trainingHoursSheet_() {
 }
 
 const LOI_SHEET_CONFIG = Object.freeze({
-  // HERT startRow is not fixed: it is found from the sheet by hertLayout_() because the
-  // HERT list grows when more members are added above the LOI list.
-  HERT: { sheet: 'HERT Certified', startRow: 0, nameColumn: 2, percentColumn: 0 },
-  FORT: { sheet: 'FIREFIGHTER CERT', startRow: 15, nameColumn: 1, percentColumn: 5 }
+  // startRow is not fixed: certLayout_() finds it from the sheet, because the certification
+  // list above the LOI list grows when members are added.
+  HERT: { sheet: 'HERT Certified', startRow: 0, nameColumn: 2, percentColumn: 0, header: 'Approved LOI No Training' },
+  FORT: { sheet: 'FIREFIGHTER CERT', startRow: 0, nameColumn: 1, percentColumn: 5, header: 'FORT LOIs complete class still needed' }
 });
 
-const HERT_LOI_HEADER = 'Approved LOI No Training';
-
-function isBlackRow_(sheet, row) {
-  return String(sheet.getRange(row, 2).getBackground() || '').toLowerCase() === '#000000';
+function loiConfigForSheet_(title) {
+  return Object.values(LOI_SHEET_CONFIG).find(config => config.sheet === title) || null;
 }
 
-// Locates the HERT LOI block from its header text in column B:
-// zoneLast = last row of the certification / instructor list (the black spacer above the header is excluded),
-// loiStart = first LOI candidate row (the black separator under the header is skipped).
-function hertLayout_(sheet) {
-  const labels = sheet.getRange(1, 2, sheet.getMaxRows(), 1).getDisplayValues();
-  const key = sheetNameKey_(HERT_LOI_HEADER);
+function isBlackRow_(sheet, row, column) {
+  return String(sheet.getRange(row, column).getBackground() || '').toLowerCase() === '#000000';
+}
+
+// Locates the LOI block of HERT Certified / FIREFIGHTER CERT from its header text:
+// zoneLast = last row of the certification / instructor list (a black spacer above the header is excluded),
+// loiStart = first LOI candidate row (a black separator under the header is skipped).
+function certLayout_(sheet) {
+  const config = loiConfigForSheet_(sheet.getName());
+  if (!config) throw new Error(sheet.getName() + ' has no LOI list.');
+  const labels = sheet.getRange(1, config.nameColumn, sheet.getMaxRows(), 1).getDisplayValues();
+  const key = sheetNameKey_(config.header);
   const index = labels.findIndex(row => sheetNameKey_(row[0]) === key);
-  if (index < 0) throw new Error('HERT Certified: the "' + HERT_LOI_HEADER + '" header was not found in column B, so the LOI list position is unknown.');
+  if (index < 0) throw new Error(sheet.getName() + ': the "' + config.header + '" header was not found in column ' + config.nameColumn + ', so the LOI list position is unknown.');
   const header = index + 1;
   let loiStart = header + 1;
-  if (loiStart <= sheet.getMaxRows() && isBlackRow_(sheet, loiStart)) loiStart++;
+  if (loiStart <= sheet.getMaxRows() && isBlackRow_(sheet, loiStart, config.nameColumn)) loiStart++;
   let zoneLast = header - 1;
-  if (zoneLast >= 2 && isBlackRow_(sheet, zoneLast)) zoneLast--;
+  if (zoneLast >= 2 && isBlackRow_(sheet, zoneLast, config.nameColumn)) zoneLast--;
   return { header, zoneLast, loiStart };
 }
 
@@ -2155,22 +2157,7 @@ function loiSheetConfig_(type) {
   const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
   const sheet = spreadsheet.getSheetByName(config.sheet);
   if (!sheet) throw new Error(config.sheet + ' sheet was not found.');
-  const startRow = key === 'HERT' ? hertLayout_(sheet).loiStart : config.startRow;
-  return { ...config, sheet, startRow };
-}
-
-// "% on test" can be stored as a number (85), a percent-formatted number (0.85 shown
-// as 85%) or text ("85%"). Always return the percentage as a plain number string.
-function loiPercentFromCell_(value, display, format) {
-  if (typeof value === 'number') {
-    if (!isFinite(value)) return '';
-    const percent = /%/.test(String(format || '')) ? value * 100 : value;
-    return String(Math.round(percent * 100) / 100);
-  }
-  const text = String(display == null || display === '' ? value : display).replace(/[%\s]/g, '').replace(',', '.');
-  if (!text) return '';
-  const number = Number(text);
-  return isFinite(number) ? String(Math.round(number * 100) / 100) : '';
+  return { ...config, sheet, startRow: certLayout_(sheet).loiStart };
 }
 
 function listLoiSheet_() {
@@ -2307,8 +2294,8 @@ function reviewLoiSheets() {
 function isLoiSheetEdit_(sheetName, range) {
   const firstRow = range.getRow(), lastRow = firstRow + range.getNumRows() - 1;
   const firstColumn = range.getColumn(), lastColumn = firstColumn + range.getNumColumns() - 1;
-  if (sheetName === 'HERT Certified') return lastRow >= hertLayout_(range.getSheet()).loiStart && firstColumn <= LOI_SHEET_CONFIG.HERT.nameColumn && lastColumn >= LOI_SHEET_CONFIG.HERT.nameColumn;
-  if (sheetName === 'FIREFIGHTER CERT') return lastRow >= LOI_SHEET_CONFIG.FORT.startRow && (
+  if (sheetName === 'HERT Certified') return lastRow >= certLayout_(range.getSheet()).loiStart && firstColumn <= LOI_SHEET_CONFIG.HERT.nameColumn && lastColumn >= LOI_SHEET_CONFIG.HERT.nameColumn;
+  if (sheetName === 'FIREFIGHTER CERT') return lastRow >= certLayout_(range.getSheet()).loiStart && (
     (firstColumn <= LOI_SHEET_CONFIG.FORT.nameColumn && lastColumn >= LOI_SHEET_CONFIG.FORT.nameColumn) ||
     (firstColumn <= LOI_SHEET_CONFIG.FORT.percentColumn && lastColumn >= LOI_SHEET_CONFIG.FORT.percentColumn)
   );
@@ -2627,9 +2614,7 @@ function changeInstructor_(callsign, data, user) {
     appendAppLog_({ kind: 'instructor', callsign: member.callsign, member_name: member.name, action: type + ' Instructor Removed', details: type, changed_by: actorName_(user) });
     return { ok: true, changed: true, assigned: false, instructor_type: type, status: 'removed' };
   }
-  const row = type === 'HERT'
-    ? hertPlaceInstructorRow_(sheet, matchingRows[0] || 0)
-    : matchingRows[0] || findOrCreateNamedSheetRow_(sheet, nameColumn, member.name, true, []);
+  const row = certPlaceInstructorRow_(sheet, matchingRows[0] || 0);
   const instructorNameCell = sheet.getRange(row, nameColumn);
   if (String(instructorNameCell.getDisplayValue() || '').trim() !== member.name) instructorNameCell.setValue(member.name);
   if (type === 'HERT') instructorNameCell.setFontSize(14);
@@ -2651,37 +2636,54 @@ function changeInstructor_(callsign, data, user) {
   return { ok: true, changed: !current, assigned: true, instructor_type: type, status: current ? 'unchanged' : 'queued' };
 }
 
-// New HERT rows: white background, with the separator columns A, C, E, G, I set to black.
-function hertFormatNewRow_(sheet, row) {
-  const width = Math.max(sheet.getLastColumn(), 9);
+// New rows in a certification list: white background; HERT also gets black separator columns A, C, E, G, I.
+function certFormatNewRow_(sheet, row) {
+  const isHert = sheet.getName() === LOI_SHEET_CONFIG.HERT.sheet;
+  const width = Math.max(sheet.getLastColumn(), isHert ? 9 : 5);
   sheet.getRange(row, 1, 1, width).setBackground('#ffffff');
-  [1, 3, 5, 7, 9].forEach(column => sheet.getRange(row, column).setBackground('#000000'));
+  if (isHert) [1, 3, 5, 7, 9].forEach(column => sheet.getRange(row, column).setBackground('#000000'));
   SpreadsheetApp.flush();
 }
 
-// HERT instructors are kept at the top of the HERT list, directly under the last current instructor.
-// An existing member row is moved there (with its training data); a new member takes an empty row
-// if one exists, otherwise a new row is inserted. The HERT LOI block below moves with the list.
-function hertInstructorInsertRow_(sheet, layout) {
+// Instructor rows: HERT = green in column F; FORT = green in column B AND blue in column C.
+function certIsInstructorRow_(sheet, row) {
+  if (sheet.getName() === LOI_SHEET_CONFIG.HERT.sheet) return isGreen_(sheet.getRange(row, 6).getBackground());
+  return isGreen_(sheet.getRange(row, 2).getBackground()) && isFortInstructorMarked_(sheet.getRange(row, 3).getBackground());
+}
+
+// Instructors are kept at the top of each certification list, directly under the last current instructor.
+function certInstructorInsertRow_(sheet, layout, nameColumn) {
   const count = Math.max(0, layout.zoneLast - 1);
   if (!count) return 2;
-  const names = sheet.getRange(2, 2, count, 1).getDisplayValues();
-  const marks = sheet.getRange(2, 6, count, 1).getBackgrounds();
+  const names = sheet.getRange(2, nameColumn, count, 1).getDisplayValues();
   let last = 0;
-  names.forEach((row, index) => {
-    if (sheetNameKey_(row[0]) && isGreen_(marks[index][0])) last = index + 2;
-  });
+  if (sheet.getName() === LOI_SHEET_CONFIG.HERT.sheet) {
+    const marks = sheet.getRange(2, 6, count, 1).getBackgrounds();
+    names.forEach((row, index) => { if (sheetNameKey_(row[0]) && isGreen_(marks[index][0])) last = index + 2; });
+  } else {
+    const greenB = sheet.getRange(2, 2, count, 1).getBackgrounds();
+    const blueC = sheet.getRange(2, 3, count, 1).getBackgrounds();
+    names.forEach((row, index) => {
+      if (sheetNameKey_(row[0]) && isGreen_(greenB[index][0]) && isFortInstructorMarked_(blueC[index][0])) last = index + 2;
+    });
+  }
   return last ? last + 1 : 2;
 }
 
-function hertPlaceInstructorRow_(sheet, existingRow) {
-  if (existingRow && isGreen_(sheet.getRange(existingRow, 6).getBackground())) return existingRow;
-  const layout = hertLayout_(sheet);
-  let target = hertInstructorInsertRow_(sheet, layout);
-  const width = Math.max(sheet.getLastColumn(), 6);
+// Returns the row where the instructor now sits. An existing member row moves there (with its data);
+// a new member takes an empty row inside the list if there is one, otherwise a row is inserted.
+// The LOI list below moves with the list.
+function certPlaceInstructorRow_(sheet, existingRow) {
+  if (existingRow && certIsInstructorRow_(sheet, existingRow)) return existingRow;
+  const config = loiConfigForSheet_(sheet.getName());
+  const layout = certLayout_(sheet);
+  let target = certInstructorInsertRow_(sheet, layout, config.nameColumn);
+  const width = Math.max(sheet.getLastColumn(), 5);
   if (!existingRow) {
-    const names = sheet.getRange(2, 2, Math.max(0, layout.zoneLast - 1), 1).getDisplayValues();
-    const emptyIndex = names.findIndex((row, index) => index + 2 !== 3 && !sheetNameKey_(row[0]));
+    const reserved = sheet.getName() === LOI_SHEET_CONFIG.HERT.sheet ? 3 : 0;
+    const count = Math.max(0, layout.zoneLast - 1);
+    const names = count ? sheet.getRange(2, config.nameColumn, count, 1).getDisplayValues() : [];
+    const emptyIndex = names.findIndex((row, index) => index + 2 !== reserved && !sheetNameKey_(row[0]));
     if (emptyIndex >= 0) {
       const empty = emptyIndex + 2;
       sheet.deleteRow(empty);
@@ -2693,11 +2695,11 @@ function hertPlaceInstructorRow_(sheet, existingRow) {
     const source = existingRow >= target ? existingRow + 1 : existingRow;
     sheet.getRange(source, 1, 1, width).copyTo(sheet.getRange(target, 1, 1, width));
     sheet.deleteRow(source);
+    SpreadsheetApp.flush();
   } else {
-    // Inserted rows inherit the formatting above them (green instructor / training cells), so reset it.
-    hertFormatNewRow_(sheet, target);
+    // Inserted rows inherit the formatting above them (green instructor cells), so reset it.
+    certFormatNewRow_(sheet, target);
   }
-  SpreadsheetApp.flush();
   return target;
 }
 
