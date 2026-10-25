@@ -3691,17 +3691,18 @@ function updateManageButtons() {
         const has = key ? Boolean(owned[key]) : false;
         const addButton = $("#addTrainingButton");
         const deleteButton = $("#deleteTrainingButton");
-        if (addButton) addButton.disabled = has;
-        if (deleteButton) deleteButton.disabled = !has;
+        if (addButton) addButton.disabled = !key || has;
+        if (deleteButton) deleteButton.disabled = !key || !has;
     }
     const instructorSelect = $("#instructorType");
     if (instructorSelect) {
         const types = String(instructorSelect.dataset.ownedTypes || "");
-        const isInstructor = types.includes(String(instructorSelect.value || "").toUpperCase());
+        const value = String(instructorSelect.value || "").toUpperCase();
+        const isInstructor = Boolean(value) && types.includes(value);
         const addInstructor = $("#addInstructorButton");
         const deleteInstructor = $("#deleteInstructorButton");
-        if (addInstructor) addInstructor.disabled = isInstructor;
-        if (deleteInstructor) deleteInstructor.disabled = !isInstructor;
+        if (addInstructor) addInstructor.disabled = !value || isInstructor;
+        if (deleteInstructor) deleteInstructor.disabled = !value || !isInstructor;
     }
 }
 
@@ -3769,6 +3770,8 @@ function openManage(cs) {
                     Training
 
                     <select id="training" data-action="update-training-permission" data-owned="${esc(JSON.stringify({ basic: Boolean(managedMember.has_basic_firefighting), advanced: Boolean(managedMember.has_advanced_firefighting), hert: Boolean(managedMember.has_hert) }))}">
+
+                        <option value="" disabled selected>Select Training</option>
 
                         ${config.trainings.map(
                             x => {
@@ -3862,11 +3865,12 @@ function openManage(cs) {
                  EXAM
                  ================================================= -->
 
-            ${currentUserHasPermission("exam_manage") ? `
-            <div class="form-row">
+            ${currentUserHasPermission("exam_manage") || currentUserHasPermission("instructor_manage") ? `
+            <div class="form-row manage-main-row">
 
+                <!-- EXAM -->
 
-                <label>
+                ${currentUserHasPermission("exam_manage") ? `<label>
 
                     Exam
 
@@ -3878,53 +3882,46 @@ function openManage(cs) {
 
                     </select>
 
-                </label>
+                </label>` : "<span></span>"}
 
 
-                <span></span>
+                <!-- INSTRUCTOR -->
 
+                ${currentUserHasPermission("instructor_manage") ? `<label>
 
-            </div>
+                    Instructor
 
+                    <select id="instructorType" data-owned-types="${esc(String(activeProfileMember?.instructor_type || "").toUpperCase())}">
+                        <option value="" disabled selected>Select Instructor</option>
+                        <option value="HERT">HERT</option>
+                        <option value="FORT">FORT</option>
+                    </select>
 
-            <div class="actions">
-
-
-                <button
-                    type="button"
-                    data-action="exam-add" data-callsign="${esc(cs)}" ${managedMember.has_supervisor_exam ? "disabled" : ""}
-                >
-                    Add Exam
-                </button>
-
-
-                <button
-                    type="button"
-                    data-action="exam-remove" data-callsign="${esc(cs)}" ${managedMember.has_supervisor_exam ? "" : "disabled"}
-                >
-                    Delete Exam
-                </button>
-
+                </label>` : "<span></span>"}
 
             </div>
-            ` : ""}
 
 
-            ${currentUserHasPermission("instructor_manage") ? `
-                <hr>
-                <div class="instructor-admin-controls">
-                    <label>
-                        Instructor
-                        <select id="instructorType" data-owned-types="${esc(String(activeProfileMember?.instructor_type || "").toUpperCase())}">
-                            <option value="HERT" ${String(activeProfileMember?.instructor_type || "").includes("HERT") ? "selected" : ""}>HERT</option>
-                            <option value="FORT" ${String(activeProfileMember?.instructor_type || "").includes("FORT") ? "selected" : ""}>FORT</option>
-                        </select>
-                    </label>
-                    <div class="actions">
-                        <button type="button" id="addInstructorButton" data-action="instructor-add" data-callsign="${esc(cs)}">Add Instructor</button>
-                        <button type="button" id="deleteInstructorButton" data-action="instructor-remove" data-callsign="${esc(cs)}">Delete Instructor</button>
-                    </div>
+            <div class="manage-action-row">
+
+                <div class="training-actions">
+                    ${currentUserHasPermission("exam_manage") ? `
+                    <button type="button" data-action="exam-add" data-callsign="${esc(cs)}" ${managedMember.has_supervisor_exam ? "disabled" : ""}>
+                        Add Exam
+                    </button>
+                    <button type="button" data-action="exam-remove" data-callsign="${esc(cs)}" ${managedMember.has_supervisor_exam ? "" : "disabled"}>
+                        Delete Exam
+                    </button>` : ""}
                 </div>
+
+                <div class="activity-actions">
+                    ${currentUserHasPermission("instructor_manage") ? `
+                    <button type="button" id="addInstructorButton" data-action="instructor-add" data-callsign="${esc(cs)}" disabled>Add Instructor</button>
+                    <button type="button" id="deleteInstructorButton" data-action="instructor-remove" data-callsign="${esc(cs)}" disabled>Delete Instructor</button>` : ""}
+                </div>
+
+            </div>
+            <hr>
             ` : ""}
 
 
