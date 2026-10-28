@@ -5,7 +5,7 @@
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Operation Command | LVFR EMS</title>
-  <link rel="stylesheet" href="/static/style.css?v=discord-sync-20261028-5">
+  <link rel="stylesheet" href="/static/style.css?v=discord-sync-20261028-6">
   <style>
     body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:24px}
     .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -112,7 +112,8 @@
 
       <p class="muted">Edit changes the Discord User ID for a callsign after checking the nickname. Delink only removes the link; Discord is not changed.</p>
       <div class="admin-actions"><button type="button" id="refreshLinkedMembers">Refresh list</button></div>
-      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Callsign</th><th>Name</th><th>Discord</th><th>Discord User ID</th><th>Nickname</th><th>Status</th><th>Roster</th><th>Actions</th></tr></thead><tbody id="linkedMemberRows"></tbody></table></div>
+      <div class="toolbar"><input id="linkedMembersSearch" type="text" autocomplete="off" aria-label="Search Linked members" placeholder="Search callsign, member, Discord ID, or nickname"></div>
+      <div class="admin-table-wrap"><table class="admin-table" data-sort-only="callsign,name"><thead><tr><th>Callsign</th><th>Name</th><th>Discord</th><th>Discord User ID</th><th>Nickname</th><th>Status</th><th>Roster</th><th>Actions</th></tr></thead><tbody id="linkedMemberRows"></tbody></table></div>
     </section>
     <section id="commandLogSection" class="admin-card command-section" aria-labelledby="discordLogHeading" hidden>
       <div class="admin-header"><div><h2 id="discordLogHeading">Discord action log</h2></div><div class="admin-actions"><button type="button" class="danger" id="clearDiscordLog">Clear log</button></div></div>
@@ -150,11 +151,11 @@
   <script src="/static/notifications.js?v=ops-20261022-15"></script>
 <script src="/static/rank-badges.js?v=ops-20261022-15"></script>
 <script src="/static/account-settings.js?v=ops-20261022-15"></script>
-  <script src="/static/administration.js?v=discord-sync-20261028-7"></script>
+  <script src="/static/administration.js?v=discord-sync-20261028-8"></script>
   <script src="/static/sidebar.js?v=ops-20261028-2"></script>
   <script src="/static/mobile-popovers.js?v=ops-20261022-15"></script>
 <script src="/static/search-clear.js?v=ops-20261022-15" defer></script>
-<script src="/static/table-sort.js?v=ops-20261022-15"></script>
+<script src="/static/table-sort.js?v=ops-20261028-2"></script>
   <script src="/static/confirm-card.js?v=ops-20261022-3"></script>
 </body>
 </html>
