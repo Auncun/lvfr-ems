@@ -1872,6 +1872,10 @@ export async function handleD1(context) {
       const rows=await readMembers(db,user.callsign,env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
       const member=rows.find(row=>row.callsign.toUpperCase()===user.callsign.toUpperCase());
       if(!member) return json({detail:"Member not found."},404);
+      // Only return the Discord ID linked to the currently authenticated user's own callsign.
+      // Include pending_callsign so a callsign change in progress does not temporarily hide the ID.
+      const discordLink=await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE callsign=? OR pending_callsign=? LIMIT 1").bind(String(user.callsign),String(user.callsign)).first();
+      member.discord_user_id=discordLink?.discord_user_id ? String(discordLink.discord_user_id) : "";
       const eligible=rankEligibility(member);
       member.trainings=[...(member.has_basic_firefighting?["basic_firefighting"]:[]),...(member.has_advanced_firefighting?["advanced_firefighting"]:[])];
       member.exams=member.has_supervisor_exam?["supervisor_exam"]:[]; member.hert=member.has_hert; member.eligible=eligible.eligible;
