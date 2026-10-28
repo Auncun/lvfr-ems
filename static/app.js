@@ -5600,6 +5600,25 @@ logSyncButton?.addEventListener("click", async () => {
         logSyncButton.textContent = "Log sync";
     }
 });
+// Sync Discord: the same initial linking as Sync Discord Members in Administration. The server checks the permission.
+const syncDiscordButton = $("#syncDiscordBtn");
+syncDiscordButton?.addEventListener("click", async () => {
+    if (!currentUserHasPermission("discord_sync_manage")) return;
+    if (!(await lvfrConfirm({ title: "Sync Discord", message: "Refresh the roster and link Discord members by exact callsign? This will not change Discord nicknames or roles.", confirmText: "Run Sync Discord" }))) return;
+    const label = syncDiscordButton.textContent;
+    syncDiscordButton.disabled = true;
+    syncDiscordButton.textContent = "Syncing Discord...";
+    try {
+        const result = await api("/api/discord/sync", { method: "POST", body: "{}" });
+        toast([result.message || "Discord synchronization completed.", result.ops_role_message].filter(Boolean).join(" "));
+    } catch (error) {
+        toast(error.message);
+    } finally {
+        syncDiscordButton.disabled = false;
+        syncDiscordButton.textContent = label;
+    }
+});
+
 const fullSyncButton = $("#fullSyncBtn");
 fullSyncButton?.addEventListener("click", async () => {
     if (!currentUserCanFullSync || !(await lvfrConfirm({ title: "Full Sync", message: "Full Sync will replace the D1 roster and Callsign slots from the current Google Sheet.", confirmText: "Run Full Sync", danger: true }))) return;
@@ -5999,6 +6018,8 @@ function applyAccountUser(user) {
     if (syncControl) syncControl.hidden = false;
     const syncNowButton = $("#syncBtn");
     if (syncNowButton) syncNowButton.hidden = !canSyncNow;
+    const syncDiscordButtonVisible = $("#syncDiscordBtn");
+    if (syncDiscordButtonVisible) syncDiscordButtonVisible.hidden = !currentUserHasPermission("discord_sync_manage");
     // Sync details open in a small dropdown from the top bar, so the bar stays compact.
     const syncToggle = $("#syncToggleButton");
     if (syncToggle && commandSyncPanel && !syncToggle.dataset.bound) {
