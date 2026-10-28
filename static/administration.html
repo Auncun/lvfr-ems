@@ -80,6 +80,12 @@
       <p id="discordSyncStatus" class="admin-status" role="status" aria-live="polite">Discord status has not been loaded.</p>
       <div id="discordSyncReport" class="admin-card" hidden><h3>Synchronization Report</h3><pre id="discordSyncReportText" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:0"></pre></div>
       <p class="muted">Required Cloudflare configuration: DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, and DISCORD_ROLE_MAP. The bot needs Manage Nicknames and Manage Roles, and the Server Members Intent must be enabled for initial member discovery.</p>
+          <h3>Linked members</h3>
+      <p class="muted">Edit changes the Discord User ID for a callsign after checking the nickname. Delink only removes the link; Discord is not changed.</p>
+      <div class="admin-actions"><button type="button" id="refreshLinkedMembers">Refresh list</button></div>
+      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Callsign</th><th>Name</th><th>Discord User ID</th><th>Status</th><th>Roster</th><th>Actions</th></tr></thead><tbody id="linkedMemberRows"></tbody></table></div>
+      <h3>Discord action log</h3>
+      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Time</th><th>By</th><th>Action</th><th>Callsign</th><th>Result</th><th>Detail</th></tr></thead><tbody id="discordLogRows"></tbody></table></div>
     </section>
     <section id="commandPermissionsSection" class="admin-card permissions-card command-section" aria-labelledby="permissionsHeading" hidden>
       <div class="admin-header permissions-heading"><div><h2 id="permissionsHeading">Access Permissions</h2><p class="muted">Operation Command access manages role permission profiles. Separate permissions control adding, renaming, reordering, and deleting ranks below your own. Only Operation manages accounts and individual permissions.</p></div></div>
@@ -138,7 +144,7 @@
   <script src="/static/notifications.js?v=ops-20261022-15"></script>
 <script src="/static/rank-badges.js?v=ops-20261022-15"></script>
 <script src="/static/account-settings.js?v=ops-20261022-15"></script>
-  <script src="/static/administration.js?v=discord-sync-20261028-1"></script>
+  <script src="/static/administration.js?v=discord-sync-20261028-2"></script>
   <script src="/static/sidebar.js?v=ops-20261022-15"></script>
   <script src="/static/mobile-popovers.js?v=ops-20261022-15"></script>
 <script src="/static/search-clear.js?v=ops-20261022-15" defer></script>
