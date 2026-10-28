@@ -4628,34 +4628,8 @@ async function promote(cs) {
 
 // In-app text dialog. Used instead of window.prompt(), which returns an empty value in some browsers and apps.
 function askText(message, initial = "") {
-    return new Promise(resolve => {
-        const dialog = document.createElement("dialog");
-        dialog.innerHTML = `<form method="dialog" class="ask-text-form" style="display:grid;gap:12px;min-width:min(90vw,380px);padding:16px">
-            <p class="ask-text-message" style="margin:0;white-space:pre-line"></p>
-            <input type="text" class="ask-text-input" autocomplete="off" style="padding:8px;font:inherit;width:100%">
-            <div style="display:flex;gap:8px;justify-content:flex-end">
-                <button type="button" class="ask-text-cancel">Cancel</button>
-                <button type="submit" class="primary ask-text-ok">OK</button>
-            </div>
-        </form>`;
-        dialog.querySelector(".ask-text-message").textContent = message;
-        const input = dialog.querySelector(".ask-text-input");
-        input.value = initial;
-        let finished = false;
-        const finish = value => {
-            if (finished) return;
-            finished = true;
-            dialog.close();
-            dialog.remove();
-            resolve(value);
-        };
-        dialog.querySelector(".ask-text-cancel").addEventListener("click", () => finish(null));
-        dialog.querySelector("form").addEventListener("submit", event => { event.preventDefault(); finish(input.value); });
-        dialog.addEventListener("cancel", event => { event.preventDefault(); finish(null); });
-        document.body.append(dialog);
-        dialog.showModal();
-        input.focus();
-    });
+    // Styled card, titled as a portal confirmation.
+    return window.lvfrText({ title: "Portal Confirmation", message, initial, confirmText: "OK" });
 }
 
 // Shows the full size of a list in its tab or heading, e.g. "(8)".
@@ -4676,25 +4650,17 @@ function currentCallsignFor(control, fallback) {
 
 // Asks what to do in Discord when a member is terminated. Resolves "kick", "remove_roles", "none", or null (cancel).
 function askDiscordAction(cs) {
-    return new Promise(resolve => {
-        const dialog = document.createElement("dialog");
-        dialog.innerHTML = `<form method="dialog" style="display:grid;gap:10px;min-width:min(90vw,440px);padding:16px">
-            <p style="margin:0"><strong>Discord action for ${String(cs).toUpperCase()}</strong></p>
-            <p class="muted" style="margin:0">Every option removes the Discord link. The roster termination is not undone.</p>
-            <button type="button" class="danger" data-choice="kick">Kick from the Discord server</button>
-            <button type="button" data-choice="remove_roles">Remove job roles and clear nickname</button>
-            <button type="button" data-choice="none">Clear nickname only</button>
-            <button type="button" data-choice="cancel">Cancel termination</button>
-        </form>`;
-        let finished = false;
-        const finish = value => { if (finished) return; finished = true; dialog.close(); dialog.remove(); resolve(value); };
-        dialog.querySelectorAll("[data-choice]").forEach(button => button.addEventListener("click", () => {
-            const choice = button.dataset.choice;
-            finish(choice === "cancel" ? null : choice);
-        }));
-        dialog.addEventListener("cancel", event => { event.preventDefault(); finish(null); });
-        document.body.append(dialog);
-        dialog.showModal();
+    // Discord is asked only for a linked member. Resolves "kick", "remove_roles", "none", or null (cancel).
+    return window.lvfrChoose({
+        title: "Discord Confirmation",
+        subject: `Discord action for ${String(cs).toUpperCase()}`,
+        message: "Every option removes the Discord link. The roster termination is not undone.",
+        choices: [
+            { value: "kick", label: "Kick from the Discord server", danger: true },
+            { value: "remove_roles", label: "Remove job roles and clear nickname" },
+            { value: "none", label: "Clear nickname only" }
+        ],
+        cancelText: "Cancel termination"
     });
 }
 
@@ -4856,7 +4822,7 @@ async function openDiscordIdManage(cs) {
         }
     });
     $("#discordIdDelink").addEventListener("click", async () => {
-        if (!window.confirm(`Delink ${cs} from Discord? Discord itself will not be changed.`)) return;
+        if (!(await lvfrConfirm({ title: "Delink Discord", subject: cs, message: "Delink this member from Discord. Discord itself will not be changed.", confirmText: "Delink", danger: true }))) return;
         const message = $("#discordIdMessage");
         try {
             await api("/api/discord/links/delink", { method: "POST", body: JSON.stringify({ callsign: cs }) });
