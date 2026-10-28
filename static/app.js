@@ -3458,7 +3458,7 @@ async function profile(
 
                 <div class="grid profile-grid">
 
-                    ${currentUserIsAdmin ? `<div class="card"><b>Discord</b><div id="profileDiscordState" class="muted">Loading…</div></div>` : ""}
+                    ${currentUserHasPermission("discord_view") ? `<div class="card"><b>Discord</b><div id="profileDiscordState" class="muted">Loading…</div></div>` : ""}
 
 
                     <div class="card">
@@ -3641,7 +3641,7 @@ async function profile(
 
         `;
 
-        if (currentUserIsAdmin) void loadProfileDiscordState(m.callsign);
+        if (currentUserHasPermission("discord_view")) void loadProfileDiscordState(m.callsign);
 
         const modal =
             $("#modal");
@@ -3704,7 +3704,9 @@ function updateManageButtons() {
         const addButton = $("#addTrainingButton");
         const deleteButton = $("#deleteTrainingButton");
         if (addButton) addButton.disabled = !key || has;
+        if (addButton) addButton.dataset.disabledReason = !key ? "Choose Basic, Advanced, or HERT training first." : "Already has this training.";
         if (deleteButton) deleteButton.disabled = !key || !has;
+        if (deleteButton) deleteButton.dataset.disabledReason = !key ? "Choose Basic, Advanced, or HERT training first." : "Does not have this training.";
     }
     const instructorSelect = $("#instructorType");
     if (instructorSelect) {
@@ -3714,7 +3716,9 @@ function updateManageButtons() {
         const addInstructor = $("#addInstructorButton");
         const deleteInstructor = $("#deleteInstructorButton");
         if (addInstructor) addInstructor.disabled = !value || isInstructor;
+        if (addInstructor) addInstructor.dataset.disabledReason = !value ? "Choose an instructor type first." : "Already an instructor of this type.";
         if (deleteInstructor) deleteInstructor.disabled = !value || !isInstructor;
+        if (deleteInstructor) deleteInstructor.dataset.disabledReason = !value ? "Choose an instructor type first." : "Not an instructor of this type.";
     }
     updateNoteButton();
 }
@@ -3726,6 +3730,7 @@ function updateNoteButton() {
     const button = $('#modalContent button[data-action="note"]');
     if (!action || !text || !button) return;
     button.disabled = action.value !== "Delete" && !text.value.trim();
+    button.dataset.disabledReason = button.disabled ? "Enter the note text first, or choose Delete." : "";
 }
 
 document.addEventListener("change", event => {
@@ -3934,10 +3939,10 @@ function openManage(cs) {
 
                 <div class="training-actions">
                     ${currentUserHasPermission("exam_manage") ? `
-                    <button type="button" data-action="exam-add" data-callsign="${esc(cs)}" ${managedMember.has_supervisor_exam ? "disabled" : ""}>
+                    <button type="button" data-action="exam-add" data-callsign="${esc(cs)}" ${managedMember.has_supervisor_exam ? "disabled" : ""} data-disabled-reason="Already has the supervisor exam.">
                         Add Exam
                     </button>
-                    <button type="button" data-action="exam-remove" data-callsign="${esc(cs)}" ${managedMember.has_supervisor_exam ? "" : "disabled"}>
+                    <button type="button" data-action="exam-remove" data-callsign="${esc(cs)}" ${managedMember.has_supervisor_exam ? "" : "disabled"} data-disabled-reason="Does not have the supervisor exam.">
                         Delete Exam
                     </button>` : ""}
                 </div>
@@ -4005,7 +4010,7 @@ function openManage(cs) {
 
                 <button
                     type="button"
-                    id="changeDateButton" disabled data-action="date" data-callsign="${esc(cs)}"
+                    id="changeDateButton" disabled data-disabled-reason="Enter a new date first." data-action="date" data-callsign="${esc(cs)}"
                 >
                     Change Date
                 </button>
@@ -4033,7 +4038,7 @@ function openManage(cs) {
                     type="button"
                     class="primary"
                     data-action="promote"
-                    data-callsign="${esc(cs)}" ${(managedMember.eligible && !managedMember.do_not_promote) ? "" : "disabled"}
+                    data-callsign="${esc(cs)}" ${(managedMember.eligible && !managedMember.do_not_promote) ? "" : "disabled"} data-disabled-reason="${esc(managedMember.do_not_promote ? "On the Do not Promote list." : (managedMember.eligibility_reason || "Not eligible for promotion yet."))}"
                 >
                     Promote
                 </button>` : ""}
@@ -4806,7 +4811,7 @@ async function loadProfileDiscordState(cs) {
 }
 
 async function openDiscordIdManage(cs) {
-    if (!currentUserIsAdmin) return;
+    if (!currentUserHasPermission("discord_manage")) return;
     $("#modalContent").innerHTML = `
         ${discordBackLink(cs)}
         <h2>Discord ID for ${esc(cs)}</h2>
@@ -4817,16 +4822,32 @@ async function openDiscordIdManage(cs) {
                 <input id="discordIdInput" inputmode="numeric" autocomplete="off" placeholder="17 to 20 digits">
             </label>
             <p id="discordIdMessage" class="field-hint" role="status"></p>
-            <button type="button" class="primary" id="discordIdSave">Save Discord ID</button>
-            <button type="button" class="danger" id="discordIdDelink" disabled>Delink</button>
+            <button type="button" class="primary" id="discordIdSave" disabled data-disabled-reason="Enter a Discord User ID to save.">Save Discord ID</button>
+            <button type="button" class="danger" id="discordIdDelink" disabled data-disabled-reason="This member is not linked, so there is nothing to delink.">Delink</button>
         </div>`;
+    let current = "";
+    const refreshSave = () => {
+        const save = $("#discordIdSave");
+        const value = $("#discordIdInput").value.trim();
+        const valid = /^\d{17,20}$/.test(value);
+        save.disabled = !valid || value === current;
+        save.dataset.disabledReason = !value ? "Enter a Discord User ID to save."
+            : !valid ? "A Discord User ID has 17 to 20 digits."
+            : "No change: enter a different Discord User ID.";
+        syncDisabledReasons();
+    };
     const showState = state => {
+        current = state.linked ? String(state.discord_user_id) : "";
         $("#discordIdState").innerHTML = state.linked
             ? `<span class="badge active-status">Linked</span> ${esc(state.discord_user_id)}`
             : `<span class="badge terminate-status">Not linked</span>`;
-        $("#discordIdDelink").disabled = !state.linked;
-        $("#discordIdInput").value = state.linked ? state.discord_user_id : "";
+        const delink = $("#discordIdDelink");
+        delink.disabled = !state.linked;
+        delink.dataset.disabledReason = state.linked ? "" : "This member is not linked, so there is nothing to delink.";
+        $("#discordIdInput").value = current;
+        refreshSave();
     };
+    $("#discordIdInput").addEventListener("input", refreshSave);
     try {
         showState(await api(`/api/discord/member/${encodeURIComponent(cs)}`));
     } catch (error) {
@@ -4836,7 +4857,7 @@ async function openDiscordIdManage(cs) {
         const message = $("#discordIdMessage");
         try {
             await api("/api/discord/links/edit", { method: "POST", body: JSON.stringify({ callsign: cs, discord_user_id: $("#discordIdInput").value.trim() }) });
-            message.textContent = "Saved. Discord nickname was checked against the callsign.";
+            message.textContent = "Saved. The Discord nickname was checked against the callsign.";
             showState(await api(`/api/discord/member/${encodeURIComponent(cs)}`));
         } catch (error) {
             message.textContent = error.message;
@@ -4856,7 +4877,7 @@ async function openDiscordIdManage(cs) {
 }
 
 async function openDiscordNicknameManage(cs) {
-    if (!currentUserIsAdmin) return;
+    if (!currentUserHasPermission("discord_manage")) return;
     $("#modalContent").innerHTML = `
         ${discordBackLink(cs)}
         <h2>Discord nickname for ${esc(cs)}</h2>
@@ -4867,39 +4888,83 @@ async function openDiscordNicknameManage(cs) {
                 <input id="discordNickInput" autocomplete="off" maxlength="32" placeholder="[${esc(cs)}] Name">
             </label>
             <p id="discordNickMessage" class="field-hint" role="status"></p>
-            <button type="button" class="primary" id="discordNickSave">Save nickname</button>
-            <button type="button" class="danger" id="discordNickClear">Clear nickname</button>
+            <button type="button" class="primary" id="discordNickSave" disabled data-disabled-reason="Change the nickname to save.">Save nickname</button>
+            <button type="button" class="danger" id="discordNickClear" disabled data-disabled-reason="There is no nickname to clear.">Clear nickname</button>
         </div>`;
+    let current = "", ready = false;
+    const setBlocked = reason => {
+        for (const id of ["#discordNickSave", "#discordNickClear"]) {
+            const button = $(id);
+            button.disabled = true;
+            button.dataset.disabledReason = reason;
+        }
+        syncDisabledReasons();
+    };
+    const refresh = () => {
+        if (!ready) return;
+        const value = $("#discordNickInput").value.trim();
+        const save = $("#discordNickSave"), clear = $("#discordNickClear");
+        save.disabled = value === current;
+        save.dataset.disabledReason = "No change: edit the nickname first.";
+        clear.disabled = !current;
+        clear.dataset.disabledReason = "There is no nickname to clear.";
+        syncDisabledReasons();
+    };
     const save = async nickname => {
         const message = $("#discordNickMessage");
         try {
             await api(`/api/discord/member/${encodeURIComponent(cs)}/nickname`, { method: "POST", body: JSON.stringify({ nickname }) });
-            message.textContent = nickname ? "Nickname saved in Discord." : "Nickname cleared in Discord.";
+            current = nickname;
             $("#discordNickInput").value = nickname;
+            message.textContent = nickname ? "Nickname saved in Discord." : "Nickname cleared in Discord.";
+            refresh();
         } catch (error) {
             message.textContent = error.message;
         }
     };
+    $("#discordNickInput").addEventListener("input", refresh);
+    $("#discordNickSave").addEventListener("click", () => save($("#discordNickInput").value.trim()));
+    $("#discordNickClear").addEventListener("click", () => save(""));
     try {
         const state = await api(`/api/discord/member/${encodeURIComponent(cs)}/nickname`);
         if (!state.linked) {
             $("#discordNickState").innerHTML = `<span class="badge terminate-status">Not linked</span> Set the Discord ID first.`;
-            $("#discordNickSave").disabled = true;
-            $("#discordNickClear").disabled = true;
+            setBlocked("This member is not linked to Discord. Set the Discord ID first.");
         } else if (!state.in_server) {
             $("#discordNickState").textContent = "This member is no longer in the Discord server.";
-            $("#discordNickSave").disabled = true;
-            $("#discordNickClear").disabled = true;
+            setBlocked("This member is not in the Discord server.");
         } else {
-            $("#discordNickState").innerHTML = `<span class="badge active-status">Linked</span> Current: ${esc(state.nickname || "(no nickname)")}`;
-            $("#discordNickInput").value = state.nickname || "";
+            ready = true;
+            current = state.nickname || "";
+            $("#discordNickState").innerHTML = `<span class="badge active-status">Linked</span> Current: ${esc(current || "(no nickname)")}`;
+            $("#discordNickInput").value = current;
+            refresh();
         }
     } catch (error) {
         $("#discordNickState").textContent = error.message;
+        setBlocked("The nickname could not be loaded.");
     }
-    $("#discordNickSave").addEventListener("click", () => save($("#discordNickInput").value.trim()));
-    $("#discordNickClear").addEventListener("click", () => save(""));
 }
+
+// Shows a grey reason under every disabled button that has data-disabled-reason, and keeps it in step with the disabled state.
+function syncDisabledReasons(root = document) {
+    root.querySelectorAll?.("button[data-disabled-reason]").forEach(button => {
+        const wanted = button.disabled ? button.dataset.disabledReason : "";
+        const next = button.nextElementSibling;
+        const hint = next && next.classList.contains("disabled-reason") ? next : null;
+        if (!wanted) { hint?.remove(); return; }
+        if (!hint) {
+            const created = document.createElement("small");
+            created.className = "disabled-reason";
+            created.textContent = wanted;
+            button.after(created);
+        } else if (hint.textContent !== wanted) {
+            hint.textContent = wanted;
+        }
+    });
+}
+const disabledReasonObserver = new MutationObserver(() => syncDisabledReasons());
+disabledReasonObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["disabled", "data-disabled-reason"] });
 
 // ============================================================
 // RANK / CALLSIGN TOOLS
@@ -4932,7 +4997,7 @@ function openRankTools(cs) {
             More
         </h2>
 
-        ${currentUserIsAdmin ? `<div class="actions">
+        ${currentUserHasPermission("discord_manage") ? `<div class="actions">
             <button type="button" data-action="discord-id-manage" data-callsign="${esc(cs)}">Discord ID Manage</button>
             <button type="button" data-action="discord-nickname-manage" data-callsign="${esc(cs)}">Discord Nickname Manage</button>
         </div>` : ""}
@@ -5140,6 +5205,7 @@ function updateChangeDateButton() {
     const current = String(input.dataset.currentDate || "").trim();
     const next = String(input.value || "").trim();
     button.disabled = !next || next === current;
+    button.dataset.disabledReason = !next ? "Enter a new date first." : "The date is already this value.";
 }
 
 document.addEventListener("input", event => {
@@ -5154,6 +5220,7 @@ function updateChangeCallsignButton() {
     const current = String(button.dataset.callsign || "").trim().toUpperCase();
     const next = String(input.value || "").trim().toUpperCase();
     button.disabled = !next || next === current;
+    button.dataset.disabledReason = !next ? "Enter a new date first." : "The date is already this value.";
 }
 
 document.addEventListener("input", event => {
@@ -5176,7 +5243,9 @@ function updateRankToolButtons() {
     }
     // Lower index = higher rank in the list.
     forceButton.disabled = !(chosen < current);
+    forceButton.dataset.disabledReason = forceButton.disabled ? "Choose a higher rank to force promote." : "";
     demoteButton.disabled = !(chosen > current);
+    demoteButton.dataset.disabledReason = demoteButton.disabled ? "Choose a lower rank to demote." : "";
 }
 
 document.addEventListener("change", event => {
@@ -6215,7 +6284,7 @@ function terminateButtonHtml(callsign, blocked) {
     if (!currentUserHasPermission("termination_manage")) return "";
     const key = esc(callsign);
     return blocked
-        ? `<button type="button" class="danger" disabled title="On the Do Not Terminate list" data-action="terminate" data-callsign="${key}">Terminate</button>`
+        ? `<button type="button" class="danger" disabled title="On the Do Not Terminate list" data-disabled-reason="On the Do Not Terminate list." data-action="terminate" data-callsign="${key}">Terminate</button>`
         : `<button type="button" class="danger" data-action="terminate" data-callsign="${key}">Terminate</button>`;
 }
 
