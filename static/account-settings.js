@@ -31,13 +31,7 @@
         <dl class="account-details">
           <dt>Name</dt><dd id="accountSettingsName">Loading…</dd>
           <dt>Callsign</dt><dd id="accountSettingsCallsign"></dd>
-          <dt>Discord User ID</dt><dd class="account-discord-id"><span id="accountSettingsDiscordId" class="muted">Loading…</span> <button type="button" id="accountSettingsCopyDiscordId" class="secondary small" disabled>Copy ID</button> <button type="button" id="accountSettingsChangeDiscord" class="secondary small">Change Discord ID</button>
-            <form id="accountDiscordForm" class="acct-form" style="display:none;margin-top:8px">
-              <input name="discord_user_id" type="text" inputmode="numeric" autocomplete="off" placeholder="17 to 20 digit Discord User ID" required>
-              <button type="submit" class="primary small">Save</button>
-              <button type="button" id="accountDiscordCancel" class="secondary small">Cancel</button>
-              <p id="accountDiscordMessage" class="acct-message" role="status" aria-live="polite"></p>
-            </form></dd>
+          <dt>Discord User ID</dt><dd class="account-discord-id"><span id="accountSettingsDiscordId" class="muted">Loading…</span> <button type="button" id="accountSettingsCopyDiscordId" class="secondary small" disabled>Copy ID</button></dd>
           <dt>Rank</dt><dd id="accountSettingsRank"></dd>
           <dt>Rank assigned</dt><dd id="accountSettingsDate"></dd>
           <dt>Activity</dt><dd id="accountSettingsActivity"></dd>
@@ -55,6 +49,17 @@
       </section>`);
 
   const passwordDialog = makeDialog('accountSettingsDialog', 'Account Settings', null, `
+      <section class="acct-card">
+        <h3 class="acct-card-title">Discord User ID</h3>
+        <p class="muted">Current: <span id="accountSettingsDiscordCurrent">Loading…</span></p>
+        <div class="acct-actions"><button type="button" id="accountSettingsChangeDiscord" class="secondary">Change Discord ID</button></div>
+        <form id="accountDiscordForm" class="acct-form" style="display:none;margin-top:8px">
+              <input name="discord_user_id" type="text" inputmode="numeric" autocomplete="off" placeholder="17 to 20 digit Discord User ID" required>
+              <button type="submit" class="primary small">Save</button>
+              <button type="button" id="accountDiscordCancel" class="secondary small">Cancel</button>
+              <p id="accountDiscordMessage" class="acct-message" role="status" aria-live="polite"></p>
+            </form>
+      </section>
       <section class="acct-card">
         <h3 class="acct-card-title">Change password</h3>
         <form id="accountSettingsPassword" class="acct-form">
@@ -93,6 +98,7 @@
     $('accountSettingsCallsign').textContent = callsign;
     const discordId = String(member?.discord_user_id || '').trim();
     $('accountSettingsDiscordId').textContent = discordId || 'Not linked';
+    $('accountSettingsDiscordCurrent').textContent = discordId || 'Not linked';
     $('accountSettingsDiscordId').classList.toggle('muted', !discordId);
     $('accountSettingsCopyDiscordId').disabled = !discordId;
     const badge = typeof rankBadgeHtml === 'function' ? rankBadgeHtml(member?.rank, callsign) : '';
@@ -147,6 +153,7 @@
         $('accountSettingsSubtitle').textContent = notice;
         $('accountSettingsDiscordId').textContent = 'Not available';
         $('accountSettingsDiscordId').classList.add('muted');
+        $('accountSettingsDiscordCurrent').textContent = 'Not available';
       }
     }
   }
@@ -211,6 +218,7 @@
     target.classList.remove('hidden');
     target.querySelector('.modal-box')?.scrollTo?.({ top: 0 });
     if (target === profileDialog) void loadProfile();
+    if (target === passwordDialog) void loadProfile();
     if (target === notificationsDialog) void loadNotificationOptions();
     if (target === passwordDialog) passwordDialog.querySelector('input[name="current_password"]')?.focus();
   }
