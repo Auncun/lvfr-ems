@@ -146,7 +146,8 @@ function configureOperationAccess() {
   document.querySelector('#clearAllNotifications')?.toggleAttribute('hidden', !canClearAllNotifications());
   document.querySelector('[data-command-section="accounts"]')?.toggleAttribute('hidden', !accountManager);
   document.querySelector('[data-command-section="history"]')?.toggleAttribute('hidden', !accountManager);
-  document.querySelector('[data-command-section="discord"]')?.toggleAttribute('hidden', !accountManager);
+  document.querySelector('[data-command-section="discord"]')?.toggleAttribute('hidden', !canUseDiscord());
+  applyDiscordPermissions();
   document.querySelector('[data-command-section="permissions"]')?.toggleAttribute('hidden', !allowed);
   document.querySelector('.permission-member-picker')?.toggleAttribute('hidden', !canManageRoleProfiles());
   document.querySelector('#clearAccountAuditBtn')?.toggleAttribute('hidden', !canClearAccountAudit());
@@ -430,6 +431,12 @@ const permissionGroups = [
       ['hert_certified_view','HERT Certified','View HERT certification records.'],['hert_instructor_view','HERT Instructor','View HERT instructor records.'],['hert_loi_view','HERT LOI','View the HERT LOI list.'],['fort_training_view','FORT Training','View Basic and Advanced FORT records.'],['fort_instructor_view','FORT Instructor','View FORT instructor records.'],['fort_loi_view','FORT LOI','View the FORT LOI list.']
     ]}, ['training_hours_view', 'Training Hours: view', 'View Training Hours records.'],
     ['do_not_promote_view', 'Do Not Promote/Terminate: view', 'View the Do Not Promote and Do Not Terminate lists.'], ['sync_view', 'Sync status', 'View roster synchronization status.'],
+  ] },
+  { name: 'Discord', items: [
+    ['discord_view', 'Discord: view', 'View Linked members, the Discord status, and the Discord action log.'],
+    ['discord_manage', 'Discord: manage links', 'Change a Discord ID or nickname, delink a member, and use the Discord buttons in the member Manage window.'],
+    ['discord_sync_manage', 'Discord: sync and retry', 'Run Sync Discord Members and retry failed Discord updates.'],
+    ['discord_log_clear', 'Discord: clear log', 'Delete the Discord action log.'],
   ] },
   { name: 'Training and member changes', items: [
     ['training_fort_manage', 'Manage FORT training', 'Change Basic and Advanced FORT status; FORT Instructor status is also required.'],
@@ -1228,12 +1235,12 @@ const commandSections = {
   log: document.querySelector('#commandLogSection'),
 };
 function showCommandSection(name, updateHash = false) {
-  if (!canManageCommandAccounts() && !canAccessPermissionPanel()) return;
+  if (!canManageCommandAccounts() && !canAccessPermissionPanel() && !canUseDiscord()) return;
   if (name === 'permissions' && !canAccessPermissionPanel()) {
     if (!canManageCommandAccounts()) return;
     name = 'accounts';
   }
-  if (name !== 'permissions' && !canManageCommandAccounts()) name = 'permissions';
+  if (name !== 'permissions' && !canManageCommandAccounts() && !(['discord', 'links', 'log'].includes(name) && canUseDiscord())) name = 'permissions';
   if (!commandSections[name]) return;
   Object.entries(commandSections).forEach(([key, section]) => { section.hidden = key !== name; });
   document.querySelectorAll('[data-command-section]').forEach(button => {
@@ -1308,7 +1315,43 @@ document.querySelector('#retryDiscordUpdates')?.addEventListener('click', async 
 });
 document.querySelector('#refreshDiscordStatus')?.addEventListener('click', () => void refreshDiscordStatus());
 loadAccounts();
-// Linked members list (Edit / Delink) and the Discord action log.
+// Discord permissions on this page, and the disabled-reason display used by every Discord button here.
+function canUseDiscord() { return currentUser?.role === 'admin' || currentUser?.permissions?.discord_view === true; }
+function canManageDiscord() { return currentUser?.role === 'admin' || currentUser?.permissions?.discord_manage === true; }
+function canSyncDiscord() { return currentUser?.role === 'admin' || currentUser?.permissions?.discord_sync_manage === true; }
+function canClearDiscordLog() { return currentUser?.role === 'admin' || currentUser?.permissions?.discord_log_clear === true; }
+function applyDiscordPermissions() {
+  const set = (selector, allowed, reason) => {
+    const button = document.querySelector(selector);
+    if (!button) return;
+    button.disabled = !allowed;
+    button.dataset.disabledReason = allowed ? '' : reason;
+  };
+  set('#syncDiscordMembers', canSyncDiscord(), 'Your role does not have Discord sync permission.');
+  set('#retryDiscordUpdates', canSyncDiscord(), 'Your role does not have Discord sync permission.');
+  set('#clearDiscordLog', canClearDiscordLog(), 'Your role does not have permission to clear the Discord log.');
+  syncDisabledReasons();
+}
+function syncDisabledReasons(root = document) {
+  root.querySelectorAll?.('button[data-disabled-reason]').forEach(button => {
+    const wanted = button.disabled ? button.dataset.disabledReason : '';
+    const next = button.nextElementSibling;
+    const hint = next && next.classList.contains('disabled-reason') ? next : null;
+    if (!wanted) { hint?.remove(); return; }
+    if (!hint) {
+      const created = document.createElement('small');
+      created.className = 'disabled-reason';
+      created.textContent = wanted;
+      button.after(created);
+    } else if (hint.textContent !== wanted) {
+      hint.textContent = wanted;
+    }
+  });
+}
+const disabledReasonObserver = new MutationObserver(() => syncDisabledReasons());
+disabledReasonObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['disabled', 'data-disabled-reason'] });
+
+// Linked members (Discord ID or nickname edits, delink) and the Discord action log.
 (() => {
   const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   const note = (text, kind = '') => { const el = document.querySelector('#discordSyncStatus'); if (el) { el.textContent = text; el.className = 'admin-status' + (kind ? ' ' + kind : ''); } };
@@ -1317,19 +1360,25 @@ loadAccounts();
   async function loadLinks() {
     const data = await api('/api/discord/links');
     const rows = data.links || [];
+    const manage = canManageDiscord();
     document.querySelector('#linkedMemberRows').innerHTML = rows.length
-      ? rows.map(link => `<tr>
+      ? rows.map(link => {
+          const linked = link.discord_state === 'linked';
+          return `<tr>
           <td><b>${esc(link.callsign)}</b></td>
           <td>${esc(link.roster_name || link.member_name || '—')}</td>
-          <td>${link.discord_state === 'linked' ? '<span class="badge active-status">Linked</span>' : '<span class="badge terminate-status">Not linked</span>'}</td>
+          <td>${linked ? '<span class="badge active-status">Linked</span>' : '<span class="badge terminate-status">Not linked</span>'}</td>
           <td>${esc(link.discord_user_id || '—')}</td>
+          <td>${esc(link.discord_nickname || '—')}</td>
           <td>${esc(link.status || '—')}${link.last_error ? `<br><small class="muted">${esc(link.last_error)}</small>` : ''}</td>
           <td>${Number(link.on_roster) ? 'On roster' : '<span class="muted">Not on roster</span>'}</td>
           <td class="admin-actions">
-            <button type="button" data-link-edit="${esc(link.callsign)}">${link.discord_state === 'linked' ? 'Edit' : 'Link'}</button>
-            <button type="button" class="danger" data-link-delink="${esc(link.callsign)}" ${link.discord_state === 'linked' ? '' : 'disabled'}>Delink</button>
-          </td></tr>`).join('')
-      : '<tr><td colspan="7" class="muted">No roster members yet.</td></tr>';
+            <button type="button" data-link-edit="${esc(link.callsign)}" data-linked="${linked ? '1' : '0'}" ${manage ? '' : 'disabled'} data-disabled-reason="Your role does not have Discord manage permission.">${linked ? 'Edit' : 'Link'}</button>
+            <button type="button" class="danger" data-link-delink="${esc(link.callsign)}" ${manage && linked ? '' : 'disabled'} data-disabled-reason="${linked ? 'Your role does not have Discord manage permission.' : 'Not linked, so there is nothing to delink.'}">Delink</button>
+          </td></tr>`;
+        }).join('')
+      : '<tr><td colspan="8" class="muted">No roster members yet.</td></tr>';
+    syncDisabledReasons();
   }
 
   async function loadLog() {
@@ -1340,27 +1389,71 @@ loadAccounts();
       : '<tr><td colspan="6" class="muted">No Discord actions recorded yet.</td></tr>';
   }
 
+  // Asks whether to change the Discord ID or the nickname. Resolves "id", "nickname", or null.
+  function chooseEdit(callsign) {
+    return new Promise(resolve => {
+      const dialog = document.createElement('dialog');
+      dialog.innerHTML = `<form method="dialog" style="display:grid;gap:10px;min-width:min(90vw,380px);padding:16px">
+        <p style="margin:0"><strong>Edit ${esc(callsign)}</strong></p>
+        <button type="button" data-choice="id">Discord ID</button>
+        <button type="button" data-choice="nickname">Nickname</button>
+        <button type="button" data-choice="cancel">Cancel</button>
+      </form>`;
+      let finished = false;
+      const finish = value => { if (finished) return; finished = true; dialog.close(); dialog.remove(); resolve(value); };
+      dialog.querySelectorAll('[data-choice]').forEach(button => button.addEventListener('click', () => {
+        finish(button.dataset.choice === 'cancel' ? null : button.dataset.choice);
+      }));
+      dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
+      document.body.append(dialog);
+      dialog.showModal();
+    });
+  }
+
   async function refreshAll() { await Promise.all([loadLinks(), loadLog()]); }
 
   document.querySelector('#linkedMemberRows')?.addEventListener('click', async event => {
     const edit = event.target.closest('[data-link-edit]');
     const delink = event.target.closest('[data-link-delink]');
+    if (!edit && !delink) return;
+    if ((edit || delink).disabled) return;
     try {
       if (edit) {
         const callsign = edit.dataset.linkEdit;
-        const id = window.prompt(`New Discord User ID for ${callsign} (17 to 20 digits):`, '');
-        if (id === null) return;
-        await api('/api/discord/links/edit', { method: 'POST', body: JSON.stringify({ callsign, discord_user_id: id.trim() }) });
-        note(`Discord User ID updated for ${callsign}.`, 'success');
-      } else if (delink) {
+        const what = edit.dataset.linked === '1' ? await chooseEdit(callsign) : 'id';
+        if (!what) return;
+        if (what === 'id') {
+          const id = window.prompt(`Discord User ID for ${callsign} (17 to 20 digits):`, '');
+          if (id === null) return;
+          await api('/api/discord/links/edit', { method: 'POST', body: JSON.stringify({ callsign, discord_user_id: id.trim() }) });
+          note(`Discord User ID saved for ${callsign}.`, 'success');
+        } else {
+          const nickname = window.prompt(`Discord nickname for ${callsign} (must start with [${callsign}]):`, '');
+          if (nickname === null) return;
+          await api(`/api/discord/member/${encodeURIComponent(callsign)}/nickname`, { method: 'POST', body: JSON.stringify({ nickname: nickname.trim() }) });
+          note(`Nickname saved for ${callsign}.`, 'success');
+        }
+      } else {
         const callsign = delink.dataset.linkDelink;
         if (!window.confirm(`Delink ${callsign} from Discord? Discord itself will not be changed.`)) return;
         await api('/api/discord/links/delink', { method: 'POST', body: JSON.stringify({ callsign }) });
         note(`${callsign} delinked. Discord was not changed.`, 'success');
-      } else return;
+      }
       await refreshAll();
     } catch (error) {
       note(error.message || 'The request failed.', 'error');
+    }
+  });
+
+  document.querySelector('#clearDiscordLog')?.addEventListener('click', async () => {
+    if (!canClearDiscordLog()) return;
+    if (!window.confirm('Clear the whole Discord action log? This cannot be undone.')) return;
+    try {
+      await api('/api/discord/log', { method: 'DELETE' });
+      note('Discord action log cleared.', 'success');
+      await loadLog();
+    } catch (error) {
+      note(error.message || 'Could not clear the log.', 'error');
     }
   });
 
