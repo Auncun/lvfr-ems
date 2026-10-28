@@ -1320,15 +1320,16 @@ loadAccounts();
     document.querySelector('#linkedMemberRows').innerHTML = rows.length
       ? rows.map(link => `<tr>
           <td><b>${esc(link.callsign)}</b></td>
-          <td>${esc(link.member_name || '—')}</td>
-          <td>${esc(link.discord_user_id)}</td>
-          <td>${esc(link.status)}${link.last_error ? `<br><small class="muted">${esc(link.last_error)}</small>` : ''}</td>
+          <td>${esc(link.roster_name || link.member_name || '—')}</td>
+          <td>${link.discord_state === 'linked' ? '<span class="badge active-status">Linked</span>' : '<span class="badge terminate-status">Not linked</span>'}</td>
+          <td>${esc(link.discord_user_id || '—')}</td>
+          <td>${esc(link.status || '—')}${link.last_error ? `<br><small class="muted">${esc(link.last_error)}</small>` : ''}</td>
           <td>${Number(link.on_roster) ? 'On roster' : '<span class="muted">Not on roster</span>'}</td>
           <td class="admin-actions">
-            <button type="button" data-link-edit="${esc(link.callsign)}">Edit</button>
-            <button type="button" class="danger" data-link-delink="${esc(link.callsign)}">Delink</button>
+            <button type="button" data-link-edit="${esc(link.callsign)}">${link.discord_state === 'linked' ? 'Edit' : 'Link'}</button>
+            <button type="button" class="danger" data-link-delink="${esc(link.callsign)}" ${link.discord_state === 'linked' ? '' : 'disabled'}>Delink</button>
           </td></tr>`).join('')
-      : '<tr><td colspan="6" class="muted">No Discord links yet.</td></tr>';
+      : '<tr><td colspan="7" class="muted">No roster members yet.</td></tr>';
   }
 
   async function loadLog() {
