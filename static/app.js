@@ -769,6 +769,8 @@ document.addEventListener("click", event => {
         case "note": note(callsign); break;
         case "date": dateChange(callsign); break;
         case "rank-tools": openRankTools(callsign); break;
+        case "discord-id-manage": openDiscordIdManage(callsign); break;
+        case "discord-nickname-manage": openDiscordNicknameManage(callsign); break;
         case "change-callsign": changeCS(callsign); break;
         case "update-training-permission": updateTrainingPermission(); break;
         case "force-promote": forcePromote(callsign); break;
@@ -4020,8 +4022,10 @@ function openManage(cs) {
                     type="button"
                     data-action="rank-tools" data-callsign="${esc(cs)}"
                 >
-                    Rank / Callsign Tools
+                    More
                 </button>` : ""}
+                ${currentUserIsAdmin ? `<button type="button" data-action="discord-id-manage" data-callsign="${esc(cs)}">Discord ID Manage</button>
+                <button type="button" data-action="discord-nickname-manage" data-callsign="${esc(cs)}">Discord Nickname Manage</button>` : ""}
 
 
                 ${currentUserHasPermission("promotion_manage") ? `<button
@@ -4780,6 +4784,110 @@ async function terminate(cs) {
 
 
 // ============================================================
+// DISCORD TOOLS (admin only, opened from Manage)
+// ============================================================
+
+function discordBackLink(cs) {
+    return `<button type="button" class="back-link" data-action="open-manage" data-callsign="${esc(cs)}">← Back to Manage</button>`;
+}
+
+async function openDiscordIdManage(cs) {
+    if (!currentUserIsAdmin) return;
+    $("#modalContent").innerHTML = `
+        ${discordBackLink(cs)}
+        <h2>Discord ID for ${esc(cs)}</h2>
+        <p id="discordIdState" class="field-hint">Loading…</p>
+        <div class="form">
+            <label>
+                Discord User ID
+                <input id="discordIdInput" inputmode="numeric" autocomplete="off" placeholder="17 to 20 digits">
+            </label>
+            <p id="discordIdMessage" class="field-hint" role="status"></p>
+            <button type="button" class="primary" id="discordIdSave">Save Discord ID</button>
+            <button type="button" class="danger" id="discordIdDelink" disabled>Delink</button>
+        </div>`;
+    const showState = state => {
+        $("#discordIdState").innerHTML = state.linked
+            ? `<span class="discord-badge linked">Linked</span> ${esc(state.discord_user_id)}`
+            : `<span class="discord-badge not-linked">Not linked</span>`;
+        $("#discordIdDelink").disabled = !state.linked;
+        $("#discordIdInput").value = state.linked ? state.discord_user_id : "";
+    };
+    try {
+        showState(await api(`/api/discord/member/${encodeURIComponent(cs)}`));
+    } catch (error) {
+        $("#discordIdState").textContent = error.message;
+    }
+    $("#discordIdSave").addEventListener("click", async () => {
+        const message = $("#discordIdMessage");
+        try {
+            await api("/api/discord/links/edit", { method: "POST", body: JSON.stringify({ callsign: cs, discord_user_id: $("#discordIdInput").value.trim() }) });
+            message.textContent = "Saved. Discord nickname was checked against the callsign.";
+            showState(await api(`/api/discord/member/${encodeURIComponent(cs)}`));
+        } catch (error) {
+            message.textContent = error.message;
+        }
+    });
+    $("#discordIdDelink").addEventListener("click", async () => {
+        if (!window.confirm(`Delink ${cs} from Discord? Discord itself will not be changed.`)) return;
+        const message = $("#discordIdMessage");
+        try {
+            await api("/api/discord/links/delink", { method: "POST", body: JSON.stringify({ callsign: cs }) });
+            message.textContent = "Delinked. Discord was not changed.";
+            showState(await api(`/api/discord/member/${encodeURIComponent(cs)}`));
+        } catch (error) {
+            message.textContent = error.message;
+        }
+    });
+}
+
+async function openDiscordNicknameManage(cs) {
+    if (!currentUserIsAdmin) return;
+    $("#modalContent").innerHTML = `
+        ${discordBackLink(cs)}
+        <h2>Discord nickname for ${esc(cs)}</h2>
+        <p id="discordNickState" class="field-hint">Loading…</p>
+        <div class="form">
+            <label>
+                Nickname
+                <input id="discordNickInput" autocomplete="off" maxlength="32" placeholder="[${esc(cs)}] Name">
+            </label>
+            <p id="discordNickMessage" class="field-hint" role="status"></p>
+            <button type="button" class="primary" id="discordNickSave">Save nickname</button>
+            <button type="button" class="danger" id="discordNickClear">Clear nickname</button>
+        </div>`;
+    const save = async nickname => {
+        const message = $("#discordNickMessage");
+        try {
+            await api(`/api/discord/member/${encodeURIComponent(cs)}/nickname`, { method: "POST", body: JSON.stringify({ nickname }) });
+            message.textContent = nickname ? "Nickname saved in Discord." : "Nickname cleared in Discord.";
+            $("#discordNickInput").value = nickname;
+        } catch (error) {
+            message.textContent = error.message;
+        }
+    };
+    try {
+        const state = await api(`/api/discord/member/${encodeURIComponent(cs)}/nickname`);
+        if (!state.linked) {
+            $("#discordNickState").innerHTML = `<span class="discord-badge not-linked">Not linked</span> Set the Discord ID first.`;
+            $("#discordNickSave").disabled = true;
+            $("#discordNickClear").disabled = true;
+        } else if (!state.in_server) {
+            $("#discordNickState").textContent = "This member is no longer in the Discord server.";
+            $("#discordNickSave").disabled = true;
+            $("#discordNickClear").disabled = true;
+        } else {
+            $("#discordNickState").innerHTML = `<span class="discord-badge linked">Linked</span> Current: ${esc(state.nickname || "(no nickname)")}`;
+            $("#discordNickInput").value = state.nickname || "";
+        }
+    } catch (error) {
+        $("#discordNickState").textContent = error.message;
+    }
+    $("#discordNickSave").addEventListener("click", () => save($("#discordNickInput").value.trim()));
+    $("#discordNickClear").addEventListener("click", () => save(""));
+}
+
+// ============================================================
 // RANK / CALLSIGN TOOLS
 // ============================================================
 
@@ -4807,7 +4915,7 @@ function openRankTools(cs) {
         <button type="button" class="back-link" data-action="open-manage" data-callsign="${esc(cs)}">← Back to Manage</button>
 
         <h2>
-            Rank / Callsign Tools
+            More
         </h2>
 
 
