@@ -1338,3 +1338,5 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 
 /* Manage panel: a shorter Note box. */
 #modal.manage-mode #modalContent textarea { height:56px; min-height:56px; max-height:72px; }
+
+.disabled-reason { display:block; margin:3px 0 8px; color:#9aa4b2; font-size:12px; line-height:1.35 }
