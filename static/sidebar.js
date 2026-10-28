@@ -67,7 +67,16 @@
           { label: 'Deactivated accounts', status: 'deactivated' }
         ] },
         { label: 'Access Permissions', anchor: '#permissionsHeading', availability: '#commandPermissionsSection' },
-        { label: 'History', anchor: '#auditHeading', availability: '#commandHistorySection' }
+        { label: 'History', anchor: '#auditHeading', availability: '#commandHistorySection' },
+        { label: 'Discord', children: [
+          { label: 'Sync', anchor: '#discordSyncHeading', availability: '#commandDiscordSection', children: [
+            { label: 'Sync Discord Members', clickTarget: '#syncDiscordMembers', sectionAnchor: '#discordSyncHeading', availability: '#commandDiscordSection' },
+            { label: 'Retry Failed Discord Updates', clickTarget: '#retryDiscordUpdates', sectionAnchor: '#discordSyncHeading', availability: '#commandDiscordSection' },
+            { label: 'Refresh Status', clickTarget: '#refreshDiscordStatus', sectionAnchor: '#discordSyncHeading', availability: '#commandDiscordSection' }
+          ] }
+        ] },
+        { label: 'Linked members', anchor: '#linkedMembersHeading', availability: '#commandLinksSection' },
+        { label: 'Discord action log', anchor: '#discordLogHeading', availability: '#commandLogSection' }
       ]
     }
   ];
@@ -82,7 +91,9 @@
     const extra = item.log ? ` data-log="${item.log}"` : item.leader ? ` data-leader="${item.leader}"` : item.status ? ` data-status="${item.status}"` : item.training ? ` data-training="${item.training}"` : item.dnpNav ? ` data-dnp-nav="${item.dnpNav}"` : '';
     const trainingSection = item.trainingSection ? ` data-training-section="${item.trainingSection}"` : '';
     const inactiveSub = item.inactiveSub ? ` data-inactive-sub="${item.inactiveSub}"` : '';
-    const control = item.anchor
+    const control = item.clickTarget
+      ? `<button class="sidebar-item-action" type="button" data-sidebar-item data-page="${page.href}" data-click-target="${esc(item.clickTarget)}" data-section-anchor="${esc(item.sectionAnchor || '')}"${availability}>${esc(item.label)}</button>`
+      : item.anchor
       ? `<a class="sidebar-item-action" href="${page.href}${item.anchor}" data-sidebar-item data-page="${page.href}"${availability}>${esc(item.label)}</a>`
       : `<button class="sidebar-item-action" type="button" data-sidebar-item data-page="${page.href}"${attrs}${extra}${trainingSection}${inactiveSub}${availability}>${esc(item.label)}</button>`;
     const expand = children.length
@@ -175,6 +186,19 @@
     }
     const item = event.target.closest('[data-sidebar-item]');
     if (!item) return;
+    if (item.dataset.clickTarget) {
+      // Runs an existing button on the Operation Command page, opening its section first.
+      const anchor = item.dataset.sectionAnchor || '';
+      if (item.dataset.page !== currentPath) {
+        sessionStorage.setItem('lvfr.sidebar.pending-click', item.dataset.clickTarget);
+        location.assign(item.dataset.page + anchor);
+        return;
+      }
+      if (anchor) location.hash = anchor;
+      document.querySelector(item.dataset.clickTarget)?.click();
+      close();
+      return;
+    }
     const targetTab = item.dataset.tab;
     if (targetTab) {
       rememberSidebarView(viewFromItem(item));
@@ -309,6 +333,8 @@
       return setActiveMenuItem(sidebar.querySelector(`.sidebar-page-group[data-sidebar-group] .sidebar-item-action${selector}`));
     }
     if (currentPath === '/administration') {
+      const sectionHashes = ['#discordSyncHeading', '#linkedMembersHeading', '#discordLogHeading'];
+      if (sectionHashes.includes(location.hash)) return setActiveMenuItem(sidebar.querySelector(`[data-sidebar-item][href$="${location.hash}"]`));
       const auditHeading = document.querySelector('#auditHeading');
       if (auditHeading && auditHeading.getBoundingClientRect().top <= 170) {
         return setActiveMenuItem(sidebar.querySelector('[data-sidebar-item][href$="#auditHeading"]'));
