@@ -1377,9 +1377,18 @@ export async function handleD1(context) {
     }
     if (route === "/api/discord/links" && method === "GET") {
       await requireAdmin(db, token);
-      const rows = (await db.prepare(`SELECT l.callsign, l.discord_user_id, l.member_name, l.rank, l.status, l.last_error, l.last_synced_at,
-          CASE WHEN EXISTS (SELECT 1 FROM members m WHERE upper(m.callsign)=upper(l.callsign)) THEN 1 ELSE 0 END AS on_roster
-          FROM discord_member_links l ORDER BY l.callsign`).all()).results || [];
+      // Every roster member, then any link whose callsign is no longer on the roster.
+      // discord_state is "linked" (green) or "not_linked" (red); a left-server link counts as not linked.
+      const rows = (await db.prepare(`SELECT m.callsign AS callsign, m.name AS roster_name, m.rank AS roster_rank,
+            l.discord_user_id, l.member_name, l.status, l.last_error, l.last_synced_at,
+            CASE WHEN l.callsign IS NULL OR l.status='left' THEN 'not_linked' ELSE 'linked' END AS discord_state,
+            1 AS on_roster
+          FROM members m LEFT JOIN discord_member_links l ON upper(l.callsign)=upper(m.callsign)
+          UNION ALL
+          SELECT l.callsign, l.member_name, l.rank, l.discord_user_id, l.member_name, l.status, l.last_error, l.last_synced_at,
+            CASE WHEN l.status='left' THEN 'not_linked' ELSE 'linked' END, 0
+          FROM discord_member_links l WHERE NOT EXISTS (SELECT 1 FROM members m WHERE upper(m.callsign)=upper(l.callsign))
+          ORDER BY callsign`).all()).results || [];
       return json({ links: rows });
     }
     if (route === "/api/discord/links/edit" && method === "POST") {
@@ -1387,7 +1396,8 @@ export async function handleD1(context) {
       const cs = normalizeDiscordCallsign(data.callsign), newId = String(data.discord_user_id || "").trim();
       if (!/^\d{17,20}$/.test(newId)) throw Object.assign(new Error("Enter a valid Discord User ID (17 to 20 digits)."), { status: 400 });
       const link = await db.prepare("SELECT * FROM discord_member_links WHERE callsign=?").bind(cs).first();
-      if (!link) throw Object.assign(new Error("This callsign has no Discord link to edit."), { status: 404 });
+      const rosterRow = link ? null : await db.prepare("SELECT name, rank FROM members WHERE upper(callsign)=upper(?)").bind(cs).first();
+      if (!link && !rosterRow) throw Object.assign(new Error("This callsign is not on the roster."), { status: 404 });
       const taken = await db.prepare("SELECT callsign FROM discord_member_links WHERE discord_user_id=? AND callsign<>?").bind(newId, cs).first();
       if (taken) throw Object.assign(new Error("This Discord User ID is already linked to " + taken.callsign + "."), { status: 409 });
       const { guildId } = discordConfig(env);
@@ -1397,9 +1407,15 @@ export async function handleD1(context) {
       const parsed = parseDiscordNickname(String(guildMember?.nick || ""));
       if (!parsed || parsed.callsign !== cs) throw Object.assign(new Error("That member's Discord nickname does not start with [" + cs + "]. Correct it in Discord first."), { status: 400 });
       const stamp = new Date().toISOString();
-      await db.prepare("UPDATE discord_member_links SET discord_user_id=?,status='linked',last_error='',pending_callsign='',pending_rank='',pending_update_roles=0,last_synced_at=?,updated_at=? WHERE callsign=?")
-        .bind(newId, stamp, stamp, cs).run();
-      await writeDiscordLog(db, actor, "edit", cs, link.member_name, newId, "done", "Discord User ID changed from " + link.discord_user_id + " to " + newId + ".");
+      if (link) {
+        await db.prepare("UPDATE discord_member_links SET discord_user_id=?,status='linked',last_error='',pending_callsign='',pending_rank='',pending_update_roles=0,last_synced_at=?,updated_at=? WHERE callsign=?")
+          .bind(newId, stamp, stamp, cs).run();
+        await writeDiscordLog(db, actor, "edit", cs, link.member_name, newId, "done", "Discord User ID changed from " + link.discord_user_id + " to " + newId + ".");
+      } else {
+        await db.prepare(`INSERT INTO discord_member_links(callsign,discord_user_id,member_name,rank,status,last_synced_at,created_at,updated_at) VALUES(?,?,?,?,'linked',?,?,?)`)
+          .bind(cs, newId, String(rosterRow.name || ""), String(rosterRow.rank || ""), stamp, stamp, stamp).run();
+        await writeDiscordLog(db, actor, "link", cs, rosterRow.name, newId, "done", "Linked manually to Discord User ID " + newId + ".");
+      }
       return json({ ok: true });
     }
     if (route === "/api/discord/links/delink" && method === "POST") {
@@ -1415,6 +1431,46 @@ export async function handleD1(context) {
       await requireAdmin(db, token);
       const rows = (await db.prepare("SELECT id, created_at, actor_name, action, callsign, member_name, discord_user_id, outcome, detail FROM discord_action_log ORDER BY id DESC LIMIT 200").all()).results || [];
       return json({ log: rows });
+    }
+    const discordMemberRoute = route.match(/^\/api\/discord\/member\/([^/]+)(\/nickname)?$/);
+    if (discordMemberRoute && method === "GET") {
+      await requireAdmin(db, token);
+      const cs = normalizeDiscordCallsign(decodeURIComponent(discordMemberRoute[1]));
+      const link = await db.prepare("SELECT discord_user_id, status, last_error FROM discord_member_links WHERE callsign=?").bind(cs).first();
+      const linked = Boolean(link && link.status !== "left");
+      if (!discordMemberRoute[2]) {
+        return json({ callsign: cs, linked, discord_user_id: link ? String(link.discord_user_id) : "", status: link ? link.status : "none", last_error: link?.last_error || "" });
+      }
+      if (!linked) return json({ callsign: cs, linked: false, nickname: "", in_server: false });
+      const { guildId } = discordConfig(env);
+      try {
+        const member = await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(link.discord_user_id))}`);
+        return json({ callsign: cs, linked: true, nickname: String(member?.nick || ""), in_server: true });
+      } catch (error) {
+        if (/was not found/.test(String(error?.message || ""))) return json({ callsign: cs, linked: true, nickname: "", in_server: false });
+        throw error;
+      }
+    }
+    if (discordMemberRoute && discordMemberRoute[2] && method === "POST") {
+      const actor = await requireAdmin(db, token);
+      const cs = normalizeDiscordCallsign(decodeURIComponent(discordMemberRoute[1]));
+      const link = await db.prepare("SELECT discord_user_id, member_name FROM discord_member_links WHERE callsign=? AND status<>'left'").bind(cs).first();
+      if (!link) throw Object.assign(new Error("This member is not linked to Discord. Set the Discord ID first."), { status: 400 });
+      const nick = String(data.nickname ?? "").trim();
+      if (nick.length > 32) throw Object.assign(new Error("A Discord nickname can be at most 32 characters."), { status: 400 });
+      if (nick && parseDiscordNickname(nick)?.callsign !== cs) throw Object.assign(new Error("The nickname must start with [" + cs + "]."), { status: 400 });
+      const { guildId } = discordConfig(env);
+      try {
+        await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(link.discord_user_id))}`, {
+          method: "PATCH", body: JSON.stringify({ nick: nick || null }),
+          headers: { "X-Audit-Log-Reason": encodeURIComponent("LVFR EMS nickname set by " + String(actor.name || "admin")).slice(0, 480) },
+        });
+      } catch (error) {
+        await writeDiscordLog(db, actor, "nickname", cs, link.member_name, link.discord_user_id, "failed", String(error?.message || error).slice(0, 300));
+        throw error;
+      }
+      await writeDiscordLog(db, actor, "nickname", cs, link.member_name, link.discord_user_id, "done", nick ? "Nickname set to " + nick + "." : "Nickname cleared.");
+      return json({ ok: true, nickname: nick });
     }
     if (route === "/api/discord/status" && method === "GET") {
       await requireAdmin(db, token);
