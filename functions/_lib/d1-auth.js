@@ -1893,8 +1893,13 @@ export async function handleD1(context) {
       if(taken) throw Object.assign(new Error("This Discord User ID is already linked to another member."),{status:409});
       // The ID must belong to a member of the LVFR Discord server, so an arbitrary number cannot be linked.
       const { guildId } = discordConfig(env);
-      try { await discordRequest(env,`/guilds/${guildId}/members/${encodeURIComponent(discordId)}`); }
+      let guildMember;
+      try { guildMember = await discordRequest(env,`/guilds/${guildId}/members/${encodeURIComponent(discordId)}`); }
       catch { throw Object.assign(new Error("This Discord User ID was not found in the LVFR Discord server."),{status:400}); }
+      // The Discord nickname must start with the account's own callsign, so nobody can claim another member's Discord account.
+      const nickname = String(guildMember?.nick || guildMember?.user?.global_name || guildMember?.user?.username || "");
+      const parsedNick = parseDiscordNickname(nickname);
+      if (!parsedNick || parsedNick.callsign !== memberCallsign) throw Object.assign(new Error("Callsign doesn't match"),{status:400});
       const stamp=new Date().toISOString();
       await db.prepare(`INSERT INTO discord_member_links(callsign,discord_user_id,member_name,rank,status,created_at,updated_at)
         VALUES(?,?,?,?,'linked',?,?)
