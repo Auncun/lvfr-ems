@@ -49,7 +49,7 @@ function clampNotificationKeys(result){
 const DEFAULT_ON_NOTIFICATION_KINDS=["eligible","inactive","overdue","request"];
 const LOG_VIEW_PERMISSIONS = ["promotion_log_view","callsign_log_view","termination_log_view","training_log_view","training_hours_log_view","loi_log_view","exam_log_view","note_log_view","activity_log_view","instructor_log_view"];
 const TRAINING_VIEW_PERMISSIONS = ["hert_certified_view","hert_instructor_view","hert_loi_view","fort_training_view","fort_instructor_view","fort_loi_view"];
-const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","do_not_terminate_log_view","notif_termination","notif_inactive","notif_overdue","notif_promotion","notif_eligible","notif_callsign","notif_training","notif_training_time","notif_loi","notif_exam","notif_note","notif_activity","notif_instructor","notif_do_not_promote","notif_do_not_terminate","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage"];
+const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","do_not_terminate_log_view","notif_termination","notif_inactive","notif_overdue","notif_promotion","notif_eligible","notif_callsign","notif_training","notif_training_time","notif_loi","notif_exam","notif_note","notif_activity","notif_instructor","notif_do_not_promote","notif_do_not_terminate","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage","discord_view","discord_manage","discord_sync_manage","discord_log_clear"];
 const DEFAULT_ROLE_PERMISSIONS = {
   member: { portal_access:false,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:false,eligible_view:false,promotion_access:false,profile_view:false,inactive_view:false,logs_view:false,training_view:false,training_fort_manage:false,training_hert_manage:false,training_hours_view:false,training_hours_manage:false,loi_manage:false,statistics_view:false,notes_manage:false,promotion_manage:false,callsign_manage:false,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:false,sync_manage:false },
   leader: { portal_access:true,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,promotion_access:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,loi_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true },
@@ -641,6 +641,13 @@ async function bootstrapCommander(db, env, request, data) {
   }
   return { ok:true, status:"approved", callsign:identity.callsign, message:"Initial Operation account created. Remove LVFR_D1_BOOTSTRAP_SECRET now." };
 }
+async function requireDiscordPermission(db, token, key) {
+  const account = await accountForToken(db, token);
+  if (!account || account.status !== "approved") throw Object.assign(new Error("Sign in again."), { status: 401 });
+  const permissions = await accountPermissions(db, account);
+  if (!permissions[key]) throw Object.assign(new Error("Your role does not have permission for this Discord action."), { status: 403 });
+  return account;
+}
 async function requireAdmin(db, token) {
   const account = await accountForToken(db, token);
   if (!account || account.status !== "approved") throw Object.assign(new Error("Sign in again."), { status: 401 });
@@ -962,8 +969,8 @@ async function updateDiscordMemberFromMapping(db, env, discordUserId) {
 
   const now = new Date().toISOString();
   const oldCallsign = String(row.callsign || "");
-  await db.prepare(`UPDATE discord_member_links SET callsign=?,rank=?,status='linked',pending_callsign='',pending_rank='',pending_update_roles=0,last_error='',last_synced_at=?,updated_at=? WHERE discord_user_id=?`)
-    .bind(newCallsign, newRank, now, now, String(discordUserId)).run();
+  await db.prepare(`UPDATE discord_member_links SET callsign=?,rank=?,discord_nickname=?,status='linked',pending_callsign='',pending_rank='',pending_update_roles=0,last_error='',last_synced_at=?,updated_at=? WHERE discord_user_id=?`)
+    .bind(newCallsign, newRank, desiredNickname, now, now, String(discordUserId)).run();
   return { ok: true, discord_user_id: String(discordUserId), old_callsign: oldCallsign, callsign: newCallsign, rank: newRank };
 }
 // Audit log for Discord actions (termination, edits, delinking). Visible to Operation Command.
@@ -1075,7 +1082,7 @@ async function runInitialDiscordLinkSync(db, env, user) {
       const rosterMember = roster.get(parsed.callsign);
       if (!rosterMember) { unmatchedDiscord.push({ callsign: parsed.callsign, user: member.user?.username || member.user?.id || "unknown" }); continue; }
       const candidates = foundByCallsign.get(parsed.callsign) || [];
-      candidates.push({ userId: String(member.user?.id || ""), username: String(member.user?.username || ""), callsign: parsed.callsign, rosterMember });
+      candidates.push({ userId: String(member.user?.id || ""), username: String(member.user?.username || ""), callsign: parsed.callsign, rosterMember, nick: nickname });
       foundByCallsign.set(parsed.callsign, candidates);
     }
     if (page.length < 1000) break;
@@ -1096,11 +1103,11 @@ async function runInitialDiscordLinkSync(db, env, user) {
     if ((byCallsign && String(byCallsign.discord_user_id) !== candidate.userId) || (byUser && normalizeDiscordCallsign(byUser.callsign) !== callsign)) {
       conflicts.push({ callsign, user: candidate.username, reason: "Existing Discord mapping conflicts with the discovered match" }); continue;
     }
-    await db.prepare(`INSERT INTO discord_member_links(callsign,discord_user_id,member_name,rank,status,pending_callsign,pending_rank,pending_update_roles,last_error,last_synced_at,created_at,updated_at)
-      VALUES(?,?,?,?, 'linked','','',0,'','',?,?)
-      ON CONFLICT(callsign) DO UPDATE SET member_name=excluded.member_name,rank=excluded.rank,updated_at=excluded.updated_at
+    await db.prepare(`INSERT INTO discord_member_links(callsign,discord_user_id,member_name,rank,discord_nickname,status,pending_callsign,pending_rank,pending_update_roles,last_error,last_synced_at,created_at,updated_at)
+      VALUES(?,?,?,?,?,'linked','','',0,'','',?,?)
+      ON CONFLICT(callsign) DO UPDATE SET member_name=excluded.member_name,rank=excluded.rank,discord_nickname=excluded.discord_nickname,updated_at=excluded.updated_at
       WHERE discord_member_links.discord_user_id=excluded.discord_user_id`)
-      .bind(callsign, candidate.userId, String(rosterMember.name || ""), String(rosterMember.rank || ""), now, now).run();
+      .bind(callsign, candidate.userId, String(rosterMember.name || ""), String(rosterMember.rank || ""), String(candidate.nick || ""), now, now).run();
     linked.push({ callsign, name: rosterMember.name, rank: rosterMember.rank, user: candidate.username || candidate.userId });
   }
   // A complete scan that no longer contains a linked Discord account means that member has left the server.
@@ -1360,7 +1367,7 @@ export async function handleD1(context) {
     if(user.status!=="approved") return json({detail:"This D1 account is not approved."},401);
     user.permissions=await accountPermissions(db,user);
     if (route === "/api/discord/sync" && method === "POST") {
-      const actor = await requireAdmin(db, token);
+      const actor = await requireDiscordPermission(db, token, "discord_sync_manage");
       const lockToken = crypto.randomUUID();
       const now = nowSeconds();
       await db.prepare(`INSERT INTO discord_sync_lock(lock_id,locked_until,locked_by) VALUES(1,?,?)
@@ -1376,23 +1383,23 @@ export async function handleD1(context) {
       }
     }
     if (route === "/api/discord/links" && method === "GET") {
-      await requireAdmin(db, token);
+      await requireDiscordPermission(db, token, "discord_view");
       // Every roster member, then any link whose callsign is no longer on the roster.
       // discord_state is "linked" (green) or "not_linked" (red); a left-server link counts as not linked.
       const rows = (await db.prepare(`SELECT m.callsign AS callsign, m.name AS roster_name, m.rank AS roster_rank,
-            l.discord_user_id, l.member_name, l.status, l.last_error, l.last_synced_at,
+            l.discord_user_id, l.member_name, l.status, l.last_error, l.last_synced_at, l.discord_nickname,
             CASE WHEN l.callsign IS NULL OR l.status='left' THEN 'not_linked' ELSE 'linked' END AS discord_state,
             1 AS on_roster
           FROM members m LEFT JOIN discord_member_links l ON upper(l.callsign)=upper(m.callsign)
           UNION ALL
-          SELECT l.callsign, l.member_name, l.rank, l.discord_user_id, l.member_name, l.status, l.last_error, l.last_synced_at,
+          SELECT l.callsign, l.member_name, l.rank, l.discord_user_id, l.member_name, l.status, l.last_error, l.last_synced_at, l.discord_nickname,
             CASE WHEN l.status='left' THEN 'not_linked' ELSE 'linked' END, 0
           FROM discord_member_links l WHERE NOT EXISTS (SELECT 1 FROM members m WHERE upper(m.callsign)=upper(l.callsign))
           ORDER BY callsign`).all()).results || [];
       return json({ links: rows });
     }
     if (route === "/api/discord/links/edit" && method === "POST") {
-      const actor = await requireAdmin(db, token);
+      const actor = await requireDiscordPermission(db, token, "discord_manage");
       const cs = normalizeDiscordCallsign(data.callsign), newId = String(data.discord_user_id || "").trim();
       if (!/^\d{17,20}$/.test(newId)) throw Object.assign(new Error("Enter a valid Discord User ID (17 to 20 digits)."), { status: 400 });
       const link = await db.prepare("SELECT * FROM discord_member_links WHERE callsign=?").bind(cs).first();
@@ -1408,18 +1415,18 @@ export async function handleD1(context) {
       if (!parsed || parsed.callsign !== cs) throw Object.assign(new Error("That member's Discord nickname does not start with [" + cs + "]. Correct it in Discord first."), { status: 400 });
       const stamp = new Date().toISOString();
       if (link) {
-        await db.prepare("UPDATE discord_member_links SET discord_user_id=?,status='linked',last_error='',pending_callsign='',pending_rank='',pending_update_roles=0,last_synced_at=?,updated_at=? WHERE callsign=?")
-          .bind(newId, stamp, stamp, cs).run();
+        await db.prepare("UPDATE discord_member_links SET discord_user_id=?,discord_nickname=?,status='linked',last_error='',pending_callsign='',pending_rank='',pending_update_roles=0,last_synced_at=?,updated_at=? WHERE callsign=?")
+          .bind(newId, String(guildMember?.nick || ""), stamp, stamp, cs).run();
         await writeDiscordLog(db, actor, "edit", cs, link.member_name, newId, "done", "Discord User ID changed from " + link.discord_user_id + " to " + newId + ".");
       } else {
-        await db.prepare(`INSERT INTO discord_member_links(callsign,discord_user_id,member_name,rank,status,last_synced_at,created_at,updated_at) VALUES(?,?,?,?,'linked',?,?,?)`)
-          .bind(cs, newId, String(rosterRow.name || ""), String(rosterRow.rank || ""), stamp, stamp, stamp).run();
+        await db.prepare(`INSERT INTO discord_member_links(callsign,discord_user_id,member_name,rank,discord_nickname,status,last_synced_at,created_at,updated_at) VALUES(?,?,?,?,?,'linked',?,?,?)`)
+          .bind(cs, newId, String(rosterRow.name || ""), String(rosterRow.rank || ""), String(guildMember?.nick || ""), stamp, stamp, stamp).run();
         await writeDiscordLog(db, actor, "link", cs, rosterRow.name, newId, "done", "Linked manually to Discord User ID " + newId + ".");
       }
       return json({ ok: true });
     }
     if (route === "/api/discord/links/delink" && method === "POST") {
-      const actor = await requireAdmin(db, token);
+      const actor = await requireDiscordPermission(db, token, "discord_manage");
       const cs = normalizeDiscordCallsign(data.callsign);
       const link = await db.prepare("SELECT * FROM discord_member_links WHERE callsign=?").bind(cs).first();
       if (!link) throw Object.assign(new Error("This callsign has no Discord link."), { status: 404 });
@@ -1427,14 +1434,20 @@ export async function handleD1(context) {
       await writeDiscordLog(db, actor, "delink", cs, link.member_name, link.discord_user_id, "done", "Link removed. Discord was not changed.");
       return json({ ok: true });
     }
+    if (route === "/api/discord/log" && method === "DELETE") {
+      const actor = await requireDiscordPermission(db, token, "discord_log_clear");
+      await db.prepare("DELETE FROM discord_action_log").run();
+      await writeDiscordLog(db, actor, "clear log", "", "", "", "done", "Discord action log cleared.");
+      return json({ ok: true });
+    }
     if (route === "/api/discord/log" && method === "GET") {
-      await requireAdmin(db, token);
+      await requireDiscordPermission(db, token, "discord_view");
       const rows = (await db.prepare("SELECT id, created_at, actor_name, action, callsign, member_name, discord_user_id, outcome, detail FROM discord_action_log ORDER BY id DESC LIMIT 200").all()).results || [];
       return json({ log: rows });
     }
     const discordMemberRoute = route.match(/^\/api\/discord\/member\/([^/]+)(\/nickname)?$/);
     if (discordMemberRoute && method === "GET") {
-      await requireAdmin(db, token);
+      await requireDiscordPermission(db, token, "discord_view");
       const cs = normalizeDiscordCallsign(decodeURIComponent(discordMemberRoute[1]));
       const link = await db.prepare("SELECT discord_user_id, status, last_error FROM discord_member_links WHERE callsign=?").bind(cs).first();
       const linked = Boolean(link && link.status !== "left");
@@ -1452,7 +1465,7 @@ export async function handleD1(context) {
       }
     }
     if (discordMemberRoute && discordMemberRoute[2] && method === "POST") {
-      const actor = await requireAdmin(db, token);
+      const actor = await requireDiscordPermission(db, token, "discord_manage");
       const cs = normalizeDiscordCallsign(decodeURIComponent(discordMemberRoute[1]));
       const link = await db.prepare("SELECT discord_user_id, member_name FROM discord_member_links WHERE callsign=? AND status<>'left'").bind(cs).first();
       if (!link) throw Object.assign(new Error("This member is not linked to Discord. Set the Discord ID first."), { status: 400 });
@@ -1469,11 +1482,12 @@ export async function handleD1(context) {
         await writeDiscordLog(db, actor, "nickname", cs, link.member_name, link.discord_user_id, "failed", String(error?.message || error).slice(0, 300));
         throw error;
       }
+      await db.prepare("UPDATE discord_member_links SET discord_nickname=?, updated_at=? WHERE callsign=?").bind(nick, new Date().toISOString(), cs).run();
       await writeDiscordLog(db, actor, "nickname", cs, link.member_name, link.discord_user_id, "done", nick ? "Nickname set to " + nick + "." : "Nickname cleared.");
       return json({ ok: true, nickname: nick });
     }
     if (route === "/api/discord/status" && method === "GET") {
-      await requireAdmin(db, token);
+      await requireDiscordPermission(db, token, "discord_view");
       const [totals, failed, pending] = await Promise.all([
         db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN status='linked' THEN 1 ELSE 0 END) AS linked FROM discord_member_links").first(),
         db.prepare("SELECT COUNT(*) AS count FROM discord_member_links WHERE status='failed'").first(),
@@ -1483,7 +1497,7 @@ export async function handleD1(context) {
       return json({ total: Number(totals?.total || 0), linked: Number(totals?.linked || 0), failed: Number(failed?.count || 0), pending: Number(pending?.count || 0), left: Number(left?.count || 0) });
     }
     if (route === "/api/discord/retry" && method === "POST") {
-      await requireAdmin(db, token);
+      await requireDiscordPermission(db, token, "discord_sync_manage");
       const stuckBefore = new Date(Date.now() - 10 * 60 * 1000).toISOString();
       const rows = (await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE (status='failed' OR (status='pending' AND updated_at<?)) AND (pending_callsign<>'' OR pending_rank<>'') ORDER BY updated_at LIMIT 25").bind(stuckBefore).all()).results || [];
       for (const row of rows) {
