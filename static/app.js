@@ -3704,9 +3704,9 @@ function updateManageButtons() {
         const addButton = $("#addTrainingButton");
         const deleteButton = $("#deleteTrainingButton");
         if (addButton) addButton.disabled = !key || has;
-        if (addButton) addButton.dataset.disabledReason = !key ? "Choose Basic, Advanced, or HERT training first." : "Already has this training.";
+        if (addButton) addButton.dataset.disabledReason = !key ? "" : "Already has this training.";
         if (deleteButton) deleteButton.disabled = !key || !has;
-        if (deleteButton) deleteButton.dataset.disabledReason = !key ? "Choose Basic, Advanced, or HERT training first." : "Does not have this training.";
+        if (deleteButton) deleteButton.dataset.disabledReason = !key ? "" : "Does not have this training.";
     }
     const instructorSelect = $("#instructorType");
     if (instructorSelect) {
@@ -3716,9 +3716,9 @@ function updateManageButtons() {
         const addInstructor = $("#addInstructorButton");
         const deleteInstructor = $("#deleteInstructorButton");
         if (addInstructor) addInstructor.disabled = !value || isInstructor;
-        if (addInstructor) addInstructor.dataset.disabledReason = !value ? "Choose an instructor type first." : "Already an instructor of this type.";
+        if (addInstructor) addInstructor.dataset.disabledReason = !value ? "" : "Already an instructor of this type.";
         if (deleteInstructor) deleteInstructor.disabled = !value || !isInstructor;
-        if (deleteInstructor) deleteInstructor.dataset.disabledReason = !value ? "Choose an instructor type first." : "Not an instructor of this type.";
+        if (deleteInstructor) deleteInstructor.dataset.disabledReason = !value ? "" : "Not an instructor of this type.";
     }
     updateNoteButton();
 }
