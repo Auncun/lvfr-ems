@@ -250,7 +250,8 @@
   discordForm.addEventListener('submit', async event => {
     event.preventDefault();
     const discordId = discordInput.value.trim();
-    if (!/^\d{17,20}$/.test(discordId)) { discordMessage.textContent = 'Enter a 17 to 20 digit Discord User ID.'; return; }
+    if (!/^\d{17,20}$/.test(discordId)) { discordMessage.style.color = '#ff4d4d'; discordMessage.textContent = 'Enter a 17 to 20 digit Discord User ID.'; return; }
+    discordMessage.style.color = '';
     discordMessage.textContent = 'Saving…';
     try {
       const headers = { 'Content-Type': 'application/json' };
@@ -259,6 +260,7 @@
       const response = await fetch('/api/account/discord-id', { method: 'POST', headers, body: JSON.stringify({ discord_user_id: discordId }) });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.detail || result.error || 'Could not save the Discord ID.');
+      discordMessage.style.color = '#4ade80';
       discordMessage.textContent = 'Saved.';
       discordForm.style.display = 'none';
       accountProfile = null;
@@ -266,6 +268,7 @@
       if (user?.account_id || user?.id) { try { sessionStorage.removeItem(profileCacheKey(user.account_id || user.id)); } catch {} }
       await loadProfile();
     } catch (error) {
+      discordMessage.style.color = '#ff4d4d';
       discordMessage.textContent = error.message;
     }
   });
