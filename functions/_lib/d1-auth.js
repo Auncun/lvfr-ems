@@ -496,7 +496,7 @@ async function applyRosterMutationD1(db, route, data, actor) {
     if(route==="/api/change-rank" && !["EMT|AEMT","AEMT|Senior Volunteer","EMT|Volunteer","Senior Volunteer|AEMT","Volunteer|EMT"].includes(old.rank+"|"+nextRank)) throw new Error("This rank change is not supported.");
     const finalRank=route==="/api/change-callsign"?(admin?slot.rank:old.rank):nextRank;
     const date=route==="/api/change-callsign"?old.date:now.slice(0,10);
-    await db.batch([db.prepare("DELETE FROM callsign_slots WHERE callsign=?").bind(nextCs),db.prepare("DELETE FROM members WHERE callsign=?").bind(old.callsign),db.prepare(`INSERT INTO members(callsign,name,rank,date,rank_assigned_date,days_in_rank,discord_id,notes,has_basic_firefighting,has_advanced_firefighting,has_supervisor_exam,has_hert,activity,instructor_type,do_not_promote,do_not_terminate,sheet_row,synced_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(nextCs,old.name,finalRank,date,date,0,old.discord_id,old.notes,old.has_basic_firefighting,old.has_advanced_firefighting,old.has_supervisor_exam,old.has_hert,old.activity,old.instructor_type,old.do_not_promote,old.do_not_terminate,slot.sheet_row||null,now),db.prepare("INSERT OR IGNORE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(rankForCallsign(old.callsign),old.callsign,old.sheet_row,now)]);
+    await db.batch([db.prepare("DELETE FROM callsign_slots WHERE callsign=?").bind(nextCs),db.prepare("DELETE FROM members WHERE callsign=?").bind(old.callsign),db.prepare("UPDATE accounts SET callsign=?,updated_at=? WHERE upper(callsign)=upper(?)").bind(nextCs,now,old.callsign),db.prepare(`INSERT INTO members(callsign,name,rank,date,rank_assigned_date,days_in_rank,discord_id,notes,has_basic_firefighting,has_advanced_firefighting,has_supervisor_exam,has_hert,activity,instructor_type,do_not_promote,do_not_terminate,sheet_row,synced_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(nextCs,old.name,finalRank,date,date,0,old.discord_id,old.notes,old.has_basic_firefighting,old.has_advanced_firefighting,old.has_supervisor_exam,old.has_hert,old.activity,old.instructor_type,old.do_not_promote,old.do_not_terminate,slot.sheet_row||null,now),db.prepare("INSERT OR IGNORE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(rankForCallsign(old.callsign),old.callsign,old.sheet_row,now)]);
     // Record the promotion for PORTAL and Discord confirmation, with the person who made it.
     if(route==="/api/promote"||route==="/api/force-promote") await db.prepare("INSERT INTO promotion_confirmations(callsign,name,old_rank,new_rank,old_callsign,new_callsign,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)").bind(nextCs,String(old.name||""),String(old.rank||""),String(finalRank||nextRank||""),String(old.callsign||""),nextCs,now,String(actor.name||"")).run();
     return {ok:true,new_callsign:nextCs,new_rank:finalRank};
@@ -1869,12 +1869,23 @@ export async function handleD1(context) {
     if(route==="/api/instructors" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).flatMap(row=>String(row.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(type=>(type==="HERT"&&user.permissions.hert_instructor_view)||(type==="FORT"&&user.permissions.fort_instructor_view)).map(type=>({name:row.name,type,date:""}))));
     const memberRoute=route.match(/^\/api\/member\/([^/]+)$/);
     if(route==="/api/account/profile" && method==="GET") {
-      const rows=await readMembers(db,user.callsign,env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
-      const member=rows.find(row=>row.callsign.toUpperCase()===user.callsign.toUpperCase());
+      // Match the roster by the account's name first: a rank change moves the member to a new callsign,
+      // so the callsign stored on the account can be out of date. Fall back to the callsign when the name is not unique.
+      const rows=await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
+      const userCallsign=String(user.callsign||"").toUpperCase();
+      const byCallsign=rows.find(row=>String(row.callsign||"").toUpperCase()===userCallsign);
+      const byName=rows.filter(row=>nameKey(row.name)===nameKey(user.name));
+      const member=byName.length===1?byName[0]:(byCallsign||(byName.length?byName[0]:null));
       if(!member) return json({detail:"Member not found."},404);
-      // Only return the Discord ID linked to the currently authenticated user's own callsign.
+      const memberCallsign=String(member.callsign||"").trim().toUpperCase();
+      // Keep the account's callsign in step with the roster so permissions and Discord links follow the member.
+      if(memberCallsign && memberCallsign!==userCallsign) {
+        await db.prepare("UPDATE accounts SET callsign=?,updated_at=? WHERE account_id=?").bind(memberCallsign,new Date().toISOString(),user.account_id).run();
+        user.callsign=memberCallsign;
+      }
+      // Only return the Discord ID linked to the member's own callsign.
       // Include pending_callsign so a callsign change in progress does not temporarily hide the ID.
-      const discordLink=await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE callsign=? OR pending_callsign=? LIMIT 1").bind(String(user.callsign),String(user.callsign)).first();
+      const discordLink=await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE callsign=? OR pending_callsign=? LIMIT 1").bind(memberCallsign,memberCallsign).first();
       member.discord_user_id=discordLink?.discord_user_id ? String(discordLink.discord_user_id) : "";
       const eligible=rankEligibility(member);
       member.trainings=[...(member.has_basic_firefighting?["basic_firefighting"]:[]),...(member.has_advanced_firefighting?["advanced_firefighting"]:[])];
