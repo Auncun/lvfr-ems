@@ -4731,32 +4731,24 @@ async function terminate(cs) {
         return;
     }
 
-    // Discord is always asked: kick, remove job roles, or clear the nickname only.
-    const discordAction = await askDiscordAction(cs);
-    if (discordAction === null) {
-        return;
-    }
-
-
     try {
-
-        await api(
+        // Discord is asked only for a linked member. The server answers 409 with discord_choice_required before changing
+        // anything; then the chosen Discord action is sent with the same termination.
+        const sendTerminate = discordAction => api(
             "/api/terminate",
             {
                 method: "POST",
-
-                body: JSON.stringify({
-
-                    callsign: cs,
-
-                    discord_action: discordAction,
-                    note: reason,
-
-                    promoted_by:
-                        "Web Commander"
-                })
+                body: JSON.stringify({ callsign: cs, discord_action: discordAction, note: reason, promoted_by: "Web Commander" })
             }
         );
+        try {
+            await sendTerminate("");
+        } catch (error) {
+            if (!error.discord_choice_required) throw error;
+            const discordAction = await askDiscordAction(cs);
+            if (discordAction === null) return;
+            await sendTerminate(discordAction);
+        }
 
 
         toast(
