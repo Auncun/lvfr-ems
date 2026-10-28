@@ -1224,6 +1224,8 @@ const commandSections = {
   permissions: document.querySelector('#commandPermissionsSection'),
   history: document.querySelector('#commandHistorySection'),
   discord: document.querySelector('#commandDiscordSection'),
+  links: document.querySelector('#commandLinksSection'),
+  log: document.querySelector('#commandLogSection'),
 };
 function showCommandSection(name, updateHash = false) {
   if (!canManageCommandAccounts() && !canAccessPermissionPanel()) return;
@@ -1241,13 +1243,13 @@ function showCommandSection(name, updateHash = false) {
     else button.removeAttribute('aria-current');
   });
   if (updateHash) {
-    const anchors = { accounts: 'accountsHeading', permissions: 'permissionsHeading', history: 'auditHeading', discord: 'discordHeading' };
+    const anchors = { accounts: 'accountsHeading', permissions: 'permissionsHeading', history: 'auditHeading', discord: 'discordSyncHeading', links: 'linkedMembersHeading', log: 'discordLogHeading' };
     history.replaceState(null, '', `#${anchors[name]}`);
   }
 }
 document.querySelectorAll('[data-command-section]').forEach(button => button.addEventListener('click', () => showCommandSection(button.dataset.commandSection, true)));
 function selectCommandSectionFromHash() {
-  const sections = { '#permissionsHeading': 'permissions', '#auditHeading': 'history', '#accountsHeading': 'accounts', '#discordHeading': 'discord' };
+  const sections = { '#permissionsHeading': 'permissions', '#auditHeading': 'history', '#accountsHeading': 'accounts', '#discordSyncHeading': 'discord', '#discordHeading': 'discord', '#linkedMembersHeading': 'links', '#discordLogHeading': 'log' };
   const section = sections[location.hash];
   if (section) showCommandSection(section);
 }
@@ -1363,4 +1365,18 @@ loadAccounts();
 
   document.querySelector('#refreshLinkedMembers')?.addEventListener('click', () => refreshAll().catch(error => note(error.message, 'error')));
   document.querySelector('[data-command-section="discord"]')?.addEventListener('click', () => refreshAll().catch(() => {}));
+})();
+
+// Sidebar links for the new Discord pages: load their data when opened, and run a Discord button clicked from another page.
+(() => {
+  const openSection = () => {
+    if (location.hash === '#linkedMembersHeading') document.querySelector('#refreshLinkedMembers')?.click();
+    if (location.hash === '#discordLogHeading') document.querySelector('#refreshLinkedMembers')?.click();
+  };
+  window.addEventListener('hashchange', openSection);
+  const pending = sessionStorage.getItem('lvfr.sidebar.pending-click');
+  if (pending) {
+    sessionStorage.removeItem('lvfr.sidebar.pending-click');
+    setTimeout(() => document.querySelector(pending)?.click(), 600);
+  }
 })();
