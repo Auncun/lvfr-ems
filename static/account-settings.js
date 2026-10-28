@@ -1,3 +1,4 @@
+```javascript
 (() => {
   const profileMenuItem = document.querySelector('#manageAccountButton');
   if (!profileMenuItem) return;
@@ -31,6 +32,7 @@
         <dl class="account-details">
           <dt>Name</dt><dd id="accountSettingsName">Loading…</dd>
           <dt>Callsign</dt><dd id="accountSettingsCallsign"></dd>
+          <dt>Discord User ID</dt><dd class="account-discord-id"><span id="accountSettingsDiscordId" class="muted">Loading…</span> <button type="button" id="accountSettingsCopyDiscordId" class="secondary small" disabled>Copy ID</button></dd>
           <dt>Rank</dt><dd id="accountSettingsRank"></dd>
           <dt>Rank assigned</dt><dd id="accountSettingsDate"></dd>
           <dt>Activity</dt><dd id="accountSettingsActivity"></dd>
@@ -83,6 +85,10 @@
     $('accountSettingsSubtitle').textContent = [user?.callsign || member?.callsign, member?.rank].filter(Boolean).join(' · ');
     $('accountSettingsName').textContent = user?.name || '';
     $('accountSettingsCallsign').textContent = user?.callsign || member?.callsign || '';
+    const discordId = String(member?.discord_user_id || '').trim();
+    $('accountSettingsDiscordId').textContent = discordId || 'Not linked';
+    $('accountSettingsDiscordId').classList.toggle('muted', !discordId);
+    $('accountSettingsCopyDiscordId').disabled = !discordId;
     const badge = typeof rankBadgeHtml === 'function' ? rankBadgeHtml(member?.rank, user?.callsign || member?.callsign) : '';
     $('accountSettingsRank').innerHTML = `${badge}${escapeHtml(member?.rank || '')}`;
     $('accountSettingsDate').textContent = window.lvfrDateOnly(member?.rank_assigned_date || member?.date) || '';
@@ -193,6 +199,20 @@
     if (target === notificationsDialog) void loadNotificationOptions();
     if (target === passwordDialog) passwordDialog.querySelector('input[name="current_password"]')?.focus();
   }
+
+  $('accountSettingsCopyDiscordId').addEventListener('click', async () => {
+    const discordId = String($('accountSettingsDiscordId').textContent || '').trim();
+    if (!/^\d{17,20}$/.test(discordId)) return;
+    const button = $('accountSettingsCopyDiscordId');
+    try {
+      await navigator.clipboard.writeText(discordId);
+      button.textContent = 'Copied!';
+      window.setTimeout(() => { button.textContent = 'Copy ID'; }, 1400);
+    } catch {
+      button.textContent = 'Copy failed';
+      window.setTimeout(() => { button.textContent = 'Copy ID'; }, 1400);
+    }
+  });
 
   document.querySelector('#manageAccountButton')?.addEventListener('click', () => openWindow(profileDialog));
   document.querySelector('#accountNotificationsButton')?.addEventListener('click', () => openWindow(notificationsDialog));
