@@ -3458,6 +3458,8 @@ async function profile(
 
                 <div class="grid profile-grid">
 
+                    ${currentUserIsAdmin ? `<div class="card"><b>Discord</b><div id="profileDiscordState" class="muted">Loading…</div></div>` : ""}
+
 
                     <div class="card">
 
@@ -3639,6 +3641,7 @@ async function profile(
 
         `;
 
+        if (currentUserIsAdmin) void loadProfileDiscordState(m.callsign);
 
         const modal =
             $("#modal");
@@ -4024,8 +4027,6 @@ function openManage(cs) {
                 >
                     More
                 </button>` : ""}
-                ${currentUserIsAdmin ? `<button type="button" data-action="discord-id-manage" data-callsign="${esc(cs)}">Discord ID Manage</button>
-                <button type="button" data-action="discord-nickname-manage" data-callsign="${esc(cs)}">Discord Nickname Manage</button>` : ""}
 
 
                 ${currentUserHasPermission("promotion_manage") ? `<button
@@ -4791,6 +4792,19 @@ function discordBackLink(cs) {
     return `<button type="button" class="back-link" data-action="open-manage" data-callsign="${esc(cs)}">← Back to Manage</button>`;
 }
 
+async function loadProfileDiscordState(cs) {
+    const target = $("#profileDiscordState");
+    if (!target) return;
+    try {
+        const state = await api(`/api/discord/member/${encodeURIComponent(cs)}`);
+        target.innerHTML = state.linked
+            ? `<span class="discord-badge linked">Linked</span><br><small>${esc(state.discord_user_id)}</small>`
+            : `<span class="discord-badge not-linked">Not linked</span>`;
+    } catch (error) {
+        target.textContent = "Unavailable";
+    }
+}
+
 async function openDiscordIdManage(cs) {
     if (!currentUserIsAdmin) return;
     $("#modalContent").innerHTML = `
@@ -4917,6 +4931,11 @@ function openRankTools(cs) {
         <h2>
             More
         </h2>
+
+        ${currentUserIsAdmin ? `<div class="actions">
+            <button type="button" data-action="discord-id-manage" data-callsign="${esc(cs)}">Discord ID Manage</button>
+            <button type="button" data-action="discord-nickname-manage" data-callsign="${esc(cs)}">Discord Nickname Manage</button>
+        </div>` : ""}
 
 
         <div class="form">
