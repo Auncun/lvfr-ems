@@ -1,5 +1,3 @@
-```javascript
-(() => {
   const profileMenuItem = document.querySelector('#manageAccountButton');
   if (!profileMenuItem) return;
 
