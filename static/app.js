@@ -219,6 +219,11 @@ function startBackgroundMutation(url, options) {
         }
         if (!response.ok) throw new Error(result.detail || result.error || "Save failed.");
         if (path === "/api/terminate" && result.sheet_cleaned === false) toast(`Member terminated, but Google Sheets training cleanup failed: ${result.sheet_cleanup_error || "run cleanup manually"}.`);
+        if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign"].includes(path)) {
+            if (result.discord_sync === "pending") toast("Roster saved. Discord synchronization has been queued.");
+            else if (result.discord_sync === "not_linked") toast("Roster saved. This member is not linked to Discord yet; run Sync Discord Members in Operation Command.");
+            else if (result.discord_sync === "unavailable") toast(result.discord_sync_message || "Roster saved, but Discord synchronization could not be queued.");
+        }
         if (path === "/api/training") toast(result.message || `${payload.training} ${result.changed ? (payload.remove ? "removed" : "added") : "already in that state"}.`);
         else if (path === "/api/exam") toast(result.message || `Supervisor Exam ${result.changed ? (payload.remove ? "removed" : "added") : "already in that state"}.`);
         window.dispatchEvent(new CustomEvent("lvfr:background-updated", { detail: { route: path, callsign, payload, result, optimisticCallsign: optimisticTarget } }));

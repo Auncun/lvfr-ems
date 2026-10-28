@@ -841,6 +841,204 @@ async function mirrorToSheetInBackground(context,label,route,url,assertion,data)
   console.error(label+" Sheet mirror failed after retries:",lastError);
 }
 
+const DISCORD_API_BASE = "https://discord.com/api/v10";
+const DISCORD_CALLSIGN_RE = /^\s*\[([^\]]{1,32})\]\s*(.*)$/;
+const discordSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+export function normalizeDiscordCallsign(value) { return String(value || "").trim().toUpperCase(); }
+export function parseDiscordNickname(value) {
+  const match = String(value || "").match(DISCORD_CALLSIGN_RE);
+  if (!match) return null;
+  const callsign = normalizeDiscordCallsign(match[1]);
+  if (!callsign || /[\[\]]/.test(callsign)) return null;
+  return { callsign, namePart: String(match[2] || "") };
+}
+function discordRoleMap(env) {
+  let parsed;
+  try { parsed = JSON.parse(String(env.DISCORD_ROLE_MAP || "{}")); }
+  catch { throw new Error("DISCORD_ROLE_MAP must be valid JSON mapping website rank names to Discord role IDs."); }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("DISCORD_ROLE_MAP must be a JSON object.");
+  const map = new Map();
+  for (const [rank, roleIdRaw] of Object.entries(parsed)) {
+    const roleId = String(roleIdRaw || "").trim();
+    if (!rank.trim() || !/^\d{17,20}$/.test(roleId)) throw new Error("DISCORD_ROLE_MAP contains an invalid rank or Discord role ID.");
+    map.set(String(rank).trim().toLowerCase(), roleId);
+  }
+  return map;
+}
+function discordConfig(env) {
+  const token = String(env.DISCORD_BOT_TOKEN || "").trim();
+  const guildId = String(env.DISCORD_GUILD_ID || "").trim();
+  if (!token || !guildId) throw new Error("Discord is not configured. Set DISCORD_BOT_TOKEN and DISCORD_GUILD_ID in Cloudflare Secrets/Variables.");
+  if (!/^\d{17,20}$/.test(guildId)) throw new Error("DISCORD_GUILD_ID is not a valid Discord snowflake ID.");
+  return { token, guildId };
+}
+async function discordRequest(env, path, options = {}) {
+  const { token } = discordConfig(env);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    let response;
+    try {
+      response = await fetch(DISCORD_API_BASE + path, {
+        ...options,
+        headers: { Authorization: `Bot ${token}`, ...(options.body ? { "Content-Type": "application/json" } : {}), ...(options.headers || {}) },
+      });
+    } catch {
+      throw new Error("Could not connect to the Discord API.");
+    }
+    if (response.status === 429 && attempt < 3) {
+      const payload = await response.json().catch(() => ({}));
+      const delay = Math.ceil(Number(payload.retry_after || response.headers.get("Retry-After") || 1) * 1000);
+      if (delay > 5000) throw new Error("Discord rate limit requires a longer wait. Retry the operation shortly.");
+      await discordSleep(Math.max(250, delay));
+      continue;
+    }
+    if (response.status === 204) return null;
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detail = String(payload.message || payload.error || `HTTP ${response.status}`).slice(0, 180);
+      if (response.status === 401) throw new Error("Discord rejected the bot token. Check DISCORD_BOT_TOKEN.");
+      if (response.status === 403) throw new Error("Discord denied the request. Check bot permissions, role hierarchy, and the Server Members Intent.");
+      if (response.status === 404) throw new Error("The Discord member or resource was not found.");
+      throw new Error(`Discord API error (${response.status}): ${detail}`);
+    }
+    return payload;
+  }
+  throw new Error("Discord rate limit retries were exhausted. Try again shortly.");
+}
+async function updateDiscordMemberFromMapping(db, env, discordUserId) {
+  const row = await db.prepare("SELECT * FROM discord_member_links WHERE discord_user_id=?").bind(String(discordUserId)).first();
+  if (!row) throw new Error("Discord mapping was not found.");
+  const newCallsign = normalizeDiscordCallsign(row.pending_callsign || row.callsign);
+  const newRank = String(row.pending_rank || row.rank || "").trim();
+  const shouldUpdateRoles = Number(row.pending_update_roles || 0) === 1;
+  if (!newCallsign) throw new Error("The target callsign is empty.");
+  const { guildId } = discordConfig(env);
+  const conflicting = await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE callsign=? AND discord_user_id<>?").bind(newCallsign, String(discordUserId)).first();
+  if (conflicting) throw new Error("The new callsign is already mapped to another Discord member; mapping was not overwritten.");
+  const roleMap = shouldUpdateRoles ? discordRoleMap(env) : new Map();
+  const desiredRoleId = shouldUpdateRoles ? roleMap.get(newRank.toLowerCase()) : "";
+  if (shouldUpdateRoles && !desiredRoleId) throw new Error(`No Discord role is configured for website rank "${newRank}". Set DISCORD_ROLE_MAP before retrying.`);
+
+  const member = await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(discordUserId))}`);
+  const currentNickname = String(member.nick || member.user?.global_name || member.user?.username || "").trim();
+  const parsed = parseDiscordNickname(currentNickname);
+  if (!parsed) throw new Error("The member's current nickname does not start with a valid [Callsign] prefix; refusing to guess the name.");
+  const desiredNickname = `[${newCallsign}]${parsed.namePart ? " " + parsed.namePart : ""}`;
+  if (desiredNickname.length > 32) throw new Error("The resulting Discord nickname exceeds Discord's 32-character limit.");
+  if (currentNickname !== desiredNickname) {
+    await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(discordUserId))}`, {
+      method: "PATCH", body: JSON.stringify({ nick: desiredNickname }),
+    });
+  }
+
+  if (shouldUpdateRoles) {
+    const managedRoleIds = [...new Set([...roleMap.values()])];
+    const currentRoles = new Set(Array.isArray(member.roles) ? member.roles.map(String) : []);
+    for (const roleId of managedRoleIds) {
+      if (roleId !== desiredRoleId && currentRoles.has(roleId)) {
+        await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(discordUserId))}/roles/${roleId}`, { method: "DELETE" });
+      }
+    }
+    if (!currentRoles.has(desiredRoleId)) {
+      await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(discordUserId))}/roles/${desiredRoleId}`, { method: "PUT" });
+    }
+  }
+
+  const now = new Date().toISOString();
+  const oldCallsign = String(row.callsign || "");
+  await db.prepare(`UPDATE discord_member_links SET callsign=?,rank=?,status='linked',pending_callsign='',pending_rank='',pending_update_roles=0,last_error='',last_synced_at=?,updated_at=? WHERE discord_user_id=?`)
+    .bind(newCallsign, newRank, now, now, String(discordUserId)).run();
+  return { ok: true, discord_user_id: String(discordUserId), old_callsign: oldCallsign, callsign: newCallsign, rank: newRank };
+}
+async function queueDiscordRosterChange(db, context, env, oldMember, result) {
+  const route = String(new URL(context.request.url).pathname);
+  if (!oldMember || !["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign"].includes(route)) return "not_applicable";
+  const oldCallsign = normalizeDiscordCallsign(oldMember.callsign);
+  const newCallsign = normalizeDiscordCallsign(result?.new_callsign || oldCallsign);
+  const newRank = String(result?.new_rank || oldMember.rank || "").trim();
+  if (!oldCallsign || !newCallsign) return "not_linked";
+  const link = await db.prepare("SELECT * FROM discord_member_links WHERE callsign=? OR pending_callsign=? LIMIT 1").bind(oldCallsign, oldCallsign).first();
+  if (!link) return "not_linked";
+  const rankChanged = String(link.rank || oldMember.rank || "").trim().toLowerCase() !== newRank.toLowerCase();
+  const now = new Date().toISOString();
+  await db.prepare("UPDATE discord_member_links SET pending_callsign=?,pending_rank=?,pending_update_roles=?,status='pending',last_error='',updated_at=? WHERE discord_user_id=?")
+    .bind(newCallsign, newRank, rankChanged ? 1 : 0, now, link.discord_user_id).run();
+  context.waitUntil((async () => {
+    try {
+      await updateDiscordMemberFromMapping(db, env, link.discord_user_id);
+    } catch (error) {
+      const message = String(error?.message || error).slice(0, 400);
+      await db.prepare("UPDATE discord_member_links SET status='failed',last_error=?,updated_at=? WHERE discord_user_id=?")
+        .bind(message, new Date().toISOString(), link.discord_user_id).run();
+      console.error("Discord roster synchronization failed:", { callsign: oldCallsign, error: message });
+    }
+  })());
+  return "pending";
+}
+async function runInitialDiscordLinkSync(db, env, user) {
+  const { guildId } = discordConfig(env);
+  if (!env.LVFR_D1_AUTH_BRIDGE_SECRET) throw new Error("The Google Sheets bridge is not configured; cannot refresh the authoritative roster.");
+  // Refresh the roster snapshot from Google Sheets before linking identities.
+  await syncMembersFromAppsScript(env, await signedClaims(user, env.LVFR_D1_AUTH_BRIDGE_SECRET), true);
+  const rosterRows = (await db.prepare("SELECT callsign,name,rank FROM members WHERE trim(callsign)<>''").all()).results || [];
+  const roster = new Map(rosterRows.map(row => [normalizeDiscordCallsign(row.callsign), row]));
+  const foundByCallsign = new Map();
+  const unmatchedDiscord = [], malformed = [];
+  let processed = 0, after = "";
+  // Discord returns up to 1,000 members per request. Keep the scan bounded to avoid an unbounded Pages Function invocation.
+  const maxMembers = 10000;
+  while (true) {
+    const query = new URLSearchParams({ limit: "1000" });
+    if (after) query.set("after", after);
+    const page = await discordRequest(env, `/guilds/${guildId}/members?${query.toString()}`);
+    if (!Array.isArray(page)) throw new Error("Discord returned an invalid guild-members response.");
+    processed += page.length;
+    for (const member of page) {
+      const nickname = String(member.nick || member.user?.global_name || member.user?.username || "");
+      const parsed = parseDiscordNickname(nickname);
+      if (!parsed) { malformed.push({ user: member.user?.username || member.user?.id || "unknown", reason: "Nickname has no [Callsign] prefix" }); continue; }
+      const rosterMember = roster.get(parsed.callsign);
+      if (!rosterMember) { unmatchedDiscord.push({ callsign: parsed.callsign, user: member.user?.username || member.user?.id || "unknown" }); continue; }
+      const candidates = foundByCallsign.get(parsed.callsign) || [];
+      candidates.push({ userId: String(member.user?.id || ""), username: String(member.user?.username || ""), callsign: parsed.callsign, rosterMember });
+      foundByCallsign.set(parsed.callsign, candidates);
+    }
+    if (page.length < 1000) break;
+    if (processed >= maxMembers) throw new Error(`The server has at least ${maxMembers} members. The initial sync is safely stopped before linking because this implementation's one-run scan limit was reached. Increase the bounded limit or implement resumable scanning before retrying.`);
+    after = String(page[page.length - 1]?.user?.id || "");
+    if (!after) throw new Error("Discord pagination returned no last user ID; no links were written.");
+  }
+
+  const now = new Date().toISOString(), linked = [], conflicts = [], duplicates = [], unmatchedRoster = [];
+  for (const [callsign, rosterMember] of roster) {
+    const candidates = foundByCallsign.get(callsign) || [];
+    if (!candidates.length) { unmatchedRoster.push({ callsign, name: rosterMember.name }); continue; }
+    if (candidates.length !== 1) { duplicates.push({ callsign, count: candidates.length, users: candidates.slice(0, 5).map(candidate => candidate.username || candidate.userId) }); continue; }
+    const candidate = candidates[0];
+    if (!/^\d{17,20}$/.test(candidate.userId)) { conflicts.push({ callsign, reason: "Discord returned an invalid user ID" }); continue; }
+    const byCallsign = await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE callsign=?").bind(callsign).first();
+    const byUser = await db.prepare("SELECT callsign FROM discord_member_links WHERE discord_user_id=?").bind(candidate.userId).first();
+    if ((byCallsign && String(byCallsign.discord_user_id) !== candidate.userId) || (byUser && normalizeDiscordCallsign(byUser.callsign) !== callsign)) {
+      conflicts.push({ callsign, user: candidate.username, reason: "Existing Discord mapping conflicts with the discovered match" }); continue;
+    }
+    await db.prepare(`INSERT INTO discord_member_links(callsign,discord_user_id,member_name,rank,status,pending_callsign,pending_rank,pending_update_roles,last_error,last_synced_at,created_at,updated_at)
+      VALUES(?,?,?,?, 'linked','','',0,'','',?,?)
+      ON CONFLICT(callsign) DO UPDATE SET member_name=excluded.member_name,rank=excluded.rank,updated_at=excluded.updated_at
+      WHERE discord_member_links.discord_user_id=excluded.discord_user_id`)
+      .bind(callsign, candidate.userId, String(rosterMember.name || ""), String(rosterMember.rank || ""), now, now).run();
+    linked.push({ callsign, name: rosterMember.name, rank: rosterMember.rank, user: candidate.username || candidate.userId });
+  }
+  const saved = await db.prepare("SELECT COUNT(*) AS count FROM discord_member_links WHERE status='linked'").first();
+  return {
+    ok: true, processed, roster_members: rosterRows.length, linked_count: linked.length,
+    total_linked: Number(saved?.count || 0), unmatched_roster_count: unmatchedRoster.length,
+    unmatched_discord_count: unmatchedDiscord.length, malformed_count: malformed.length,
+    duplicate_count: duplicates.length, conflict_count: conflicts.length,
+    unmatched_roster: unmatchedRoster.slice(0, 50), unmatched_discord: unmatchedDiscord.slice(0, 50),
+    malformed: malformed.slice(0, 50), duplicates: duplicates.slice(0, 50), conflicts: conflicts.slice(0, 50),
+    message: "Initial linking completed. Discord nicknames and roles were not changed.",
+  };
+}
+
 export async function handleD1(context) {
   const { request, env } = context, url = new URL(request.url), route = url.pathname, method=request.method;
   const db=env.LVFR_DB;
@@ -1076,6 +1274,48 @@ export async function handleD1(context) {
     if(!user) return json({detail:"Session token was not found or has expired in D1."},401);
     if(user.status!=="approved") return json({detail:"This D1 account is not approved."},401);
     user.permissions=await accountPermissions(db,user);
+    if (route === "/api/discord/sync" && method === "POST") {
+      const actor = await requireAdmin(db, token);
+      const lockToken = crypto.randomUUID();
+      const now = nowSeconds();
+      await db.prepare(`INSERT INTO discord_sync_lock(lock_id,locked_until,locked_by) VALUES(1,?,?)
+        ON CONFLICT(lock_id) DO UPDATE SET locked_until=excluded.locked_until,locked_by=excluded.locked_by
+        WHERE discord_sync_lock.locked_until<?`).bind(now + 600, lockToken, now).run();
+      const lock = await db.prepare("SELECT locked_until,locked_by FROM discord_sync_lock WHERE lock_id=1").first();
+      if (lock?.locked_by !== lockToken) throw Object.assign(new Error("A Discord member synchronization is already running. Wait for it to finish before starting another."), { status: 409 });
+      try {
+        const result = await runInitialDiscordLinkSync(db, env, actor);
+        return json(result);
+      } finally {
+        await db.prepare("UPDATE discord_sync_lock SET locked_until=0,locked_by='' WHERE lock_id=1 AND locked_by=?").bind(lockToken).run();
+      }
+    }
+    if (route === "/api/discord/status" && method === "GET") {
+      await requireAdmin(db, token);
+      const [totals, failed, pending] = await Promise.all([
+        db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN status='linked' THEN 1 ELSE 0 END) AS linked FROM discord_member_links").first(),
+        db.prepare("SELECT COUNT(*) AS count FROM discord_member_links WHERE status='failed'").first(),
+        db.prepare("SELECT COUNT(*) AS count FROM discord_member_links WHERE status='pending'").first(),
+      ]);
+      return json({ total: Number(totals?.total || 0), linked: Number(totals?.linked || 0), failed: Number(failed?.count || 0), pending: Number(pending?.count || 0) });
+    }
+    if (route === "/api/discord/retry" && method === "POST") {
+      await requireAdmin(db, token);
+      const rows = (await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE status='failed' AND (pending_callsign<>'' OR pending_rank<>'') ORDER BY updated_at LIMIT 25").all()).results || [];
+      for (const row of rows) {
+        await db.prepare("UPDATE discord_member_links SET status='pending',last_error='',updated_at=? WHERE discord_user_id=?").bind(new Date().toISOString(), row.discord_user_id).run();
+        context.waitUntil((async () => {
+          try { await updateDiscordMemberFromMapping(db, env, row.discord_user_id); }
+          catch (error) {
+            const message = String(error?.message || error).slice(0, 400);
+            await db.prepare("UPDATE discord_member_links SET status='failed',last_error=?,updated_at=? WHERE discord_user_id=?").bind(message, new Date().toISOString(), row.discord_user_id).run();
+            console.error("Discord retry failed:", { discord_user_id: row.discord_user_id, error: message });
+          }
+        })());
+      }
+      const remaining = Math.max(0, Number((await db.prepare("SELECT COUNT(*) AS count FROM discord_member_links WHERE status='failed'").first())?.count || 0) - rows.length);
+      return json({ ok: true, queued: rows.length, remaining_estimate: remaining, message: rows.length ? `Queued ${rows.length} failed Discord update(s).` : "No failed Discord updates are waiting for retry." });
+    }
     const individualPermissionRoute=route.match(/^\/api\/leaders\/([^/]+)\/permissions$/);
     if(individualPermissionRoute&&(method==="GET"||method==="POST")) {
       const actor=await accountForToken(db,token);
@@ -1687,6 +1927,17 @@ export async function handleD1(context) {
       if(mutationData.dry_run) return json({...result,changed:false});
       if(result.changed!==false && oldMember) await writeOperationalLog(db,oldMember,route,mutationData,result,user);
       if(oldMember) await recordActionConfirmation(db,route,mutationData,oldMember,result,user);
+      if(result.changed!==false && oldMember && ["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign"].includes(route)) {
+        try {
+          result.discord_sync = await queueDiscordRosterChange(db, context, env, oldMember, result);
+          if(result.discord_sync === "pending") result.discord_sync_message = "Roster saved. Discord synchronization is running in the background.";
+          else if(result.discord_sync === "not_linked") result.discord_sync_message = "Roster saved. No Discord mapping exists yet; run Sync Discord Members in Operation Command.";
+        } catch(error) {
+          console.error("Could not queue Discord synchronization:", String(error?.message || error).slice(0,400));
+          result.discord_sync = "unavailable";
+          result.discord_sync_message = "Roster saved, but Discord synchronization could not be queued. Check the Discord integration migration and configuration.";
+        }
+      }
       // Sheets can be out of sync with D1 (for example after a manual edit or
       // a prior background write failure). Always mirror instructor changes,
       // even when D1 already has the requested instructor state. Wait for the

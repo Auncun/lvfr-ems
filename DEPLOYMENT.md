@@ -48,3 +48,7 @@ Apps Script خدمة Google سحابية؛ هذا التصميم لا يحتاج
 - رمز الجلسة المؤقت يبقى في `sessionStorage` حتى انتهاء الجلسة أو إغلاق التبويب.
 - مزامنة ملفات النشر في `dist/` مع التغييرات في `static/`. أمر البناء المعتاد هو `python build_static.py`.
 
+
+## Discord synchronization (Cloudflare only)
+
+The new `DISCORD_SYNC_SETUP.md` guide covers the Discord bot setup, Cloudflare secrets, role mapping, D1 migration `0023_discord_sync.sql`, initial linking button, and safe testing. The implementation runs in Pages Functions and D1; it does not need a separate always-on bot server. Apply the migration and configure `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, and `DISCORD_ROLE_MAP` before using **Operation Command → Discord Sync**.

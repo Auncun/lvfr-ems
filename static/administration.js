@@ -146,6 +146,7 @@ function configureOperationAccess() {
   document.querySelector('#clearAllNotifications')?.toggleAttribute('hidden', !canClearAllNotifications());
   document.querySelector('[data-command-section="accounts"]')?.toggleAttribute('hidden', !accountManager);
   document.querySelector('[data-command-section="history"]')?.toggleAttribute('hidden', !accountManager);
+  document.querySelector('[data-command-section="discord"]')?.toggleAttribute('hidden', !accountManager);
   document.querySelector('[data-command-section="permissions"]')?.toggleAttribute('hidden', !allowed);
   document.querySelector('.permission-member-picker')?.toggleAttribute('hidden', !canManageRoleProfiles());
   document.querySelector('#clearAccountAuditBtn')?.toggleAttribute('hidden', !canClearAccountAudit());
@@ -1222,6 +1223,7 @@ const commandSections = {
   accounts: document.querySelector('#commandAccountsSection'),
   permissions: document.querySelector('#commandPermissionsSection'),
   history: document.querySelector('#commandHistorySection'),
+  discord: document.querySelector('#commandDiscordSection'),
 };
 function showCommandSection(name, updateHash = false) {
   if (!canManageCommandAccounts() && !canAccessPermissionPanel()) return;
@@ -1239,16 +1241,68 @@ function showCommandSection(name, updateHash = false) {
     else button.removeAttribute('aria-current');
   });
   if (updateHash) {
-    const anchors = { accounts: 'accountsHeading', permissions: 'permissionsHeading', history: 'auditHeading' };
+    const anchors = { accounts: 'accountsHeading', permissions: 'permissionsHeading', history: 'auditHeading', discord: 'discordHeading' };
     history.replaceState(null, '', `#${anchors[name]}`);
   }
 }
 document.querySelectorAll('[data-command-section]').forEach(button => button.addEventListener('click', () => showCommandSection(button.dataset.commandSection, true)));
 function selectCommandSectionFromHash() {
-  const sections = { '#permissionsHeading': 'permissions', '#auditHeading': 'history', '#accountsHeading': 'accounts' };
+  const sections = { '#permissionsHeading': 'permissions', '#auditHeading': 'history', '#accountsHeading': 'accounts', '#discordHeading': 'discord' };
   const section = sections[location.hash];
   if (section) showCommandSection(section);
 }
 window.addEventListener('hashchange', selectCommandSectionFromHash);
 selectCommandSectionFromHash();
+
+const discordStatus = document.querySelector('#discordSyncStatus');
+const discordReport = document.querySelector('#discordSyncReport');
+const discordReportText = document.querySelector('#discordSyncReportText');
+function showDiscordReport(value) {
+  if (!discordReport || !discordReportText) return;
+  discordReport.hidden = false;
+  discordReportText.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+}
+async function refreshDiscordStatus() {
+  if (!discordStatus) return;
+  discordStatus.className = 'admin-status';
+  discordStatus.textContent = 'Loading Discord synchronization status…';
+  try {
+    const status = await api('/api/discord/status');
+    discordStatus.className = 'admin-status success';
+    discordStatus.textContent = `Linked: ${status.linked} · Failed: ${status.failed} · Pending: ${status.pending} · Total mappings: ${status.total}`;
+  } catch (error) {
+    discordStatus.className = 'admin-status error';
+    discordStatus.textContent = error.message;
+  }
+}
+document.querySelector('#syncDiscordMembers')?.addEventListener('click', async event => {
+  const button = event.currentTarget;
+  if (!window.confirm('Refresh the roster from Google Sheets and link Discord members by exact callsign? This initial sync will not change Discord nicknames or roles.')) return;
+  button.disabled = true;
+  if (discordStatus) { discordStatus.className = 'admin-status'; discordStatus.textContent = 'Refreshing the roster and scanning Discord members…'; }
+  if (discordReport) discordReport.hidden = true;
+  try {
+    const result = await api('/api/discord/sync', { method: 'POST', body: '{}' });
+    showDiscordReport(result);
+    if (discordStatus) { discordStatus.className = 'admin-status success'; discordStatus.textContent = result.message || 'Initial Discord linking completed.'; }
+    await refreshDiscordStatus();
+  } catch (error) {
+    if (discordStatus) { discordStatus.className = 'admin-status error'; discordStatus.textContent = error.message; }
+    showDiscordReport({ error: error.message });
+  } finally { button.disabled = false; }
+});
+document.querySelector('#retryDiscordUpdates')?.addEventListener('click', async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  if (discordStatus) { discordStatus.className = 'admin-status'; discordStatus.textContent = 'Queueing failed Discord updates…'; }
+  try {
+    const result = await api('/api/discord/retry', { method: 'POST', body: '{}' });
+    if (discordStatus) { discordStatus.className = 'admin-status success'; discordStatus.textContent = result.message || 'Retry request accepted.'; }
+    showDiscordReport(result);
+    window.setTimeout(() => { void refreshDiscordStatus(); }, 1500);
+  } catch (error) {
+    if (discordStatus) { discordStatus.className = 'admin-status error'; discordStatus.textContent = error.message; }
+  } finally { button.disabled = false; }
+});
+document.querySelector('#refreshDiscordStatus')?.addEventListener('click', () => void refreshDiscordStatus());
 loadAccounts();
