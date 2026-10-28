@@ -668,9 +668,13 @@ async function recordActionConfirmation(db,route,data,oldMember,result,actor){
   const callsign=String(oldMember.callsign||""), name=String(oldMember.name||"");
   const rank=String(oldMember.rank||"");
   let action="", needsDiscord=0, perms="", newRank=rank, newCallsign=callsign;
-  if(route==="/api/demote"){ action="Demotion"; needsDiscord=1; perms="rank_manage"; newRank=String(result.new_rank||rank); newCallsign=String(result.new_callsign||callsign); }
-  else if(route==="/api/change-callsign"){ action="Callsign change"; needsDiscord=1; perms="callsign_manage"; newCallsign=String(result.new_callsign||data.new_callsign||callsign); }
-  else if(route==="/api/terminate"){ action="Termination"; needsDiscord=1; perms="termination_manage"; newRank="Terminated"; }
+  // A member without a Discord link has nothing to change in Discord, so no Discord confirmation is asked.
+  const hasDiscordLink=["/api/demote","/api/change-callsign","/api/terminate"].includes(route)
+    ? Boolean(await db.prepare("SELECT 1 AS found FROM discord_member_links WHERE upper(callsign)=upper(?)").bind(callsign).first()) : false;
+  const discordNeeded=hasDiscordLink?1:0;
+  if(route==="/api/demote"){ action="Demotion"; needsDiscord=discordNeeded; perms="rank_manage"; newRank=String(result.new_rank||rank); newCallsign=String(result.new_callsign||callsign); }
+  else if(route==="/api/change-callsign"){ action="Callsign change"; needsDiscord=discordNeeded; perms="callsign_manage"; newCallsign=String(result.new_callsign||data.new_callsign||callsign); }
+  else if(route==="/api/terminate"){ action="Termination"; needsDiscord=discordNeeded; perms="termination_manage"; newRank="Terminated"; }
   else if(route==="/api/exam"){ action=data.remove?"Supervisor exam removed":"Supervisor exam"; needsDiscord=0; perms="exam_manage"; }
   else if(route==="/api/training"){
     const training=String(data.training||""), removing=Boolean(data.remove);
@@ -872,8 +876,8 @@ export function parseDiscordNickname(value) {
   const match = String(value || "").match(DISCORD_CALLSIGN_RE);
   if (!match) return null;
   const callsign = normalizeDiscordCallsign(match[1]);
-  if (!callsign || /[\[\]]/.test(callsign)) return null;
-  return { callsign, namePart: String(match[2] || "") };
+  if (!/^[A-Z]+-\d+$/.test(callsign)) return null;
+  return { callsign, namePart: String(match[2] || "").trim() };
 }
 function discordRoleMap(env) {
   let parsed;
@@ -946,9 +950,10 @@ async function updateDiscordMemberFromMapping(db, env, discordUserId) {
   const currentNickname = String(member.nick || "").trim();
   const parsed = parseDiscordNickname(currentNickname);
   if (!parsed) throw new Error("The member's current nickname does not start with a valid [Callsign] prefix; refusing to guess the name.");
-  const desiredNickname = `[${newCallsign}]${parsed.namePart ? " " + parsed.namePart : ""}`;
+  const callsignChanged = parsed.callsign !== newCallsign;
+  const desiredNickname = callsignChanged ? `[${newCallsign}]${parsed.namePart ? " " + parsed.namePart : ""}` : currentNickname;
   if (desiredNickname.length > 32) throw new Error("The resulting Discord nickname exceeds Discord's 32-character limit.");
-  if (currentNickname !== desiredNickname) {
+  if (callsignChanged && currentNickname !== desiredNickname) {
     await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(discordUserId))}`, {
       method: "PATCH", body: JSON.stringify({ nick: desiredNickname }),
     });
@@ -957,13 +962,13 @@ async function updateDiscordMemberFromMapping(db, env, discordUserId) {
   if (shouldUpdateRoles) {
     const managedRoleIds = [...new Set([...roleMap.values()])];
     const currentRoles = new Set(Array.isArray(member.roles) ? member.roles.map(String) : []);
+    if (!currentRoles.has(desiredRoleId)) {
+      await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(discordUserId))}/roles/${desiredRoleId}`, { method: "PUT" });
+    }
     for (const roleId of managedRoleIds) {
       if (roleId !== desiredRoleId && currentRoles.has(roleId)) {
         await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(discordUserId))}/roles/${roleId}`, { method: "DELETE" });
       }
-    }
-    if (!currentRoles.has(desiredRoleId)) {
-      await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(discordUserId))}/roles/${desiredRoleId}`, { method: "PUT" });
     }
   }
 
@@ -2083,10 +2088,10 @@ export async function handleD1(context) {
       const parsedNick = parseDiscordNickname(nickname);
       if (!parsedNick || parsedNick.callsign !== memberCallsign) throw Object.assign(new Error("Callsign doesn't match"),{status:400});
       const stamp=new Date().toISOString();
-      await db.prepare(`INSERT INTO discord_member_links(callsign,discord_user_id,member_name,rank,status,created_at,updated_at)
-        VALUES(?,?,?,?,'linked',?,?)
-        ON CONFLICT(callsign) DO UPDATE SET discord_user_id=excluded.discord_user_id,member_name=excluded.member_name,rank=excluded.rank,status='linked',last_error='',last_synced_at=excluded.updated_at,updated_at=excluded.updated_at`)
-        .bind(memberCallsign,discordId,String(member.name||""),String(member.rank||""),stamp,stamp).run();
+      await db.prepare(`INSERT INTO discord_member_links(callsign,discord_user_id,member_name,rank,discord_nickname,status,created_at,updated_at)
+        VALUES(?,?,?,?,?,'linked',?,?)
+        ON CONFLICT(callsign) DO UPDATE SET discord_user_id=excluded.discord_user_id,member_name=excluded.member_name,rank=excluded.rank,discord_nickname=excluded.discord_nickname,status='linked',last_error='',last_synced_at=excluded.updated_at,updated_at=excluded.updated_at`)
+        .bind(memberCallsign,discordId,String(member.name||""),String(member.rank||""),nickname,stamp,stamp).run();
       return json({ok:true,discord_user_id:discordId});
     }
     const memberRoute=route.match(/^\/api\/member\/([^/]+)$/);
@@ -2152,7 +2157,7 @@ export async function handleD1(context) {
         // A linked member needs an explicit Discord choice before anything is changed.
         const choice=String(mutationData.discord_action||"");
         const linked=await db.prepare("SELECT 1 AS found FROM discord_member_links WHERE callsign=?").bind(String(mutationData.callsign||"").toUpperCase()).first();
-        if(linked&&!["kick","remove_roles","none"].includes(choice)) throw Object.assign(new Error("Choose what to do in Discord: kick, remove roles only, or clear the nickname only."),{status:400});
+        if(linked&&!["kick","remove_roles","none"].includes(choice)) return json({detail:{message:"Choose what to do in Discord: kick, remove roles only, or clear the nickname only.",discord_choice_required:true}},409);
       }
       const result=await applyRosterMutationD1(db,route,mutationData,user);
       // A check only (dry run): nothing is written to D1, the logs or the Sheet.
