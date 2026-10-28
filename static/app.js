@@ -218,6 +218,8 @@ function startBackgroundMutation(url, options) {
             throw new Error("Your session expired. Please sign in again.");
         }
         if (!response.ok) throw new Error(result.detail || result.error || "Save failed.");
+        if (path === "/api/terminate" && result.discord_termination?.status === "failed") toast(`Member terminated, but the Discord action failed: ${result.discord_termination.message}`);
+        else if (path === "/api/terminate" && result.discord_termination?.status === "done") toast(`Discord: ${result.discord_termination.detail}`);
         if (path === "/api/terminate" && result.sheet_cleaned === false) toast(`Member terminated, but Google Sheets training cleanup failed: ${result.sheet_cleanup_error || "run cleanup manually"}.`);
         if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign"].includes(path)) {
             if (result.discord_sync === "pending") toast("Roster saved. Discord synchronization has been queued.");
@@ -4662,6 +4664,30 @@ function currentCallsignFor(control, fallback) {
     return fallback;
 }
 
+// Asks what to do in Discord when a member is terminated. Resolves "kick", "remove_roles", "none", or null (cancel).
+function askDiscordAction(cs) {
+    return new Promise(resolve => {
+        const dialog = document.createElement("dialog");
+        dialog.innerHTML = `<form method="dialog" style="display:grid;gap:10px;min-width:min(90vw,440px);padding:16px">
+            <p style="margin:0"><strong>Discord action for ${String(cs).toUpperCase()}</strong></p>
+            <p class="muted" style="margin:0">Every option removes the Discord link. The roster termination is not undone.</p>
+            <button type="button" class="danger" data-choice="kick">Kick from the Discord server</button>
+            <button type="button" data-choice="remove_roles">Remove job roles and clear nickname</button>
+            <button type="button" data-choice="none">Clear nickname only</button>
+            <button type="button" data-choice="cancel">Cancel termination</button>
+        </form>`;
+        let finished = false;
+        const finish = value => { if (finished) return; finished = true; dialog.close(); dialog.remove(); resolve(value); };
+        dialog.querySelectorAll("[data-choice]").forEach(button => button.addEventListener("click", () => {
+            const choice = button.dataset.choice;
+            finish(choice === "cancel" ? null : choice);
+        }));
+        dialog.addEventListener("cancel", event => { event.preventDefault(); finish(null); });
+        document.body.append(dialog);
+        dialog.showModal();
+    });
+}
+
 async function terminate(cs) {
     const protectedMember = memberCache.get(String(cs).trim().toUpperCase())
         || allMembersCache?.find(member => String(member.callsign || "").toUpperCase() === String(cs).trim().toUpperCase());
@@ -4695,6 +4721,12 @@ async function terminate(cs) {
         return;
     }
 
+    // Discord is always asked: kick, remove job roles, or clear the nickname only.
+    const discordAction = await askDiscordAction(cs);
+    if (discordAction === null) {
+        return;
+    }
+
 
     try {
 
@@ -4707,6 +4739,7 @@ async function terminate(cs) {
 
                     callsign: cs,
 
+                    discord_action: discordAction,
                     note: reason,
 
                     promoted_by:
