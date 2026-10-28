@@ -31,7 +31,13 @@
         <dl class="account-details">
           <dt>Name</dt><dd id="accountSettingsName">Loading…</dd>
           <dt>Callsign</dt><dd id="accountSettingsCallsign"></dd>
-          <dt>Discord User ID</dt><dd class="account-discord-id"><span id="accountSettingsDiscordId" class="muted">Loading…</span> <button type="button" id="accountSettingsCopyDiscordId" class="secondary small" disabled>Copy ID</button></dd>
+          <dt>Discord User ID</dt><dd class="account-discord-id"><span id="accountSettingsDiscordId" class="muted">Loading…</span> <button type="button" id="accountSettingsCopyDiscordId" class="secondary small" disabled>Copy ID</button> <button type="button" id="accountSettingsChangeDiscord" class="secondary small">Change Discord ID</button>
+            <form id="accountDiscordForm" class="acct-form" style="display:none;margin-top:8px">
+              <input name="discord_user_id" type="text" inputmode="numeric" autocomplete="off" placeholder="17 to 20 digit Discord User ID" required>
+              <button type="submit" class="primary small">Save</button>
+              <button type="button" id="accountDiscordCancel" class="secondary small">Cancel</button>
+              <p id="accountDiscordMessage" class="acct-message" role="status" aria-live="polite"></p>
+            </form></dd>
           <dt>Rank</dt><dd id="accountSettingsRank"></dd>
           <dt>Rank assigned</dt><dd id="accountSettingsDate"></dd>
           <dt>Activity</dt><dd id="accountSettingsActivity"></dd>
@@ -81,14 +87,15 @@
 
   const renderProfile = (user, member) => {
     $('accountSettingsAvatar').textContent = initials(user?.name || member?.name);
-    $('accountSettingsSubtitle').textContent = [user?.callsign || member?.callsign, member?.rank].filter(Boolean).join(' · ');
+    const callsign = member?.callsign || user?.callsign || '';
+    $('accountSettingsSubtitle').textContent = [callsign, member?.rank].filter(Boolean).join(' · ');
     $('accountSettingsName').textContent = user?.name || '';
-    $('accountSettingsCallsign').textContent = user?.callsign || member?.callsign || '';
+    $('accountSettingsCallsign').textContent = callsign;
     const discordId = String(member?.discord_user_id || '').trim();
     $('accountSettingsDiscordId').textContent = discordId || 'Not linked';
     $('accountSettingsDiscordId').classList.toggle('muted', !discordId);
     $('accountSettingsCopyDiscordId').disabled = !discordId;
-    const badge = typeof rankBadgeHtml === 'function' ? rankBadgeHtml(member?.rank, user?.callsign || member?.callsign) : '';
+    const badge = typeof rankBadgeHtml === 'function' ? rankBadgeHtml(member?.rank, callsign) : '';
     $('accountSettingsRank').innerHTML = `${badge}${escapeHtml(member?.rank || '')}`;
     $('accountSettingsDate').textContent = window.lvfrDateOnly(member?.rank_assigned_date || member?.date) || '';
     $('accountSettingsActivity').innerHTML = activityBadge(member?.activity || '');
@@ -131,7 +138,16 @@
       if (accountId) try { sessionStorage.setItem(profileCacheKey(accountId), JSON.stringify(member)); } catch {}
       renderProfile(user, member);
     } catch (error) {
-      if (!cachedMember) $('accountSettingsName').textContent = error.message;
+      if (!cachedMember) {
+        const callsign = user?.callsign || '';
+        $('accountSettingsName').textContent = user?.name || '';
+        const notice = /not found/i.test(error.message)
+          ? `No roster entry matches your callsign${callsign ? ` (${callsign})` : ''}. Ask a Commander to check the roster, then Sync now.`
+          : error.message;
+        $('accountSettingsSubtitle').textContent = notice;
+        $('accountSettingsDiscordId').textContent = 'Not available';
+        $('accountSettingsDiscordId').classList.add('muted');
+      }
     }
   }
 
@@ -210,6 +226,39 @@
     } catch {
       button.textContent = 'Copy failed';
       window.setTimeout(() => { button.textContent = 'Copy ID'; }, 1400);
+    }
+  });
+
+  const discordForm = $('accountDiscordForm');
+  const discordInput = discordForm.querySelector('input[name="discord_user_id"]');
+  const discordMessage = $('accountDiscordMessage');
+  $('accountSettingsChangeDiscord').addEventListener('click', () => {
+    const open = discordForm.style.display === 'none';
+    discordForm.style.display = open ? '' : 'none';
+    discordMessage.textContent = '';
+    if (open) { discordInput.value = ''; discordInput.focus(); }
+  });
+  $('accountDiscordCancel').addEventListener('click', () => { discordForm.style.display = 'none'; discordMessage.textContent = ''; });
+  discordForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const discordId = discordInput.value.trim();
+    if (!/^\d{17,20}$/.test(discordId)) { discordMessage.textContent = 'Enter a 17 to 20 digit Discord User ID.'; return; }
+    discordMessage.textContent = 'Saving…';
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      const token = window.lvfrSessionToken?.();
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const response = await fetch('/api/account/discord-id', { method: 'POST', headers, body: JSON.stringify({ discord_user_id: discordId }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || result.error || 'Could not save the Discord ID.');
+      discordMessage.textContent = 'Saved.';
+      discordForm.style.display = 'none';
+      accountProfile = null;
+      const user = window.lvfrCachedUser?.();
+      if (user?.account_id || user?.id) { try { sessionStorage.removeItem(profileCacheKey(user.account_id || user.id)); } catch {} }
+      await loadProfile();
+    } catch (error) {
+      discordMessage.textContent = error.message;
     }
   });
 
