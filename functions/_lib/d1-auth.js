@@ -560,7 +560,8 @@ function rankEligibility(member) {
   if(member.do_not_promote) return {eligible:false,reason:"Can't be promoted (Do not Promote list)",next_rank:rule?.[0]||""};
   if(!rule || ["Probationary","Probationary Volunteer"].includes(member.rank)) return {eligible:false,reason:"No automatic promotion available",next_rank:""};
   const missing=[]; if(Number(member.days_in_rank||0)<rule[1]) missing.push(`${rule[1]-Number(member.days_in_rank||0)} more day(s)`);
-  for(const key of [...rule[2],...rule[3]]) if(!member[key]) missing.push(key.replaceAll("_"," "));
+  const requirementNames={has_basic_firefighting:"basic FORT",has_advanced_firefighting:"advanced FORT",has_supervisor_exam:"supervisor exam"};
+  for(const key of [...rule[2],...rule[3]]) if(!member[key]) missing.push(`does not have ${requirementNames[key]||key.replaceAll("_"," ")}`);
   return {eligible:!missing.length,reason:missing.length?`Missing: ${missing.join(", ")}`:"Eligible for promotion",next_rank:rule[0]};
 }
 async function appendAudit(db, account, action, actor) {
