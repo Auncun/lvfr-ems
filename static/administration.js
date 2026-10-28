@@ -122,7 +122,7 @@ function allAccounts() {
 }
 const canClearAllNotifications = () => currentUser?.role === 'admin' || currentUser?.permissions?.notifications_clear_all === true;
 const clearAllNotificationsHandler = async event => {
-  if (!window.confirm("Clear all notifications for everyone? They will be deleted from the website and the Google Sheet.")) return;
+  if (!(await lvfrConfirm({ title: "Clear Notifications", message: "Clear all notifications for everyone? They will be deleted from the website and the Google Sheet.", confirmText: "Clear all", danger: true }))) return;
   const button = document.querySelector("#clearAllNotifications");
   button.disabled = true;
   try {
@@ -1286,7 +1286,7 @@ async function refreshDiscordStatus() {
 }
 document.querySelector('#syncDiscordMembers')?.addEventListener('click', async event => {
   const button = event.currentTarget;
-  if (!window.confirm('Refresh the roster from Google Sheets and link Discord members by exact callsign? This initial sync will not change Discord nicknames or roles.')) return;
+  if (!(await lvfrConfirm({ title: "Sync Discord Members", message: "Refresh the roster from Google Sheets and link Discord members by exact callsign? This initial sync will not change Discord nicknames or roles.", confirmText: "Sync" }))) return;
   button.disabled = true;
   if (discordStatus) { discordStatus.className = 'admin-status'; discordStatus.textContent = 'Refreshing the roster and scanning Discord members…'; }
   if (discordReport) discordReport.hidden = true;
@@ -1383,7 +1383,7 @@ disabledReasonObserver.observe(document.body, { subtree: true, childList: true, 
           <td>${esc(link.status || '—')}${link.last_error ? `<br><small class="muted">${esc(link.last_error)}</small>` : ''}</td>
           <td>${Number(link.on_roster) ? 'On roster' : '<span class="muted">Not on roster</span>'}</td>
           <td class="admin-actions">
-            <button type="button" data-link-edit="${esc(link.callsign)}" data-linked="${linked ? '1' : '0'}" ${manage ? '' : 'disabled'} data-disabled-reason="Your role does not have Discord manage permission.">${linked ? 'Edit' : 'Link'}</button>
+            <button type="button" data-link-edit="${esc(link.callsign)}" data-linked="${linked ? '1' : '0'}" data-discord-id="${esc(link.discord_user_id || '')}" data-nickname="${esc(link.discord_nickname || '')}" ${manage ? '' : 'disabled'} data-disabled-reason="Your role does not have Discord manage permission.">${linked ? 'Edit' : 'Link'}</button>
             <button type="button" class="danger" data-link-delink="${esc(link.callsign)}" ${manage && linked ? '' : 'disabled'} data-disabled-reason="${linked ? 'Your role does not have Discord manage permission.' : 'Not linked, so there is nothing to delink.'}">Delink</button>
           </td></tr>`;
         }).join('')
@@ -1409,27 +1409,6 @@ disabledReasonObserver.observe(document.body, { subtree: true, childList: true, 
       : '<tr><td colspan="6" class="muted">No Discord actions recorded yet.</td></tr>';
   }
 
-  // Asks whether to change the Discord ID or the nickname. Resolves "id", "nickname", or null.
-  function chooseEdit(callsign) {
-    return new Promise(resolve => {
-      const dialog = document.createElement('dialog');
-      dialog.innerHTML = `<form method="dialog" style="display:grid;gap:10px;min-width:min(90vw,380px);padding:16px">
-        <p style="margin:0"><strong>Edit ${esc(callsign)}</strong></p>
-        <button type="button" data-choice="id">Discord ID</button>
-        <button type="button" data-choice="nickname">Nickname</button>
-        <button type="button" data-choice="cancel">Cancel</button>
-      </form>`;
-      let finished = false;
-      const finish = value => { if (finished) return; finished = true; dialog.close(); dialog.remove(); resolve(value); };
-      dialog.querySelectorAll('[data-choice]').forEach(button => button.addEventListener('click', () => {
-        finish(button.dataset.choice === 'cancel' ? null : button.dataset.choice);
-      }));
-      dialog.addEventListener('cancel', event => { event.preventDefault(); finish(null); });
-      document.body.append(dialog);
-      dialog.showModal();
-    });
-  }
-
   async function refreshAll() { await Promise.all([loadLinks(), loadLog()]); }
 
   document.querySelector('#linkedMemberRows')?.addEventListener('click', async event => {
@@ -1440,22 +1419,18 @@ disabledReasonObserver.observe(document.body, { subtree: true, childList: true, 
     try {
       if (edit) {
         const callsign = edit.dataset.linkEdit;
-        const what = edit.dataset.linked === '1' ? await chooseEdit(callsign) : 'id';
-        if (!what) return;
-        if (what === 'id') {
-          const id = window.prompt(`Discord User ID for ${callsign} (17 to 20 digits):`, '');
-          if (id === null) return;
-          await api('/api/discord/links/edit', { method: 'POST', body: JSON.stringify({ callsign, discord_user_id: id.trim() }) });
+        const choice = await lvfrEditLink({ callsign, discordId: edit.dataset.discordId || '', nickname: edit.dataset.nickname || '' });
+        if (!choice) return;
+        if (choice.what === 'id') {
+          await api('/api/discord/links/edit', { method: 'POST', body: JSON.stringify({ callsign, discord_user_id: choice.value }) });
           note(`Discord User ID saved for ${callsign}.`, 'success');
         } else {
-          const nickname = window.prompt(`Discord nickname for ${callsign} (must start with [${callsign}]):`, '');
-          if (nickname === null) return;
-          await api(`/api/discord/member/${encodeURIComponent(callsign)}/nickname`, { method: 'POST', body: JSON.stringify({ nickname: nickname.trim() }) });
+          await api(`/api/discord/member/${encodeURIComponent(callsign)}/nickname`, { method: 'POST', body: JSON.stringify({ nickname: choice.value }) });
           note(`Nickname saved for ${callsign}.`, 'success');
         }
       } else {
         const callsign = delink.dataset.linkDelink;
-        if (!window.confirm(`Delink ${callsign} from Discord? Discord itself will not be changed.`)) return;
+        if (!(await lvfrConfirm({ title: "Delink Discord", subject: callsign, message: "Delink this member from Discord. Discord itself will not be changed.", confirmText: "Delink", danger: true }))) return;
         await api('/api/discord/links/delink', { method: 'POST', body: JSON.stringify({ callsign }) });
         note(`${callsign} delinked. Discord was not changed.`, 'success');
       }
@@ -1467,7 +1442,7 @@ disabledReasonObserver.observe(document.body, { subtree: true, childList: true, 
 
   document.querySelector('#clearDiscordLog')?.addEventListener('click', async () => {
     if (!canClearDiscordLog()) return;
-    if (!window.confirm('Clear the whole Discord action log? This cannot be undone.')) return;
+    if (!(await lvfrConfirm({ title: "Clear Discord Log", message: "Clear the whole Discord action log? This cannot be undone.", confirmText: "Clear", danger: true }))) return;
     try {
       await api('/api/discord/log', { method: 'DELETE' });
       note('Discord action log cleared.', 'success');
