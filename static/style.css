@@ -1338,3 +1338,7 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 
 /* Manage panel: a shorter Note box. */
 #modal.manage-mode #modalContent textarea { height:56px; min-height:56px; max-height:72px; }
+/* Discord link state badges: green when linked, red when not linked. */
+.discord-badge { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:700; white-space:nowrap; }
+.discord-badge.linked { background:#1f6f3a; color:#e6ffee; }
+.discord-badge.not-linked { background:#7a1f1f; color:#ffe6e6; }
