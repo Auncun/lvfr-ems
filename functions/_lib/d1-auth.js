@@ -935,7 +935,8 @@ async function updateDiscordMemberFromMapping(db, env, discordUserId) {
   if (shouldUpdateRoles && !desiredRoleId) throw new Error(`No Discord role is configured for website rank "${newRank}". Set DISCORD_ROLE_MAP before retrying.`);
 
   const member = await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(discordUserId))}`);
-  const currentNickname = String(member.nick || member.user?.global_name || member.user?.username || "").trim();
+  // Only the server nickname carries the callsign; display names and usernames are never parsed.
+  const currentNickname = String(member.nick || "").trim();
   const parsed = parseDiscordNickname(currentNickname);
   if (!parsed) throw new Error("The member's current nickname does not start with a valid [Callsign] prefix; refusing to guess the name.");
   const desiredNickname = `[${newCallsign}]${parsed.namePart ? " " + parsed.namePart : ""}`;
@@ -965,6 +966,62 @@ async function updateDiscordMemberFromMapping(db, env, discordUserId) {
     .bind(newCallsign, newRank, now, now, String(discordUserId)).run();
   return { ok: true, discord_user_id: String(discordUserId), old_callsign: oldCallsign, callsign: newCallsign, rank: newRank };
 }
+// Audit log for Discord actions (termination, edits, delinking). Visible to Operation Command.
+async function writeDiscordLog(db, actor, action, callsign, memberName, discordUserId, outcome, detail) {
+  await db.prepare("INSERT INTO discord_action_log(created_at,actor_name,action,callsign,member_name,discord_user_id,outcome,detail) VALUES(?,?,?,?,?,?,?,?)")
+    .bind(new Date().toISOString(), String(actor?.name||""), String(action||""), normalizeDiscordCallsign(callsign), String(memberName||""), String(discordUserId||""), String(outcome), String(detail||"").slice(0,400)).run();
+}
+// Applies the admin's chosen Discord action to a terminated member.
+//   kick:         remove the member from the server.
+//   remove_roles: remove the managed job roles and clear the nickname.
+//   none:         clear the nickname only.
+// Each option then removes the Discord link. The roster termination is already saved and is never undone here.
+// If Discord refuses, the link is kept with status failed and the log records why.
+async function discordTerminationAction(db, env, actor, callsign, action, memberName) {
+  const cs = normalizeDiscordCallsign(callsign);
+  const link = await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE callsign=?").bind(cs).first();
+  if (!link) {
+    await writeDiscordLog(db, actor, action, cs, memberName, "", "skipped", "No Discord link for this callsign.");
+    return { status: "skipped", detail: "No Discord link for this callsign." };
+  }
+  const uid = String(link.discord_user_id);
+  const reason = "LVFR EMS termination (" + action + ")";
+  const auditHeaders = { "X-Audit-Log-Reason": encodeURIComponent(reason) };
+  try {
+    const { guildId } = discordConfig(env);
+    const base = `/guilds/${guildId}/members/${encodeURIComponent(uid)}`;
+    let member = null;
+    try { member = await discordRequest(env, base); }
+    catch (error) { if (!/was not found/.test(String(error?.message || ""))) throw error; }
+    let detail;
+    if (!member) detail = "Member is no longer in the Discord server; nothing changed in Discord.";
+    else if (action === "kick") {
+      await discordRequest(env, base, { method: "DELETE", headers: auditHeaders });
+      detail = "Removed from the Discord server.";
+    } else {
+      if (action === "remove_roles") {
+        const managed = [...new Set(discordRoleMap(env).values())];
+        const current = new Set(Array.isArray(member.roles) ? member.roles.map(String) : []);
+        for (const roleId of managed) {
+          if (current.has(roleId)) await discordRequest(env, `${base}/roles/${roleId}`, { method: "DELETE", headers: auditHeaders });
+        }
+      }
+      if (member.nick) await discordRequest(env, base, { method: "PATCH", body: JSON.stringify({ nick: null }), headers: auditHeaders });
+      detail = action === "remove_roles" ? "Managed job roles removed and nickname cleared." : "Nickname cleared.";
+    }
+    await db.prepare("DELETE FROM discord_member_links WHERE callsign=?").bind(cs).run();
+    await writeDiscordLog(db, actor, action, cs, memberName, uid, "done", detail);
+    return { status: "done", detail };
+  } catch (error) {
+    const message = String(error?.message || error).slice(0, 300);
+    // Blank pending fields so the automatic retry never re-applies a nickname to a terminated member.
+    await db.prepare("UPDATE discord_member_links SET status='failed',last_error=?,pending_callsign='',pending_rank='',pending_update_roles=0,updated_at=? WHERE callsign=?")
+      .bind("Termination Discord action failed: " + message, new Date().toISOString(), cs).run();
+    await writeDiscordLog(db, actor, action, cs, memberName, uid, "failed", message);
+    console.error("Discord termination action failed:", message);
+    return { status: "failed", message };
+  }
+}
 async function queueDiscordRosterChange(db, context, env, oldMember, result) {
   const route = String(new URL(context.request.url).pathname);
   if (!oldMember || !["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign"].includes(route)) return "not_applicable";
@@ -974,6 +1031,7 @@ async function queueDiscordRosterChange(db, context, env, oldMember, result) {
   if (!oldCallsign || !newCallsign) return "not_linked";
   const link = await db.prepare("SELECT * FROM discord_member_links WHERE callsign=? OR pending_callsign=? LIMIT 1").bind(oldCallsign, oldCallsign).first();
   if (!link) return "not_linked";
+  if (link.status === "left") return "left_server";
   const rankChanged = String(link.rank || oldMember.rank || "").trim().toLowerCase() !== newRank.toLowerCase();
   const now = new Date().toISOString();
   await db.prepare("UPDATE discord_member_links SET pending_callsign=?,pending_rank=?,pending_update_roles=?,status='pending',last_error='',updated_at=? WHERE discord_user_id=?")
@@ -1000,6 +1058,7 @@ async function runInitialDiscordLinkSync(db, env, user) {
   const foundByCallsign = new Map();
   const unmatchedDiscord = [], malformed = [];
   let processed = 0, after = "";
+  const seenUserIds = new Set();
   // Discord returns up to 1,000 members per request. Keep the scan bounded to avoid an unbounded Pages Function invocation.
   const maxMembers = 10000;
   while (true) {
@@ -1009,7 +1068,8 @@ async function runInitialDiscordLinkSync(db, env, user) {
     if (!Array.isArray(page)) throw new Error("Discord returned an invalid guild-members response.");
     processed += page.length;
     for (const member of page) {
-      const nickname = String(member.nick || member.user?.global_name || member.user?.username || "");
+      if (member.user?.id) seenUserIds.add(String(member.user.id));
+      const nickname = String(member.nick || "");
       const parsed = parseDiscordNickname(nickname);
       if (!parsed) { malformed.push({ user: member.user?.username || member.user?.id || "unknown", reason: "Nickname has no [Callsign] prefix" }); continue; }
       const rosterMember = roster.get(parsed.callsign);
@@ -1043,9 +1103,18 @@ async function runInitialDiscordLinkSync(db, env, user) {
       .bind(callsign, candidate.userId, String(rosterMember.name || ""), String(rosterMember.rank || ""), now, now).run();
     linked.push({ callsign, name: rosterMember.name, rank: rosterMember.rank, user: candidate.username || candidate.userId });
   }
+  // A complete scan that no longer contains a linked Discord account means that member has left the server.
+  // The row is kept (status left) so the member can be relinked later without losing the history.
+  let leftCount = 0;
+  const activeRows = (await db.prepare("SELECT callsign, discord_user_id FROM discord_member_links WHERE status IN ('linked','pending','failed')").all()).results || [];
+  for (const row of activeRows) {
+    if (seenUserIds.has(String(row.discord_user_id))) continue;
+    await db.prepare("UPDATE discord_member_links SET status='left',last_error='Not found in the Discord server',updated_at=? WHERE callsign=?").bind(now, row.callsign).run();
+    leftCount++;
+  }
   const saved = await db.prepare("SELECT COUNT(*) AS count FROM discord_member_links WHERE status='linked'").first();
   return {
-    ok: true, processed, roster_members: rosterRows.length, linked_count: linked.length,
+    ok: true, processed, roster_members: rosterRows.length, linked_count: linked.length, left_count: leftCount,
     total_linked: Number(saved?.count || 0), unmatched_roster_count: unmatchedRoster.length,
     unmatched_discord_count: unmatchedDiscord.length, malformed_count: malformed.length,
     duplicate_count: duplicates.length, conflict_count: conflicts.length,
@@ -1306,6 +1375,47 @@ export async function handleD1(context) {
         await db.prepare("UPDATE discord_sync_lock SET locked_until=0,locked_by='' WHERE lock_id=1 AND locked_by=?").bind(lockToken).run();
       }
     }
+    if (route === "/api/discord/links" && method === "GET") {
+      await requireAdmin(db, token);
+      const rows = (await db.prepare(`SELECT l.callsign, l.discord_user_id, l.member_name, l.rank, l.status, l.last_error, l.last_synced_at,
+          CASE WHEN EXISTS (SELECT 1 FROM members m WHERE upper(m.callsign)=upper(l.callsign)) THEN 1 ELSE 0 END AS on_roster
+          FROM discord_member_links l ORDER BY l.callsign`).all()).results || [];
+      return json({ links: rows });
+    }
+    if (route === "/api/discord/links/edit" && method === "POST") {
+      const actor = await requireAdmin(db, token);
+      const cs = normalizeDiscordCallsign(data.callsign), newId = String(data.discord_user_id || "").trim();
+      if (!/^\d{17,20}$/.test(newId)) throw Object.assign(new Error("Enter a valid Discord User ID (17 to 20 digits)."), { status: 400 });
+      const link = await db.prepare("SELECT * FROM discord_member_links WHERE callsign=?").bind(cs).first();
+      if (!link) throw Object.assign(new Error("This callsign has no Discord link to edit."), { status: 404 });
+      const taken = await db.prepare("SELECT callsign FROM discord_member_links WHERE discord_user_id=? AND callsign<>?").bind(newId, cs).first();
+      if (taken) throw Object.assign(new Error("This Discord User ID is already linked to " + taken.callsign + "."), { status: 409 });
+      const { guildId } = discordConfig(env);
+      let guildMember;
+      try { guildMember = await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(newId)}`); }
+      catch { throw Object.assign(new Error("This Discord User ID was not found in the LVFR Discord server."), { status: 400 }); }
+      const parsed = parseDiscordNickname(String(guildMember?.nick || ""));
+      if (!parsed || parsed.callsign !== cs) throw Object.assign(new Error("That member's Discord nickname does not start with [" + cs + "]. Correct it in Discord first."), { status: 400 });
+      const stamp = new Date().toISOString();
+      await db.prepare("UPDATE discord_member_links SET discord_user_id=?,status='linked',last_error='',pending_callsign='',pending_rank='',pending_update_roles=0,last_synced_at=?,updated_at=? WHERE callsign=?")
+        .bind(newId, stamp, stamp, cs).run();
+      await writeDiscordLog(db, actor, "edit", cs, link.member_name, newId, "done", "Discord User ID changed from " + link.discord_user_id + " to " + newId + ".");
+      return json({ ok: true });
+    }
+    if (route === "/api/discord/links/delink" && method === "POST") {
+      const actor = await requireAdmin(db, token);
+      const cs = normalizeDiscordCallsign(data.callsign);
+      const link = await db.prepare("SELECT * FROM discord_member_links WHERE callsign=?").bind(cs).first();
+      if (!link) throw Object.assign(new Error("This callsign has no Discord link."), { status: 404 });
+      await db.prepare("DELETE FROM discord_member_links WHERE callsign=?").bind(cs).run();
+      await writeDiscordLog(db, actor, "delink", cs, link.member_name, link.discord_user_id, "done", "Link removed. Discord was not changed.");
+      return json({ ok: true });
+    }
+    if (route === "/api/discord/log" && method === "GET") {
+      await requireAdmin(db, token);
+      const rows = (await db.prepare("SELECT id, created_at, actor_name, action, callsign, member_name, discord_user_id, outcome, detail FROM discord_action_log ORDER BY id DESC LIMIT 200").all()).results || [];
+      return json({ log: rows });
+    }
     if (route === "/api/discord/status" && method === "GET") {
       await requireAdmin(db, token);
       const [totals, failed, pending] = await Promise.all([
@@ -1313,11 +1423,13 @@ export async function handleD1(context) {
         db.prepare("SELECT COUNT(*) AS count FROM discord_member_links WHERE status='failed'").first(),
         db.prepare("SELECT COUNT(*) AS count FROM discord_member_links WHERE status='pending'").first(),
       ]);
-      return json({ total: Number(totals?.total || 0), linked: Number(totals?.linked || 0), failed: Number(failed?.count || 0), pending: Number(pending?.count || 0) });
+      const left = await db.prepare("SELECT COUNT(*) AS count FROM discord_member_links WHERE status='left'").first();
+      return json({ total: Number(totals?.total || 0), linked: Number(totals?.linked || 0), failed: Number(failed?.count || 0), pending: Number(pending?.count || 0), left: Number(left?.count || 0) });
     }
     if (route === "/api/discord/retry" && method === "POST") {
       await requireAdmin(db, token);
-      const rows = (await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE status='failed' AND (pending_callsign<>'' OR pending_rank<>'') ORDER BY updated_at LIMIT 25").all()).results || [];
+      const stuckBefore = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const rows = (await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE (status='failed' OR (status='pending' AND updated_at<?)) AND (pending_callsign<>'' OR pending_rank<>'') ORDER BY updated_at LIMIT 25").bind(stuckBefore).all()).results || [];
       for (const row of rows) {
         await db.prepare("UPDATE discord_member_links SET status='pending',last_error='',updated_at=? WHERE discord_user_id=?").bind(new Date().toISOString(), row.discord_user_id).run();
         context.waitUntil((async () => {
@@ -1329,7 +1441,7 @@ export async function handleD1(context) {
           }
         })());
       }
-      const remaining = Math.max(0, Number((await db.prepare("SELECT COUNT(*) AS count FROM discord_member_links WHERE status='failed'").first())?.count || 0) - rows.length);
+      const remaining = Math.max(0, Number((await db.prepare("SELECT COUNT(*) AS count FROM discord_member_links WHERE status='failed' OR (status='pending' AND updated_at<?)").bind(stuckBefore).first())?.count || 0) - rows.length);
       return json({ ok: true, queued: rows.length, remaining_estimate: remaining, message: rows.length ? `Queued ${rows.length} failed Discord update(s).` : "No failed Discord updates are waiting for retry." });
     }
     const individualPermissionRoute=route.match(/^\/api\/leaders\/([^/]+)\/permissions$/);
@@ -1897,7 +2009,7 @@ export async function handleD1(context) {
       try { guildMember = await discordRequest(env,`/guilds/${guildId}/members/${encodeURIComponent(discordId)}`); }
       catch { throw Object.assign(new Error("This Discord User ID was not found in the LVFR Discord server."),{status:400}); }
       // The Discord nickname must start with the account's own callsign, so nobody can claim another member's Discord account.
-      const nickname = String(guildMember?.nick || guildMember?.user?.global_name || guildMember?.user?.username || "");
+      const nickname = String(guildMember?.nick || "");
       const parsedNick = parseDiscordNickname(nickname);
       if (!parsedNick || parsedNick.callsign !== memberCallsign) throw Object.assign(new Error("Callsign doesn't match"),{status:400});
       const stamp=new Date().toISOString();
@@ -1966,6 +2078,12 @@ export async function handleD1(context) {
       const mutationData={...data};
       if(instructorWrite) mutationData.callsign=decodeURIComponent(instructorWrite[1]).toUpperCase();
       const oldMember=await db.prepare("SELECT * FROM members WHERE upper(callsign)=upper(?)").bind(mutationData.callsign).first();
+      if(route==="/api/terminate") {
+        // A linked member needs an explicit Discord choice before anything is changed.
+        const choice=String(mutationData.discord_action||"");
+        const linked=await db.prepare("SELECT 1 AS found FROM discord_member_links WHERE callsign=?").bind(String(mutationData.callsign||"").toUpperCase()).first();
+        if(linked&&!["kick","remove_roles","none"].includes(choice)) throw Object.assign(new Error("Choose what to do in Discord: kick, remove roles only, or clear the nickname only."),{status:400});
+      }
       const result=await applyRosterMutationD1(db,route,mutationData,user);
       // A check only (dry run): nothing is written to D1, the logs or the Sheet.
       if(mutationData.dry_run) return json({...result,changed:false});
@@ -1976,6 +2094,7 @@ export async function handleD1(context) {
           result.discord_sync = await queueDiscordRosterChange(db, context, env, oldMember, result);
           if(result.discord_sync === "pending") result.discord_sync_message = "Roster saved. Discord synchronization is running in the background.";
           else if(result.discord_sync === "not_linked") result.discord_sync_message = "Roster saved. No Discord mapping exists yet; run Sync Discord Members in Operation Command.";
+          else if(result.discord_sync === "left_server") result.discord_sync_message = "Roster saved. This member is no longer in the Discord server, so Discord was not changed.";
         } catch(error) {
           console.error("Could not queue Discord synchronization:", String(error?.message || error).slice(0,400));
           result.discord_sync = "unavailable";
@@ -1991,6 +2110,8 @@ export async function handleD1(context) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
         context.waitUntil(mirrorToSheetInBackground(context,"Instructor",route,url,assertion,mutationData));
       } else if(route==="/api/terminate") {
+        // The member no longer exists on the roster; drop their Discord link so the callsign can be reused safely.
+        result.discord_termination=await discordTerminationAction(db,env,user,mutationData.callsign,String(mutationData.discord_action||""),oldMember?.name||"");
         let sheetCleaned=true,sheetCleanupError="";
         try {
           const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
