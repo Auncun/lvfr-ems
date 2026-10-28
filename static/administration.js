@@ -1306,3 +1306,61 @@ document.querySelector('#retryDiscordUpdates')?.addEventListener('click', async 
 });
 document.querySelector('#refreshDiscordStatus')?.addEventListener('click', () => void refreshDiscordStatus());
 loadAccounts();
+// Linked members list (Edit / Delink) and the Discord action log.
+(() => {
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const note = (text, kind = '') => { const el = document.querySelector('#discordSyncStatus'); if (el) { el.textContent = text; el.className = 'admin-status' + (kind ? ' ' + kind : ''); } };
+  const when = value => (value ? new Date(value).toLocaleString() : '');
+
+  async function loadLinks() {
+    const data = await api('/api/discord/links');
+    const rows = data.links || [];
+    document.querySelector('#linkedMemberRows').innerHTML = rows.length
+      ? rows.map(link => `<tr>
+          <td><b>${esc(link.callsign)}</b></td>
+          <td>${esc(link.member_name || '—')}</td>
+          <td>${esc(link.discord_user_id)}</td>
+          <td>${esc(link.status)}${link.last_error ? `<br><small class="muted">${esc(link.last_error)}</small>` : ''}</td>
+          <td>${Number(link.on_roster) ? 'On roster' : '<span class="muted">Not on roster</span>'}</td>
+          <td class="admin-actions">
+            <button type="button" data-link-edit="${esc(link.callsign)}">Edit</button>
+            <button type="button" class="danger" data-link-delink="${esc(link.callsign)}">Delink</button>
+          </td></tr>`).join('')
+      : '<tr><td colspan="6" class="muted">No Discord links yet.</td></tr>';
+  }
+
+  async function loadLog() {
+    const data = await api('/api/discord/log');
+    const rows = data.log || [];
+    document.querySelector('#discordLogRows').innerHTML = rows.length
+      ? rows.map(item => `<tr><td>${esc(when(item.created_at))}</td><td>${esc(item.actor_name)}</td><td>${esc(item.action)}</td><td>${esc(item.callsign)}${item.member_name ? ' · ' + esc(item.member_name) : ''}</td><td>${esc(item.outcome)}</td><td>${esc(item.detail)}</td></tr>`).join('')
+      : '<tr><td colspan="6" class="muted">No Discord actions recorded yet.</td></tr>';
+  }
+
+  async function refreshAll() { await Promise.all([loadLinks(), loadLog()]); }
+
+  document.querySelector('#linkedMemberRows')?.addEventListener('click', async event => {
+    const edit = event.target.closest('[data-link-edit]');
+    const delink = event.target.closest('[data-link-delink]');
+    try {
+      if (edit) {
+        const callsign = edit.dataset.linkEdit;
+        const id = window.prompt(`New Discord User ID for ${callsign} (17 to 20 digits):`, '');
+        if (id === null) return;
+        await api('/api/discord/links/edit', { method: 'POST', body: JSON.stringify({ callsign, discord_user_id: id.trim() }) });
+        note(`Discord User ID updated for ${callsign}.`, 'success');
+      } else if (delink) {
+        const callsign = delink.dataset.linkDelink;
+        if (!window.confirm(`Delink ${callsign} from Discord? Discord itself will not be changed.`)) return;
+        await api('/api/discord/links/delink', { method: 'POST', body: JSON.stringify({ callsign }) });
+        note(`${callsign} delinked. Discord was not changed.`, 'success');
+      } else return;
+      await refreshAll();
+    } catch (error) {
+      note(error.message || 'The request failed.', 'error');
+    }
+  });
+
+  document.querySelector('#refreshLinkedMembers')?.addEventListener('click', () => refreshAll().catch(error => note(error.message, 'error')));
+  document.querySelector('[data-command-section="discord"]')?.addEventListener('click', () => refreshAll().catch(() => {}));
+})();
