@@ -953,10 +953,10 @@ async function updateDiscordMemberFromMapping(db, env, discordUserId) {
   const currentNickname = String(member.nick || "").trim();
   const parsed = parseDiscordNickname(currentNickname);
   if (!parsed) throw new Error("The member's current nickname does not start with a valid [Callsign] prefix; refusing to guess the name.");
-  const callsignChanged = parsed.callsign !== newCallsign;
-  const desiredNickname = callsignChanged ? `[${newCallsign}]${parsed.namePart ? " " + parsed.namePart : ""}` : currentNickname;
+  // Only the [CALLSIGN] prefix changes; the rest of the nickname stays exactly as it is in Discord.
+  const desiredNickname = currentNickname.replace(/^\s*\[[^\]]*\]/, `[${newCallsign}]`);
   if (desiredNickname.length > 32) throw new Error("The resulting Discord nickname exceeds Discord's 32-character limit.");
-  if (callsignChanged && currentNickname !== desiredNickname) {
+  if (currentNickname !== desiredNickname) {
     await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(discordUserId))}`, {
       method: "PATCH", body: JSON.stringify({ nick: desiredNickname }),
     });
@@ -1106,16 +1106,13 @@ async function reconcileDiscordOpsRoles(db, env, actor) {
   }
   await writeDiscordLog(db, actor, "Ops role check", "", "", "", failed ? "partial" : "done", `Checked ${changes.length} linked members; added ${added}; removed ${removed}; failed ${failed}.`);
 }
-// Name key used to compare a roster name with a Discord nickname: first initial and last name, letters only.
-// "Joseph Krupp", "J. Krupp", "J.Krupp" and "J .Krupp" all give "j|krupp". Names with fewer than two words give "".
-function nameMatchKey(text) {
-  const words = String(text || "").normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase()
-    .replace(/[^\p{L}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
-  if (words.length < 2) return "";
-  return `${words[0][0]}|${words[words.length - 1]}`;
+// Name used to compare the roster name stored on a Discord link with a roster member's name: case and spacing ignored.
+function sameRosterName(a, b) {
+  const key = value => String(value || "").normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
+  return key(a) !== "" && key(a) === key(b);
 }
-// Finds Discord links whose callsign is no longer on the roster, and matches each one by its Discord nickname name part
-// to exactly one roster member who has no Discord link yet. Anything ambiguous is left for an administrator.
+// Finds Discord links whose callsign is no longer on the roster. A link moves to the roster member who has the same name
+// (the name stored with the link) and no Discord link yet. Only a single clear match moves; anything else is left for an admin.
 function planDiscordCallsignMoves(links, rosterMembers) {
   const roster = rosterMembers.map(member => ({
     callsign: normalizeDiscordCallsign(member.callsign), name: String(member.name || "").trim(), rank: String(member.rank || "").trim(),
@@ -1127,14 +1124,12 @@ function planDiscordCallsignMoves(links, rosterMembers) {
   for (const link of links) {
     const oldCallsign = normalizeDiscordCallsign(link.callsign);
     if (rosterCallsigns.has(oldCallsign)) continue;
-    const key = nameMatchKey(parseDiscordNickname(link.discord_nickname)?.namePart || "");
-    if (!key) continue;
-    const candidates = free.filter(member => nameMatchKey(member.name) === key);
-    if (candidates.length !== 1) continue;
-    const target = candidates[0].callsign;
-    claims.set(target, [...(claims.get(target) || []), { link, oldCallsign, member: candidates[0] }]);
+    const matches = free.filter(member => sameRosterName(member.name, link.member_name));
+    if (matches.length !== 1) continue;
+    const target = matches[0].callsign;
+    claims.set(target, [...(claims.get(target) || []), { link, oldCallsign, member: matches[0] }]);
   }
-  // Two Discord links matching the same roster member: neither is moved.
+  // Two links matching the same roster member: neither is moved.
   return [...claims.values()].filter(list => list.length === 1).map(([{ link, oldCallsign, member }]) => ({
     oldCallsign, newCallsign: member.callsign, name: member.name, rank: member.rank, discordUserId: String(link.discord_user_id),
     updateRoles: String(link.rank || "").trim().toLowerCase() !== member.rank.toLowerCase(),
