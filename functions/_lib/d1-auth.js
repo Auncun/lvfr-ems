@@ -418,6 +418,8 @@ async function applyRosterMutationD1(db, route, data, actor) {
     if(!remove&&training==="Advanced Firefighting"&&Number(old.has_basic_firefighting||0)!==1) throw new Error("Advanced FORT can be added only after Basic FORT.");
     cols[key]=remove?0:1;
     result={ok:true,changed:true,status:remove?"removed":"added",message:remove?"Training removed":"Training added"};
+    // HERT, Basic FORT and Advanced FORT all qualify a member for the ops Discord role.
+    result.training_qualifies=Boolean(cols.has_hert||cols.has_basic_firefighting||cols.has_advanced_firefighting);
   }
   else if(route==="/api/exam") {
     const present=Boolean(Number(old.has_supervisor_exam||0)), remove=Boolean(data.remove);
@@ -1035,6 +1037,151 @@ async function discordTerminationAction(db, env, actor, callsign, action, member
     return { status: "failed", message };
   }
 }
+// Ops role: a linked member who holds HERT, Basic FORT or Advanced FORT gets the ops Discord role;
+// a linked member who holds none of them loses it. Needs DISCORD_OPS_ROLE_ID (a Discord role ID).
+function discordOpsRoleId(env) {
+  const roleId = String(env.DISCORD_OPS_ROLE_ID || "").trim();
+  if (!roleId) return "";
+  if (!/^\d{17,20}$/.test(roleId)) throw new Error("DISCORD_OPS_ROLE_ID is not a valid Discord role ID.");
+  return roleId;
+}
+async function applyDiscordOpsRole(db, env, callsign, qualifies) {
+  const link = await db.prepare("SELECT discord_user_id,status FROM discord_member_links WHERE callsign=?").bind(normalizeDiscordCallsign(callsign)).first();
+  if (!link || link.status === "left") return { outcome: "not_linked", discord_user_id: "" };
+  const discordUserId = String(link.discord_user_id);
+  const roleId = discordOpsRoleId(env);
+  if (!roleId) return { outcome: "not_configured", discord_user_id: discordUserId };
+  const { guildId } = discordConfig(env);
+  const path = `/guilds/${guildId}/members/${encodeURIComponent(discordUserId)}`;
+  const member = await discordRequest(env, path);
+  const hasRole = Array.isArray(member.roles) && member.roles.map(String).includes(roleId);
+  if (qualifies && !hasRole) {
+    await discordRequest(env, `${path}/roles/${roleId}`, { method: "PUT" });
+    return { outcome: "ops role added", discord_user_id: discordUserId };
+  }
+  if (!qualifies && hasRole) {
+    await discordRequest(env, `${path}/roles/${roleId}`, { method: "DELETE" });
+    return { outcome: "ops role removed", discord_user_id: discordUserId };
+  }
+  return { outcome: "no change", discord_user_id: discordUserId };
+}
+// True when a roster row holds HERT, Basic FORT or Advanced FORT.
+function holdsOpsTraining(row) {
+  return Boolean(Number(row?.has_hert || 0) || Number(row?.has_basic_firefighting || 0) || Number(row?.has_advanced_firefighting || 0));
+}
+// Applies the ops role to a list of callsigns whose training changed (Sheet sync). Runs in the background.
+async function applyOpsRoleChanges(db, env, actor, changes) {
+  for (const change of changes) {
+    try {
+      const outcome = await applyDiscordOpsRole(db, env, change.callsign, change.qualifies);
+      if (outcome.outcome !== "not_linked" && outcome.outcome !== "no change")
+        await writeDiscordLog(db, actor, change.qualifies ? "Ops role added" : "Ops role removed", change.callsign, change.name, outcome.discord_user_id, "done", outcome.outcome);
+    } catch (error) {
+      const message = String(error?.message || error).slice(0, 400);
+      console.error("Discord ops role update failed:", { callsign: change.callsign, error: message });
+      const link = await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE callsign=?").bind(change.callsign).first().catch(() => null);
+      if (link) await writeDiscordLog(db, actor, change.qualifies ? "Ops role added" : "Ops role removed", change.callsign, change.name, link.discord_user_id, "failed", message).catch(() => {});
+    }
+  }
+}
+// Checks every linked member against the roster and fixes the ops role. Started by Sync Discord.
+async function reconcileDiscordOpsRoles(db, env, actor) {
+  if (!discordOpsRoleId(env)) {
+    await writeDiscordLog(db, actor, "Ops role check", "", "", "", "skipped", "DISCORD_OPS_ROLE_ID is not set, so no ops roles were changed.");
+    return;
+  }
+  const rows = (await db.prepare(`SELECT l.callsign,l.discord_user_id,m.name,m.has_hert,m.has_basic_firefighting,m.has_advanced_firefighting
+    FROM discord_member_links l JOIN members m ON m.callsign=l.callsign WHERE l.status<>'left'`).all()).results || [];
+  const changes = rows.map(row => ({ callsign: normalizeDiscordCallsign(row.callsign), name: row.name || "", qualifies: holdsOpsTraining(row) }));
+  let added = 0, removed = 0, failed = 0;
+  for (const change of changes) {
+    try {
+      const outcome = await applyDiscordOpsRole(db, env, change.callsign, change.qualifies);
+      if (outcome.outcome === "ops role added") added++;
+      else if (outcome.outcome === "ops role removed") removed++;
+    } catch (error) {
+      failed++;
+      console.error("Discord ops role check failed:", { callsign: change.callsign, error: String(error?.message || error).slice(0, 400) });
+    }
+  }
+  await writeDiscordLog(db, actor, "Ops role check", "", "", "", failed ? "partial" : "done", `Checked ${changes.length} linked members; added ${added}; removed ${removed}; failed ${failed}.`);
+}
+// Name key used to compare a roster name with a Discord nickname: first initial and last name, letters only.
+// "Joseph Krupp", "J. Krupp", "J.Krupp" and "J .Krupp" all give "j|krupp". Names with fewer than two words give "".
+function nameMatchKey(text) {
+  const words = String(text || "").normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase()
+    .replace(/[^\p{L}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
+  if (words.length < 2) return "";
+  return `${words[0][0]}|${words[words.length - 1]}`;
+}
+// Finds Discord links whose callsign is no longer on the roster, and matches each one by its Discord nickname name part
+// to exactly one roster member who has no Discord link yet. Anything ambiguous is left for an administrator.
+function planDiscordCallsignMoves(links, rosterMembers) {
+  const roster = rosterMembers.map(member => ({
+    callsign: normalizeDiscordCallsign(member.callsign), name: String(member.name || "").trim(), rank: String(member.rank || "").trim(),
+  })).filter(member => member.callsign);
+  const rosterCallsigns = new Set(roster.map(member => member.callsign));
+  const linkedCallsigns = new Set(links.map(link => normalizeDiscordCallsign(link.callsign)));
+  const free = roster.filter(member => !linkedCallsigns.has(member.callsign));
+  const claims = new Map();
+  for (const link of links) {
+    const oldCallsign = normalizeDiscordCallsign(link.callsign);
+    if (rosterCallsigns.has(oldCallsign)) continue;
+    const key = nameMatchKey(parseDiscordNickname(link.discord_nickname)?.namePart || "");
+    if (!key) continue;
+    const candidates = free.filter(member => nameMatchKey(member.name) === key);
+    if (candidates.length !== 1) continue;
+    const target = candidates[0].callsign;
+    claims.set(target, [...(claims.get(target) || []), { link, oldCallsign, member: candidates[0] }]);
+  }
+  // Two Discord links matching the same roster member: neither is moved.
+  return [...claims.values()].filter(list => list.length === 1).map(([{ link, oldCallsign, member }]) => ({
+    oldCallsign, newCallsign: member.callsign, name: member.name, rank: member.rank, discordUserId: String(link.discord_user_id),
+    updateRoles: String(link.rank || "").trim().toLowerCase() !== member.rank.toLowerCase(),
+  }));
+}
+// Moves the link in D1 right away, so Linked members shows the new callsign. The Discord nickname is updated in the background.
+async function moveDiscordLinks(db, moves) {
+  const now = new Date().toISOString();
+  for (const move of moves) {
+    await db.prepare(`UPDATE discord_member_links SET callsign=?,member_name=?,pending_callsign=?,pending_rank=?,pending_update_roles=?,status='pending',last_error='',updated_at=? WHERE discord_user_id=? AND callsign=?`)
+      .bind(move.newCallsign, move.name, move.newCallsign, move.rank, move.updateRoles ? 1 : 0, now, move.discordUserId, move.oldCallsign).run();
+  }
+}
+async function runDiscordCallsignMoves(db, env, moves) {
+  const actor = { name: "Google Sheet sync" };
+  for (const move of moves) {
+    try {
+      await updateDiscordMemberFromMapping(db, env, move.discordUserId);
+      await writeDiscordLog(db, actor, "Callsign moved", move.newCallsign, move.name, move.discordUserId, "done", `From ${move.oldCallsign} to ${move.newCallsign}, matched by name.`);
+    } catch (error) {
+      const message = String(error?.message || error).slice(0, 400);
+      await db.prepare("UPDATE discord_member_links SET status='failed',last_error=?,updated_at=? WHERE discord_user_id=?").bind(message, new Date().toISOString(), move.discordUserId).run().catch(() => {});
+      await writeDiscordLog(db, actor, "Callsign moved", move.newCallsign, move.name, move.discordUserId, "failed", message).catch(() => {});
+    }
+  }
+}
+// A linked member whose rank changed in the Sheet gets the Discord rank role updated, the same way a website rank change does.
+async function applyRankChanges(db, changes) {
+  const now = new Date().toISOString();
+  for (const change of changes) {
+    await db.prepare(`UPDATE discord_member_links SET pending_callsign=?,pending_rank=?,pending_update_roles=1,status='pending',last_error='',updated_at=? WHERE discord_user_id=?`)
+      .bind(change.callsign, change.rank, now, change.discordUserId).run();
+  }
+}
+async function runRankChanges(db, env, changes) {
+  const actor = { name: "Google Sheet sync" };
+  for (const change of changes) {
+    try {
+      await updateDiscordMemberFromMapping(db, env, change.discordUserId);
+      await writeDiscordLog(db, actor, "Rank changed", change.callsign, change.name, change.discordUserId, "done", `New rank: ${change.rank}.`);
+    } catch (error) {
+      const message = String(error?.message || error).slice(0, 400);
+      await db.prepare("UPDATE discord_member_links SET status='failed',last_error=?,updated_at=? WHERE discord_user_id=?").bind(message, new Date().toISOString(), change.discordUserId).run().catch(() => {});
+      await writeDiscordLog(db, actor, "Rank changed", change.callsign, change.name, change.discordUserId, "failed", message).catch(() => {});
+    }
+  }
+}
 async function queueDiscordRosterChange(db, context, env, oldMember, result) {
   const route = String(new URL(context.request.url).pathname);
   if (!oldMember || !["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign"].includes(route)) return "not_applicable";
@@ -1148,8 +1295,41 @@ export async function handleD1(context) {
       if(!expected || request.headers.get("X-LVFR-Worker-Secret") !== expected) return json({detail:"Worker authentication failed."},403);
       if(!Array.isArray(data.members)) return json({detail:"Members payload is invalid."},400);
       if(data.members.length===0) return json({detail:"Roster replacement stopped because the Google Sheet returned no members. D1 was not changed."},400);
+      // Discord links whose callsign left the roster are matched by name before the roster is replaced.
+      const linkRows=(await db.prepare("SELECT callsign,discord_user_id,member_name,discord_nickname,rank,status FROM discord_member_links WHERE status<>'left'").all()).results||[];
+      const callsignMoves=planDiscordCallsignMoves(linkRows,data.members);
+      // Training flags before the replacement, so only members whose ops eligibility changed get a Discord update.
+      const trainingBefore=new Map(((await db.prepare("SELECT callsign,name,rank,has_hert,has_basic_firefighting,has_advanced_firefighting FROM members").all()).results||[]).map(row=>[normalizeDiscordCallsign(row.callsign),row]));
       const result=await replaceMembers(db,data.members);
+      if(callsignMoves.length) {
+        await moveDiscordLinks(db,callsignMoves);
+        context.waitUntil(runDiscordCallsignMoves(db,env,callsignMoves));
+      }
       if(data.callsign_slots||data.available_callsigns) await saveCallsignSlots(db,data.callsign_slots||data.available_callsigns);
+      if(trainingBefore.size) {
+        const trainingAfter=new Map(((await db.prepare("SELECT callsign,name,rank,has_hert,has_basic_firefighting,has_advanced_firefighting FROM members").all()).results||[]).map(row=>[normalizeDiscordCallsign(row.callsign),row]));
+        const opsChanges=[];
+        for(const callsign of new Set([...trainingBefore.keys(),...trainingAfter.keys()])) {
+          const before=trainingBefore.get(callsign), after=trainingAfter.get(callsign);
+          // Skip callsigns that are no longer on the roster: their Discord link is not removed or changed here.
+          if(!callsign || !after) continue;
+          if(holdsOpsTraining(before)!==holdsOpsTraining(after)) opsChanges.push({callsign, name:(after||before)?.name||"", qualifies:holdsOpsTraining(after)});
+        }
+        if(opsChanges.length) context.waitUntil(applyOpsRoleChanges(db, env, { name: "Google Sheet sync" }, opsChanges));
+        // Rank changes for members who are already linked (callsign unchanged).
+        const linkByCallsign=new Map(linkRows.map(row=>[normalizeDiscordCallsign(row.callsign),row]));
+        const rankChanges=[];
+        for(const [callsign,after] of trainingAfter) {
+          const before=trainingBefore.get(callsign), link=linkByCallsign.get(callsign);
+          if(!callsign||!before||!link) continue;
+          if(String(before.rank||"").trim().toLowerCase()===String(after.rank||"").trim().toLowerCase()) continue;
+          rankChanges.push({callsign, name:after.name||"", rank:String(after.rank||"").trim(), discordUserId:String(link.discord_user_id)});
+        }
+        if(rankChanges.length) {
+          await applyRankChanges(db,rankChanges);
+          context.waitUntil(runRankChanges(db,env,rankChanges));
+        }
+      }
       return json(result);
     }
     if(route==="/internal/accounts/sync"&&method==="POST") {
@@ -1383,6 +1563,9 @@ export async function handleD1(context) {
       if (lock?.locked_by !== lockToken) throw Object.assign(new Error("A Discord member synchronization is already running. Wait for it to finish before starting another."), { status: 409 });
       try {
         const result = await runInitialDiscordLinkSync(db, env, actor);
+        context.waitUntil(reconcileDiscordOpsRoles(db, env, actor).catch(error => console.error("Discord ops role check failed:", String(error?.message || error).slice(0, 400))));
+        result.ops_role_check = "started";
+        result.ops_role_message = "Ops roles are being checked in the background. The result appears in the Discord action log.";
         return json(result);
       } finally {
         await db.prepare("UPDATE discord_sync_lock SET locked_until=0,locked_by='' WHERE lock_id=1 AND locked_by=?").bind(lockToken).run();
@@ -2165,6 +2348,22 @@ export async function handleD1(context) {
       if(mutationData.dry_run) return json({...result,changed:false});
       if(result.changed!==false && oldMember) await writeOperationalLog(db,oldMember,route,mutationData,result,user);
       if(oldMember) await recordActionConfirmation(db,route,mutationData,oldMember,result,user);
+      if(route==="/api/training" && result.changed!==false && oldMember) {
+        const callsignForOps=normalizeDiscordCallsign(oldMember.callsign);
+        const qualifies=Boolean(result.training_qualifies);
+        context.waitUntil((async () => {
+          try {
+            const opsResult=await applyDiscordOpsRole(db, env, callsignForOps, qualifies);
+            if(opsResult.outcome!=="not_linked" && opsResult.outcome!=="no change")
+              await writeDiscordLog(db, user, qualifies?"Ops role added":"Ops role removed", callsignForOps, oldMember.name, opsResult.discord_user_id, "done", opsResult.outcome);
+          } catch(error) {
+            const message=String(error?.message||error).slice(0,400);
+            console.error("Discord ops role update failed:", { callsign: callsignForOps, error: message });
+            const link=await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE callsign=?").bind(callsignForOps).first().catch(()=>null);
+            if(link) await writeDiscordLog(db, user, qualifies?"Ops role added":"Ops role removed", callsignForOps, oldMember.name, link.discord_user_id, "failed", message).catch(()=>{});
+          }
+        })());
+      }
       if(result.changed!==false && oldMember && ["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign"].includes(route)) {
         try {
           result.discord_sync = await queueDiscordRosterChange(db, context, env, oldMember, result);
