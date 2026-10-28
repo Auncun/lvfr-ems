@@ -1978,6 +1978,8 @@ function moveMember_(member, target, newRank, user, operation) {
   if (destinationUsesDaysFormula) sheet.getRange(target.row, 5).setValue(destination[3]);
   sheet.getRange(target.row, 6, 1, 4).setValues([destination.slice(4, 8)]);
   sheet.getRange(target.row, 11).setValue(sourceValues[9]); // Notes (K) only
+  // Name (C), Date (D) and TIG (E) are centred in the destination row.
+  sheet.getRange(target.row, 3, 1, 3).setHorizontalAlignment('center');
   if (rankLevel_(oldRank) > rankLevel_('Paramedic')) {
     sheet.getRange(member.row, 3, 1, 1).clearContent().setBackground('#ffffff');
     sheet.getRange(member.row, 6, 1, 4).clearContent().setBackground('#ffffff');
