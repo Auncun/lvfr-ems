@@ -520,6 +520,22 @@ function compareCallsigns(a, b) {
   if(left && right && left[1]===right[1]) return Number(left[2])-Number(right[2]);
   return String(a||"").localeCompare(String(b||""),undefined,{numeric:true,sensitivity:"base"});
 }
+async function resolveAccountMember(db, env, user) {
+  // A rank change moves the member to a new callsign, so the callsign stored on the account can be out of date.
+  // Match by the account's name first (unique match), then fall back to the stored callsign.
+  const rows=await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
+  const userCallsign=String(user.callsign||"").trim().toUpperCase();
+  const byName=rows.filter(row=>nameKey(row.name)===nameKey(user.name));
+  const byCallsign=rows.find(row=>String(row.callsign||"").trim().toUpperCase()===userCallsign);
+  const member=byName.length===1?byName[0]:(byCallsign||byName[0]||null);
+  if(!member) return null;
+  const memberCallsign=String(member.callsign||"").trim().toUpperCase();
+  if(memberCallsign && memberCallsign!==userCallsign) {
+    await db.prepare("UPDATE accounts SET callsign=?,updated_at=? WHERE account_id=?").bind(memberCallsign,new Date().toISOString(),user.account_id).run();
+    user.callsign=memberCallsign;
+  }
+  return member;
+}
 async function readMembers(db, search = "", env = null, token = "") {
   // Do not seed an empty D1 database from Sheet during a read. Run Sync now.
   await ensureOrderedMembersView(db);
@@ -1867,22 +1883,30 @@ export async function handleD1(context) {
     if(route==="/api/do-not-terminate" && method==="GET") return json(await doNotListRows(db,env,user,"do_not_terminate","do_not_terminate"));
     if(route==="/api/do-not-promote" && method==="GET") return json(await doNotListRows(db,env,user,"do_not_promote","do_not_promote"));
     if(route==="/api/instructors" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).flatMap(row=>String(row.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(type=>(type==="HERT"&&user.permissions.hert_instructor_view)||(type==="FORT"&&user.permissions.fort_instructor_view)).map(type=>({name:row.name,type,date:""}))));
+    if(route==="/api/account/discord-id" && method==="POST") {
+      const member=await resolveAccountMember(db,env,user);
+      if(!member) throw Object.assign(new Error("Member not found."),{status:404});
+      const discordId=String(data.discord_user_id||"").trim();
+      if(!/^\d{17,20}$/.test(discordId)) throw Object.assign(new Error("Enter a valid Discord User ID (17 to 20 digits)."),{status:400});
+      const memberCallsign=String(member.callsign||"").trim().toUpperCase();
+      const taken=await db.prepare("SELECT callsign FROM discord_member_links WHERE discord_user_id=? AND callsign<>?").bind(discordId,memberCallsign).first();
+      if(taken) throw Object.assign(new Error("This Discord User ID is already linked to another member."),{status:409});
+      // The ID must belong to a member of the LVFR Discord server, so an arbitrary number cannot be linked.
+      const { guildId } = discordConfig(env);
+      try { await discordRequest(env,`/guilds/${guildId}/members/${encodeURIComponent(discordId)}`); }
+      catch { throw Object.assign(new Error("This Discord User ID was not found in the LVFR Discord server."),{status:400}); }
+      const stamp=new Date().toISOString();
+      await db.prepare(`INSERT INTO discord_member_links(callsign,discord_user_id,member_name,rank,status,created_at,updated_at)
+        VALUES(?,?,?,?,'linked',?,?)
+        ON CONFLICT(callsign) DO UPDATE SET discord_user_id=excluded.discord_user_id,member_name=excluded.member_name,rank=excluded.rank,status='linked',last_error='',last_synced_at=excluded.updated_at,updated_at=excluded.updated_at`)
+        .bind(memberCallsign,discordId,String(member.name||""),String(member.rank||""),stamp,stamp).run();
+      return json({ok:true,discord_user_id:discordId});
+    }
     const memberRoute=route.match(/^\/api\/member\/([^/]+)$/);
     if(route==="/api/account/profile" && method==="GET") {
-      // Match the roster by the account's name first: a rank change moves the member to a new callsign,
-      // so the callsign stored on the account can be out of date. Fall back to the callsign when the name is not unique.
-      const rows=await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET));
-      const userCallsign=String(user.callsign||"").toUpperCase();
-      const byCallsign=rows.find(row=>String(row.callsign||"").toUpperCase()===userCallsign);
-      const byName=rows.filter(row=>nameKey(row.name)===nameKey(user.name));
-      const member=byName.length===1?byName[0]:(byCallsign||(byName.length?byName[0]:null));
+      const member=await resolveAccountMember(db,env,user);
       if(!member) return json({detail:"Member not found."},404);
       const memberCallsign=String(member.callsign||"").trim().toUpperCase();
-      // Keep the account's callsign in step with the roster so permissions and Discord links follow the member.
-      if(memberCallsign && memberCallsign!==userCallsign) {
-        await db.prepare("UPDATE accounts SET callsign=?,updated_at=? WHERE account_id=?").bind(memberCallsign,new Date().toISOString(),user.account_id).run();
-        user.callsign=memberCallsign;
-      }
       // Only return the Discord ID linked to the member's own callsign.
       // Include pending_callsign so a callsign change in progress does not temporarily hide the ID.
       const discordLink=await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE callsign=? OR pending_callsign=? LIMIT 1").bind(memberCallsign,memberCallsign).first();
