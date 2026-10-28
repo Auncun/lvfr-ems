@@ -4941,6 +4941,13 @@ async function openDiscordNicknameManage(cs) {
 // Shows a grey reason under every disabled button that has data-disabled-reason, and keeps it in step with the disabled state.
 function syncDisabledReasons(root = document) {
     root.querySelectorAll?.("button[data-disabled-reason]").forEach(button => {
+        // Buttons in an action row sit in their own cell, so the reason stays under its button and the row keeps its side-by-side layout.
+        if (button.parentElement?.matches?.(".training-actions, .activity-actions, .instructor-admin-buttons, .actions")) {
+            const cell = document.createElement("span");
+            cell.className = "action-cell";
+            button.before(cell);
+            cell.append(button);
+        }
         const wanted = button.disabled ? button.dataset.disabledReason : "";
         const next = button.nextElementSibling;
         const hint = next && next.classList.contains("disabled-reason") ? next : null;
