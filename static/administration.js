@@ -1359,7 +1359,8 @@ disabledReasonObserver.observe(document.body, { subtree: true, childList: true, 
 
   async function loadLinks() {
     const data = await api('/api/discord/links');
-    const rows = data.links || [];
+    // Only members who are linked to Discord are listed.
+    const rows = (data.links || []).filter(link => link.discord_state === 'linked');
     const manage = canManageDiscord();
     document.querySelector('#linkedMemberRows').innerHTML = rows.length
       ? rows.map(link => {
@@ -1377,7 +1378,7 @@ disabledReasonObserver.observe(document.body, { subtree: true, childList: true, 
             <button type="button" class="danger" data-link-delink="${esc(link.callsign)}" ${manage && linked ? '' : 'disabled'} data-disabled-reason="${linked ? 'Your role does not have Discord manage permission.' : 'Not linked, so there is nothing to delink.'}">Delink</button>
           </td></tr>`;
         }).join('')
-      : '<tr><td colspan="8" class="muted">No roster members yet.</td></tr>';
+      : '<tr><td colspan="8" class="muted">No linked members yet.</td></tr>';
     syncDisabledReasons();
   }
 
