@@ -4789,7 +4789,7 @@ async function terminate(cs) {
 // ============================================================
 
 function discordBackLink(cs) {
-    return `<button type="button" class="back-link" data-action="open-manage" data-callsign="${esc(cs)}">← Back to Manage</button>`;
+    return `<button type="button" class="back-link" data-action="rank-tools" data-callsign="${esc(cs)}">← Back to More</button>`;
 }
 
 async function loadProfileDiscordState(cs) {
@@ -4798,8 +4798,8 @@ async function loadProfileDiscordState(cs) {
     try {
         const state = await api(`/api/discord/member/${encodeURIComponent(cs)}`);
         target.innerHTML = state.linked
-            ? `<span class="discord-badge linked">Linked</span><br><small>${esc(state.discord_user_id)}</small>`
-            : `<span class="discord-badge not-linked">Not linked</span>`;
+            ? `<span class="badge active-status">Linked</span> <small>${esc(state.discord_user_id)}</small>`
+            : `<span class="badge terminate-status">Not linked</span>`;
     } catch (error) {
         target.textContent = "Unavailable";
     }
@@ -4822,8 +4822,8 @@ async function openDiscordIdManage(cs) {
         </div>`;
     const showState = state => {
         $("#discordIdState").innerHTML = state.linked
-            ? `<span class="discord-badge linked">Linked</span> ${esc(state.discord_user_id)}`
-            : `<span class="discord-badge not-linked">Not linked</span>`;
+            ? `<span class="badge active-status">Linked</span> ${esc(state.discord_user_id)}`
+            : `<span class="badge terminate-status">Not linked</span>`;
         $("#discordIdDelink").disabled = !state.linked;
         $("#discordIdInput").value = state.linked ? state.discord_user_id : "";
     };
@@ -4883,7 +4883,7 @@ async function openDiscordNicknameManage(cs) {
     try {
         const state = await api(`/api/discord/member/${encodeURIComponent(cs)}/nickname`);
         if (!state.linked) {
-            $("#discordNickState").innerHTML = `<span class="discord-badge not-linked">Not linked</span> Set the Discord ID first.`;
+            $("#discordNickState").innerHTML = `<span class="badge terminate-status">Not linked</span> Set the Discord ID first.`;
             $("#discordNickSave").disabled = true;
             $("#discordNickClear").disabled = true;
         } else if (!state.in_server) {
@@ -4891,7 +4891,7 @@ async function openDiscordNicknameManage(cs) {
             $("#discordNickSave").disabled = true;
             $("#discordNickClear").disabled = true;
         } else {
-            $("#discordNickState").innerHTML = `<span class="discord-badge linked">Linked</span> Current: ${esc(state.nickname || "(no nickname)")}`;
+            $("#discordNickState").innerHTML = `<span class="badge active-status">Linked</span> Current: ${esc(state.nickname || "(no nickname)")}`;
             $("#discordNickInput").value = state.nickname || "";
         }
     } catch (error) {
