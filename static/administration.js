@@ -1334,6 +1334,13 @@ function applyDiscordPermissions() {
 }
 function syncDisabledReasons(root = document) {
   root.querySelectorAll?.('button[data-disabled-reason]').forEach(button => {
+    // Buttons in an action row sit in their own cell, so the reason stays under its button and the row keeps its side-by-side layout.
+    if (button.parentElement?.matches?.('.training-actions, .activity-actions, .instructor-admin-buttons, .actions') && !button.parentElement.classList.contains('action-cell')) {
+      const cell = document.createElement('span');
+      cell.className = 'action-cell';
+      button.before(cell);
+      cell.append(button);
+    }
     const wanted = button.disabled ? button.dataset.disabledReason : '';
     const next = button.nextElementSibling;
     const hint = next && next.classList.contains('disabled-reason') ? next : null;
@@ -1357,10 +1364,12 @@ disabledReasonObserver.observe(document.body, { subtree: true, childList: true, 
   const note = (text, kind = '') => { const el = document.querySelector('#discordSyncStatus'); if (el) { el.textContent = text; el.className = 'admin-status' + (kind ? ' ' + kind : ''); } };
   const when = value => (value ? new Date(value).toLocaleString() : '');
 
-  async function loadLinks() {
-    const data = await api('/api/discord/links');
-    // Only members who are linked to Discord are listed.
-    const rows = (data.links || []).filter(link => link.discord_state === 'linked');
+  // Linked members loaded from the server, and a redraw that applies the search box.
+  let linkedRows = [];
+  function drawLinks() {
+    const query = String(document.querySelector('#linkedMembersSearch')?.value || '').trim().toLocaleLowerCase();
+    const rows = linkedRows.filter(link => !query || [link.callsign, link.roster_name, link.member_name, link.discord_user_id, link.discord_nickname]
+      .some(value => String(value || '').toLocaleLowerCase().includes(query)));
     const manage = canManageDiscord();
     document.querySelector('#linkedMemberRows').innerHTML = rows.length
       ? rows.map(link => {
@@ -1378,9 +1387,19 @@ disabledReasonObserver.observe(document.body, { subtree: true, childList: true, 
             <button type="button" class="danger" data-link-delink="${esc(link.callsign)}" ${manage && linked ? '' : 'disabled'} data-disabled-reason="${linked ? 'Your role does not have Discord manage permission.' : 'Not linked, so there is nothing to delink.'}">Delink</button>
           </td></tr>`;
         }).join('')
-      : '<tr><td colspan="8" class="muted">No linked members yet.</td></tr>';
+      : (linkedRows.length
+          ? '<tr><td colspan="8" class="muted">No linked members match your search.</td></tr>'
+          : '<tr><td colspan="8" class="muted">No linked members yet.</td></tr>');
     syncDisabledReasons();
   }
+
+  async function loadLinks() {
+    const data = await api('/api/discord/links');
+    // Only members who are linked to Discord are listed.
+    linkedRows = (data.links || []).filter(link => link.discord_state === 'linked');
+    drawLinks();
+  }
+  document.querySelector('#linkedMembersSearch')?.addEventListener('input', drawLinks);
 
   async function loadLog() {
     const data = await api('/api/discord/log');
