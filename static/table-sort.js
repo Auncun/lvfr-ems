@@ -16,6 +16,9 @@
   // Lists whose last column holds buttons only.
   const NO_SORT_LAST_COLUMN_IN = new Set(['membersTable', 'eligibleTable', 'doNotPromoteTable', 'doNotTerminateTable', 'inactiveTable', 'trainingOverdueTable']);
   const isSortable = (table, th) => {
+    // A table can limit sorting to some columns: data-sort-only="callsign,name".
+    const only = table.dataset.sortOnly;
+    if (only) return only.split(',').map(item => item.trim().toLowerCase()).includes(headingLabel(th));
     if (NO_SORT_LABELS.has(headingLabel(th))) return false;
     const headerRow = table.tHead.rows[0];
     const isLast = th === headerRow.cells[headerRow.cells.length - 1];
