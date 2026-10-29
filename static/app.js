@@ -85,9 +85,42 @@ function memberRowsFromResponse(value) {
 // API
 // ============================================================
 
+// Actions that change the Discord nickname or role. Before saving, a linked member gets a Discord confirmation;
+// a member who is not linked gets none. After saving, the confirmation bar always shows the Discord item.
+const DISCORD_PRE_CONFIRM = {
+    "/api/promote": "Promotion",
+    "/api/force-promote": "Promotion (forced)",
+    "/api/change-rank": "Rank change",
+    "/api/demote": "Demotion",
+    "/api/change-callsign": "Callsign change"
+};
+async function confirmDiscordBeforeAction(url, options) {
+    const path = new URL(url, location.href).pathname;
+    const label = DISCORD_PRE_CONFIRM[path];
+    if (!label || String(options.body || "").includes('"dry_run":true')) return true;
+    let payload = {};
+    try { payload = JSON.parse(options.body || "{}"); } catch {}
+    const callsign = String(payload.callsign || "").trim().toUpperCase();
+    if (!callsign) return true;
+    const status = await fetch(`/api/discord/link-status?callsign=${encodeURIComponent(callsign)}`)
+        .then(response => response.ok ? response.json() : { linked: false })
+        .catch(() => ({ linked: false }));
+    if (!status.linked) return true;
+    const rows = [["Portal", label]];
+    if (path === "/api/change-callsign" && payload.new_callsign) rows.push(["New callsign", String(payload.new_callsign).trim().toUpperCase()]);
+    if (payload.new_rank) rows.push(["New rank", String(payload.new_rank)]);
+    rows.push(["Discord", "The Discord nickname and role will be updated after saving."]);
+    return window.lvfrConfirm({ title: "Portal and Discord Confirmation", subject: callsign, rows, confirmText: "Continue" });
+}
+
 async function api(url, options = {}) {
-    if (isBackgroundMutationRequest(url, options)) return startBackgroundMutation(url, options);
     const method = String(options.method || "GET").toUpperCase();
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && !(await confirmDiscordBeforeAction(url, options))) {
+        const cancelled = new Error("Cancelled.");
+        cancelled.cancelled = true;
+        throw cancelled;
+    }
+    if (isBackgroundMutationRequest(url, options)) return startBackgroundMutation(url, options);
     const cacheableRead = method === "GET" && new URL(url, location.href).pathname.startsWith("/api/");
     if (cacheableRead) {
         const cached = apiReadCache.get(url);
@@ -4672,30 +4705,22 @@ async function terminate(cs) {
         return;
     }
 
-    // Typing the callsign is required, because termination clears the member's active data and cannot be undone here.
-    const typed = await askText(
-        `Terminating ${cs} clears the member's active data and cannot be undone here.\nType the callsign ${cs} to confirm:`,
-        ""
-    );
-    if (typed === null) {
+    // One card: the callsign typed to confirm, the optional reason, and the Discord section.
+    // The link status is read first, so a member who is not linked is never asked for a Discord action.
+    const memberInfo = allMembersCache?.find(member => String(member.callsign || "").toUpperCase() === String(cs).trim().toUpperCase()) || {};
+    const linkStatus = await api(`/api/discord/link-status?callsign=${encodeURIComponent(cs)}`).catch(() => ({ linked: false }));
+    const choice = await window.lvfrTerminateCard({
+        callsign: String(cs).trim().toUpperCase(),
+        name: memberInfo.name || "",
+        rank: memberInfo.rank || "",
+        linked: Boolean(linkStatus.linked)
+    });
+    if (!choice) {
         return;
     }
-    const normalizeCallsign = value => String(value ?? "").replace(/[\u0660-\u0669\u06F0-\u06F9]/g, d => String(d.charCodeAt(0) % 16)).replace(/[^\p{L}\p{N}]/gu, "").toUpperCase();
-    if (normalizeCallsign(typed) !== normalizeCallsign(cs)) {
-        toast(`The callsign did not match (expected ${String(cs ?? "").trim().toUpperCase()}). Typed: [${[...String(typed)].map(c => c.codePointAt(0).toString(16)).join(" ")}] normalized typed=${normalizeCallsign(typed)} expected=${normalizeCallsign(cs)}. Termination was cancelled.`);
-        return;
-    }
-
-
-    const reason = await askText(
-        "Termination reason (optional):",
-        ""
-    );
-
-    // Cancel returns null; only an empty reason entered with OK is allowed.
-    if (reason === null) {
-        return;
-    }
+    const reason = choice.reason;
+    let sentDiscordAction = choice.discordAction;
+    let wasLinked = Boolean(linkStatus.linked);
 
     try {
         // Discord is asked only for a linked member. The server answers 409 with discord_choice_required before changing
@@ -4708,18 +4733,26 @@ async function terminate(cs) {
             }
         );
         try {
-            await sendTerminate("");
+            await sendTerminate(choice.discordAction);
         } catch (error) {
             if (!error.discord_choice_required) throw error;
             const discordAction = await askDiscordAction(cs);
             if (discordAction === null) return;
+            wasLinked = true;
+            sentDiscordAction = discordAction;
             await sendTerminate(discordAction);
         }
 
 
-        toast(
-            "Member terminated"
-        );
+        await window.lvfrResultCard({
+            title: "Portal and Discord Confirmation",
+            subject: `${String(cs).trim().toUpperCase()} terminated`,
+            rows: [["Portal", "Member terminated on the roster."], ["Discord", (() => {
+            if (!wasLinked) return "Not linked to Discord. Discord was not changed.";
+            return ({ kick: "Kicked from the Discord server.", remove_roles: "Job roles removed and nickname cleared.", none: "Nickname cleared." })[sentDiscordAction] || "Discord link removed.";
+        })()]],
+            confirmText: "OK"
+        });
 
 
         closeModal();
