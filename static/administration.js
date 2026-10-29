@@ -1253,6 +1253,9 @@ function showCommandSection(name, updateHash = false) {
     const anchors = { accounts: 'accountsHeading', permissions: 'permissionsHeading', history: 'auditHeading', discord: 'discordSyncHeading', links: 'linkedMembersHeading', log: 'discordLogHeading' };
     history.replaceState(null, '', `#${anchors[name]}`);
   }
+  // replaceState does not fire hashchange, so load the list here and tell the sidebar which item is current.
+  if (name === 'links' || name === 'log') document.querySelector('#refreshLinkedMembers')?.click();
+  window.dispatchEvent(new Event('lvfr:view-changed'));
 }
 document.querySelectorAll('[data-command-section]').forEach(button => button.addEventListener('click', () => showCommandSection(button.dataset.commandSection, true)));
 function selectCommandSectionFromHash() {
@@ -1448,47 +1451,4 @@ disabledReasonObserver.observe(document.body, { subtree: true, childList: true, 
       note('Discord action log cleared.', 'success');
       await loadLog();
     } catch (error) {
-      note(error.message || 'Could not clear the log.', 'error');
-    }
-  });
-
-  document.querySelector('#refreshLinkedMembers')?.addEventListener('click', () => refreshAll().catch(error => note(error.message, 'error')));
-  document.querySelector('[data-command-section="discord"]')?.addEventListener('click', () => refreshAll().catch(() => {}));
-})();
-
-// Sidebar links for the new Discord pages: load their data when opened, and run a Discord button clicked from another page.
-(() => {
-  const openSection = () => {
-    if (location.hash === '#linkedMembersHeading') document.querySelector('#refreshLinkedMembers')?.click();
-    if (location.hash === '#discordLogHeading') document.querySelector('#refreshLinkedMembers')?.click();
-  };
-  window.addEventListener('hashchange', openSection);
-  const pending = sessionStorage.getItem('lvfr.sidebar.pending-click');
-  if (pending) {
-    sessionStorage.removeItem('lvfr.sidebar.pending-click');
-    setTimeout(() => document.querySelector(pending)?.click(), 600);
-  }
-})();
-
-// Discord sub-navigation shown inside the Discord tab: Sync, Linked members, Discord action log.
-(() => {
-  const views = [['discord', 'Sync'], ['links', 'Linked members'], ['log', 'Discord action log']];
-  const nav = `<nav class="role-tab-bar discord-subtabs" aria-label="Discord sections">${views.map(([key, label]) =>
-    `<button type="button" class="role-tab" data-discord-view="${key}">${label}</button>`).join('')}</nav>`;
-  ['#commandDiscordSection', '#commandLinksSection', '#commandLogSection'].forEach(selector => {
-    const section = document.querySelector(selector);
-    section?.querySelector('.admin-header')?.insertAdjacentHTML('beforebegin', nav);
-  });
-  const markActive = view => document.querySelectorAll('[data-discord-view]').forEach(button =>
-    button.classList.toggle('active', button.dataset.discordView === view));
-  document.querySelectorAll('[data-discord-view]').forEach(button => button.addEventListener('click', () => {
-    showCommandSection(button.dataset.discordView, true);
-    markActive(button.dataset.discordView);
-  }));
-  window.addEventListener('hashchange', () => {
-    const view = { '#discordSyncHeading': 'discord', '#linkedMembersHeading': 'links', '#discordLogHeading': 'log' }[location.hash];
-    if (view) markActive(view);
-  });
-  const initial = { '#discordSyncHeading': 'discord', '#linkedMembersHeading': 'links', '#discordLogHeading': 'log' }[location.hash];
-  if (initial) markActive(initial);
-})();
+      note(error.message || 'Could not clear the log.', '
