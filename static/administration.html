@@ -20,6 +20,8 @@
     @media(max-width:650px){.admin-shell{padding:14px 14px 28px;min-width:0}.admin-card{padding:14px;min-width:0}.admin-header>*,.admin-toolbar>*{min-width:0;max-width:100%}.admin-table-wrap{width:100%;overflow-x:visible;-webkit-overflow-scrolling:touch}.admin-table{display:block;min-width:0!important;width:100%}.admin-table thead{display:none}.admin-table tbody{display:grid;gap:10px}.admin-table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px;padding:10px;border:1px solid #303945;border-radius:12px;background:#0c1219}.admin-table td{display:block;min-width:0;padding:8px 3px!important;border:0!important;border-bottom:1px solid #26313d}.admin-table td::before{content:attr(data-label);display:block;margin-bottom:4px;color:#8b9aaa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}.admin-table td:first-child,.admin-table td:last-child{grid-column:1/-1}.admin-table td:last-child{border:0!important}.admin-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.admin-actions button{min-width:0;overflow-wrap:anywhere}}
     .permissions-card{border-color:#34485d;background:linear-gradient(145deg,#111b27,#111720 60%)}.permissions-heading{align-items:flex-start}.permissions-heading h2{margin:0}.permissions-heading p{max-width:680px;margin:7px 0 0;line-height:1.5}
     #fullCleaningDialog{max-width:calc(100vw - 28px);max-height:calc(100dvh - 28px);padding:0;border:1px solid #394555;border-radius:14px;background:#111720;color:#f3f6fa}#fullCleaningDialog::backdrop{background:#000a}#fullCleaningDialog form{max-height:calc(100dvh - 30px);overflow:auto}.full-cleaning-footer{position:sticky;bottom:0;z-index:2;margin:12px -20px -20px;padding:12px 20px max(12px,env(safe-area-inset-bottom));border-top:1px solid #303945;background:#111720}.full-cleaning-footer .admin-status{margin:0 0 8px}.full-cleaning-footer .admin-actions{margin:0}
+    /* Phone: these three lists keep a plain table, one line per row, scrolling sideways (same as the Permission log). */
+    @media(max-width:650px){.admin-table-wrap:has(.plain-table){overflow-x:auto;width:100%;-webkit-overflow-scrolling:touch}.admin-table.plain-table{display:table;min-width:720px;width:auto}.admin-table.plain-table thead{display:table-header-group}.admin-table.plain-table tbody{display:table-row-group}.admin-table.plain-table tbody tr{display:table-row;padding:0;border:0;border-radius:0;background:transparent}.admin-table.plain-table td,.admin-table.plain-table th{display:table-cell;white-space:nowrap;padding:8px 10px!important;border:0!important;border-bottom:1px solid #303945!important}.admin-table.plain-table td::before{content:none;display:none}.admin-table.plain-table td:first-child,.admin-table.plain-table td:last-child{grid-column:auto}}
   </style>
 </head>
 <body>
@@ -103,7 +105,7 @@
       <div class="admin-header"><h2 id="auditHeading">History</h2><div class="admin-actions"><button type="button" id="openFullCleaning" class="danger" hidden>Full Cleaning</button><button type="button" id="clearAllNotifications" class="danger" hidden>Clear notifications for all</button><button type="button" id="clearAccountAuditBtn" class="danger">Clear D1 audit</button></div></div>
       <nav class="role-tab-bar history-subtabs" aria-label="History type"><button type="button" class="role-tab active" data-history-tab="audit">Account Audit</button><button type="button" class="role-tab" data-history-tab="permission">Permission log</button></nav>
       <div class="history-subpanel" data-history-subpanel="audit">
-      <div class="toolbar"><input id="auditSearch" type="text" autocomplete="off" placeholder="Search name, callsign, action, or by"></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Date</th><th>Account</th><th>Action</th><th>By</th></tr></thead><tbody id="auditRows"><tr><td colspan="4">Loading history…</td></tr></tbody></table></div>
+      <div class="toolbar"><input id="auditSearch" type="text" autocomplete="off" placeholder="Search name, callsign, action, or by"></div><div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Date</th><th>Account</th><th>Action</th><th>By</th></tr></thead><tbody id="auditRows"><tr><td colspan="4">Loading history…</td></tr></tbody></table></div>
       </div>
       <div class="history-subpanel" data-history-subpanel="permission" id="permissionLogPanel" hidden></div>
     </section>
@@ -113,12 +115,12 @@
       <p class="muted">Edit changes the Discord User ID for a callsign after checking the nickname. Delink only removes the link; Discord is not changed.</p>
       <div class="admin-actions"><button type="button" id="refreshLinkedMembers">Refresh list</button></div>
       <div class="toolbar"><input id="linkedMembersSearch" type="text" autocomplete="off" aria-label="Search Linked members" placeholder="Search callsign, member, Discord ID, or nickname"></div>
-      <div class="admin-table-wrap"><table class="admin-table" data-sort-only="callsign,name"><thead><tr><th>Callsign</th><th>Name</th><th>Discord</th><th>Discord User ID</th><th>Nickname</th><th>Status</th><th>Roster</th><th>Actions</th></tr></thead><tbody id="linkedMemberRows"></tbody></table></div>
+      <div class="admin-table-wrap"><table class="admin-table plain-table" data-sort-only="callsign,name"><thead><tr><th>Callsign</th><th>Name</th><th>Discord</th><th>Discord User ID</th><th>Nickname</th><th>Status</th><th>Roster</th><th>Actions</th></tr></thead><tbody id="linkedMemberRows"></tbody></table></div>
     </section>
     <section id="commandLogSection" class="admin-card command-section" aria-labelledby="discordLogHeading" hidden>
       <div class="admin-header"><div><h2 id="discordLogHeading">Discord action log</h2></div><div class="admin-actions"><button type="button" class="danger" id="clearDiscordLog">Clear log</button></div></div>
 
-      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Time</th><th>By</th><th>Action</th><th>Callsign</th><th>Result</th><th>Detail</th></tr></thead><tbody id="discordLogRows"></tbody></table></div>
+      <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Time</th><th>By</th><th>Action</th><th>Callsign</th><th>Result</th><th>Detail</th></tr></thead><tbody id="discordLogRows"></tbody></table></div>
     </section>
     <dialog id="fullCleaningDialog" aria-labelledby="fullCleaningTitle">
       <form method="dialog" class="admin-card" style="min-width:min(440px,calc(100vw - 32px));margin:0">
