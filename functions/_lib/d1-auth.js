@@ -1985,7 +1985,7 @@ export async function handleD1(context) {
     requireRolePermission(user,user.permissions,permissionForRequest(route,method,{...data,log_type:data.log_type||url.searchParams.get("log_type")}));
     if(route==="/api/notifications" && method==="GET") {
       await refreshD1Notifications(db,user);
-      const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? LEFT JOIN notification_hidden h ON h.notification_id=n.id AND h.account_id=? LEFT JOIN notification_preferences p ON p.account_id=? AND p.kind=n.kind WHERE h.notification_id IS NULL AND COALESCE(p.enabled, CASE WHEN n.kind IN ('eligible','inactive','overdue','request') THEN 1 ELSE 0 END)=1 ORDER BY n.id DESC LIMIT 250").bind(user.account_id,user.account_id,user.account_id).all()).results||[];
+      const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN n.id<=COALESCE(m.read_through_id,0) OR r.notification_id IS NOT NULL THEN 1 ELSE 0 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? LEFT JOIN account_notification_marks m ON m.account_id=? LEFT JOIN notification_hidden h ON h.notification_id=n.id AND h.account_id=? LEFT JOIN notification_preferences p ON p.account_id=? AND p.kind=n.kind WHERE n.id>COALESCE(m.hidden_through_id,0) AND h.notification_id IS NULL AND COALESCE(p.enabled, CASE WHEN n.kind IN ('eligible','inactive','overdue','request') THEN 1 ELSE 0 END)=1 ORDER BY n.id DESC LIMIT 250").bind(user.account_id,user.account_id,user.account_id,user.account_id).all()).results||[];
       const viewableNotif=await viewRanks(db,user);
       let visibleItems=recent.filter(item=>notificationVisible(item,user));
       if(viewableNotif){
@@ -2024,14 +2024,17 @@ export async function handleD1(context) {
     }
     if(route==="/api/notifications/clear-mine" && method==="POST") {
       // Hides every notification for this account only; other people keep theirs.
-      await db.prepare("INSERT OR IGNORE INTO notification_hidden(account_id,notification_id,hidden_at) SELECT ?,id,? FROM notifications").bind(user.account_id,new Date().toISOString()).run();
+      const now=new Date().toISOString();
+      const newestId=Number((await db.prepare("SELECT COALESCE(MAX(id),0) AS id FROM notifications").first())?.id||0);
+      if(newestId>0) await db.prepare("INSERT INTO account_notification_marks(account_id,read_through_id,hidden_through_id,updated_at) VALUES(?,0,?,?) ON CONFLICT(account_id) DO UPDATE SET hidden_through_id=MAX(hidden_through_id,excluded.hidden_through_id),updated_at=excluded.updated_at").bind(user.account_id,newestId,now).run();
       return json({ok:true});
     }
     if(route==="/api/notifications/read" && method==="POST") {
       const requested=Array.isArray(data.ids)?[...new Set(data.ids.map(value=>Number(value)).filter(Number.isSafeInteger))]:[];
       const now=new Date().toISOString();
-      if(requested.length) await db.batch(requested.map(id=>db.prepare("INSERT OR IGNORE INTO notification_reads(account_id,notification_id,read_at) VALUES(?,?,?)").bind(user.account_id,id,now)));
-      else await db.prepare("INSERT OR IGNORE INTO notification_reads(account_id,notification_id,read_at) SELECT ?,id,? FROM notifications").bind(user.account_id,now).run();
+      // One write per request: everything up to the highest requested id (or up to the newest notification) is read.
+      const throughId=requested.length?Math.max(...requested):Number((await db.prepare("SELECT COALESCE(MAX(id),0) AS id FROM notifications").first())?.id||0);
+      if(throughId>0) await db.prepare("INSERT INTO account_notification_marks(account_id,read_through_id,hidden_through_id,updated_at) VALUES(?,?,0,?) ON CONFLICT(account_id) DO UPDATE SET read_through_id=MAX(read_through_id,excluded.read_through_id),updated_at=excluded.updated_at").bind(user.account_id,throughId,now).run();
       if(env.LVFR_D1_AUTH_BRIDGE_SECRET) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET), {proxyToAppsScript}=await import("../[[path]].js");
         context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,route,url,assertion,data);if(!mirror.ok)console.error("Notification read Sheet mirror failed:",await mirror.text());}catch(error){console.error("Notification read Sheet mirror failed:",error);}})());
@@ -2042,7 +2045,7 @@ export async function handleD1(context) {
       const assertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
       const {proxyToAppsScript}=await import("../[[path]].js");
       // Clear the website first, so the result never depends on the Sheet being reachable.
-      await db.batch([db.prepare("DELETE FROM notification_hidden"),db.prepare("DELETE FROM notification_reads"),db.prepare("DELETE FROM notifications")]);
+      await db.batch([db.prepare("DELETE FROM notification_hidden"),db.prepare("DELETE FROM notification_reads"),db.prepare("DELETE FROM account_notification_marks"),db.prepare("DELETE FROM notifications")]);
       context.waitUntil((async()=>{
         try {
           const sheetMirror=await proxyToAppsScript(context,"/internal/notifications/clear",url,assertion,{});
@@ -2559,4 +2562,3 @@ async function doNotListRows(db, env, user, kind, flag) {
     return { callsign, name, rank, added_at: hit?.log_date || "", added_by: hit?.changed_by || "" };
   });
 }
-
