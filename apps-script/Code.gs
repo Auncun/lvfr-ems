@@ -3165,7 +3165,7 @@ function output_(value) {
 }
 
 function clearLogsFromSheets_(input) {
-  const allowed = ['promotion', 'callsign', 'termination', 'training', 'training_time', 'loi', 'exam', 'note', 'activity', 'instructor', 'account_audit'];
+  const allowed = ['promotion', 'callsign', 'termination', 'training', 'training_time', 'loi', 'exam', 'note', 'activity', 'instructor', 'account_audit', 'do_not_promote', 'do_not_terminate'];
   const requested = Array.isArray(input.items) ? input.items.map(value => String(value || '').trim().toLowerCase()) : [];
   if (!requested.length || requested.some(kind => kind !== 'notifications' && !allowed.includes(kind))) throw new Error('Choose valid log categories.');
   const result = withScriptLock_(() => {
