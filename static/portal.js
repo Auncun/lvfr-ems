@@ -130,9 +130,7 @@ function loadPortalNotifications() {
     cachedNotifications = Array.isArray(result.items) ? result.items : [];
     try { localStorage.setItem(notificationStorageKey, JSON.stringify(cachedNotifications)); } catch {}
     renderPortalNotifications(cachedNotifications);
-    if (!notificationPanel?.hidden && cachedNotifications.some(item => !Number(item.is_read))) {
-      void markPortalNotificationsRead();
-    }
+    // Loading the list never marks anything as read. Only opening the panel or pressing a notification does.
   })
   .catch(() => {
     if (notificationList && !cachedNotifications) notificationList.innerHTML = '<p>Could not load notifications. Try again.</p>';
