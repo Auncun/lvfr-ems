@@ -494,6 +494,7 @@
     requestAnimationFrame(() => { scrollUpdatePending = false; refreshActiveNavigation(); });
   }, { passive: true });
   window.addEventListener('pageshow', refreshAccess);
+  window.addEventListener('lvfr:view-changed', () => refreshActiveNavigation());
 })();
 
 // Marks the page while any dialog is open, so the navigation button steps behind it.
