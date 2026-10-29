@@ -4,32 +4,66 @@
   <meta charset="utf-8">
   <meta name="color-scheme" content="dark">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Operation Command | LVFR EMS</title>
-  <link rel="stylesheet" href="/static/style.css?v=ops-20261029-2">
+  <meta name="theme-color" content="#101720">
+  <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml">
+  <title>Choose an application · LVFR</title>
+  <link rel="stylesheet" href="/static/style.css?v=ops-20261029-3">
   <style>
-    body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:24px}
-    .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-    .admin-brand{display:flex;align-items:center;gap:12px}
-    .admin-header{margin-bottom:20px}.admin-header h1{margin:0}.admin-header p,.muted{color:#9aa4b2}
-    .admin-card{margin:16px 0;padding:20px;border:1px solid #303945;border-radius:14px;background:#111720}
-    .admin-toolbar{justify-content:flex-start;margin:12px 0}.admin-toolbar input,.admin-toolbar select{min-width:200px}
-    .admin-table-wrap{overflow:auto}.admin-table{width:100%;border-collapse:collapse;min-width:800px}.admin-table th,.admin-table td{text-align:left;vertical-align:top;padding:11px 9px;border-bottom:1px solid #303945}.admin-table th{color:#9aa4b2;font-weight:600}
-    .admin-actions{justify-content:flex-start;gap:6px}.admin-actions button{padding:6px 9px}.admin-status{min-height:22px;color:#9aa4b2}.admin-status.error{color:#ff8178}.admin-status.success{color:#56d364}
-    .admin-tabs{display:flex;gap:8px;flex-wrap:wrap}.admin-tabs button[aria-pressed="true"]{border-color:#62a0ea;color:#8bbcff}
-    .command-tabs{display:flex;gap:8px;overflow-x:auto;margin:0 0 16px;padding:4px 0 8px;border-bottom:1px solid #27303b}.command-tab{flex:0 0 auto;padding:10px 15px;border:1px solid #303945;border-radius:10px;background:#111720;color:#aeb9c7;font-weight:650}.command-tab.active{border-color:#3984ce;background:#15283a;color:#b8d8ff;box-shadow:inset 0 -2px #58a6ff}.command-section[hidden]{display:none!important}
-    @media(max-width:650px){.admin-shell{padding:14px 14px 28px;min-width:0}.admin-card{padding:14px;min-width:0}.admin-header>*,.admin-toolbar>*{min-width:0;max-width:100%}.admin-table-wrap{width:100%;overflow-x:visible;-webkit-overflow-scrolling:touch}.admin-table{display:block;min-width:0!important;width:100%}.admin-table thead{display:none}.admin-table tbody{display:grid;gap:10px}.admin-table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px;padding:10px;border:1px solid #303945;border-radius:12px;background:#0c1219}.admin-table td{display:block;min-width:0;padding:8px 3px!important;border:0!important;border-bottom:1px solid #26313d}.admin-table td::before{content:attr(data-label);display:block;margin-bottom:4px;color:#8b9aaa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}.admin-table td:first-child,.admin-table td:last-child{grid-column:1/-1}.admin-table td:last-child{border:0!important}.admin-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.admin-actions button{min-width:0;overflow-wrap:anywhere}}
-    .permissions-card{border-color:#34485d;background:linear-gradient(145deg,#111b27,#111720 60%)}.permissions-heading{align-items:flex-start}.permissions-heading h2{margin:0}.permissions-heading p{max-width:680px;margin:7px 0 0;line-height:1.5}
-    #fullCleaningDialog{max-width:calc(100vw - 28px);max-height:calc(100dvh - 28px);padding:0;border:1px solid #394555;border-radius:14px;background:#111720;color:#f3f6fa}#fullCleaningDialog::backdrop{background:#000a}#fullCleaningDialog form{max-height:calc(100dvh - 30px);overflow:auto}.full-cleaning-footer{position:sticky;bottom:0;z-index:2;margin:12px -20px -20px;padding:12px 20px max(12px,env(safe-area-inset-bottom));border-top:1px solid #303945;background:#111720}.full-cleaning-footer .admin-status{margin:0 0 8px}.full-cleaning-footer .admin-actions{margin:0}
+    body{min-height:100vh;margin:0;padding:0;background:#0b1017;color:#f3f6fa}
+    main{width:min(920px,100%);margin:28px auto;padding:0 18px}
+    .portal-heading{text-align:center;margin-bottom:30px}
+    .portal-brand{justify-content:flex-start;margin-bottom:0;text-align:left}
+    .portal-sync-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .portal-topbar{padding-left:70px}
+    @media(max-width:700px){.portal-topbar{padding:68px 14px 14px}}
+    #portalSyncStatus{margin:0;color:#9aa4b2}
+    .portal-heading p{color:#9aa4b2;margin:8px 0}
+    .portal-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
+    .portal-card{display:flex;min-height:190px;flex-direction:column;justify-content:space-between;padding:24px;border:1px solid #303945;border-radius:16px;background:#111720;text-decoration:none;color:inherit;transition:border-color .15s,transform .15s}
+    #administrationCard[hidden]{display:none}
+    #emsCard[hidden]{display:none}
+    .portal-card:hover{border-color:#62a0ea;transform:translateY(-2px)}
+    .portal-card h2{margin:0 0 10px}.portal-card p{color:#9aa4b2;line-height:1.5;margin:0}
+    .portal-card span{align-self:flex-start;margin-top:22px;color:#8bbcff;font-weight:700}
+    .portal-footer{text-align:center;margin-top:22px}.portal-footer button{background:transparent}
+    .portal-notifications{margin:0 0 24px;padding:16px;border:1px solid #303945;border-radius:14px;background:#111720}
+    .portal-notifications h2{margin:0 0 10px;font-size:18px}
+    .portal-notification-list{display:grid;gap:8px}
+    .portal-notification{width:100%;padding:11px;text-align:left;border:1px solid #27303b;border-radius:9px;background:#0d1219;color:#e6edf3}
+    .portal-notification.unread{border-color:#356da8;background:#142235}
+    .portal-notification strong,.portal-notification small{display:block}
+    .portal-notification small{margin-top:4px;color:#9aa4b2}
   </style>
 </head>
 <body>
   <button class="sidebar-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="appSidebar"><span></span><span></span><span></span></button>
-    <header class="topbar">
-      <div class="topbar-left">
-      <div class="brand"><a class="brand-home-link" href="/portal" aria-label="Go to application selection"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"></a><div><h1>Operation Command</h1><p>Manage account access, roles, and review account activity.</p></div></div>
+  <header class="topbar portal-topbar">
+    <div class="topbar-left">
+      <div class="brand portal-brand"><a class="brand-home-link" href="/portal" aria-label="Go to application selection"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"></a><div><h1>Choose an application</h1><p>Select where you want to continue.</p></div></div>
+      <div class="sync-control">
+        <button id="syncToggleButton" class="sync-toggle" type="button" aria-expanded="false" aria-controls="commandSyncPanel" title="Sync status">
+          <span class="sync-toggle-dot" aria-hidden="true"></span>
+          <span>Sync</span>
+        </button>
+        <div id="commandSyncPanel" class="command-sync-panel" hidden>
+          <div class="sync-status-group">
+            <span id="syncScriptStatus" class="status-dot">Google Apps Script: checking…</span>
+            <span id="syncStatus" class="status-dot"></span>
+            <span id="syncActivityStatus" class="status-dot"></span>
+            <span id="googleWriteStatus" class="status-dot archive-status"></span>
+            <span id="archiveStatus" class="status-dot archive-status"></span>
+          </div>
+          <div class="sync-actions">
+            <button id="syncBtn" class="primary" type="button" hidden>Sync now</button>
+            <button id="syncDiscordBtn" type="button" hidden>Sync Discord</button>
+            <button id="fullSyncBtn" class="danger" type="button" hidden>Full Sync</button>
+            <button type="button" id="logSyncBtn" hidden>Log sync</button>
+          </div>
+        </div>
       </div>
-      <div class="top-actions">
-        <div class="notification-control">
+    </div>
+    <div class="top-actions">
+      <div class="notification-control">
             <button type="button" id="notificationButton" class="icon-button" aria-label="Notifications" title="Notifications" aria-expanded="false" aria-controls="notificationPanel">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
                 <span id="notificationBadge" class="notification-badge" hidden>0</span>
@@ -44,118 +78,38 @@
             </section>
         </div>
         <div class="online-control"><button type="button" id="topOnlineCount" class="online-count-button" aria-expanded="false" aria-controls="onlineUsersPanel">Online: —</button><section id="onlineUsersPanel" class="online-users-panel" hidden aria-label="Online members"><strong>Online now</strong><div id="onlineUsersList" aria-live="polite"><div class="empty">Loading...</div></div></section></div>
-        <div class="account-control"><button type="button" id="accountMenuButton" class="icon-button" aria-label="Account menu" title="Account" aria-expanded="false" aria-controls="accountMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></button><section id="accountMenu" class="account-menu" hidden><strong id="accountName"></strong><button type="button" id="manageAccountButton"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Account</span></button>
+      <div class="account-control"><button type="button" id="accountMenuButton" class="icon-button" aria-label="Account menu" title="Account" aria-expanded="false" aria-controls="accountMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></button><section id="accountMenu" class="account-menu" hidden><strong id="accountName"></strong><button type="button" id="manageAccountButton"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Account</span></button>
             <button type="button" id="accountNotificationsButton"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 21a2 2 0 0 0 4 0"/></svg><span>Notification Settings</span></button>
             <button type="button" id="accountSettingsButton"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14 9l2 2"/></svg><span>Account Settings</span></button>
-            <form><button type="button" id="logoutButton"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></button></form></section></div>
-      </div>
-    </header>
-  <main class="admin-shell">
-    <p id="adminMessage" class="admin-status" role="status" aria-live="polite"></p>
-    <nav class="command-tabs" aria-label="Operation Command sections">
-      <button type="button" class="command-tab active" data-command-section="accounts" aria-current="page">Accounts</button>
-      <button type="button" class="command-tab" data-command-section="permissions">Access Permissions</button>
-      <button type="button" class="command-tab" data-command-section="history">History</button>
-      <button type="button" class="command-tab" data-command-section="discord">Discord</button>
-    </nav>
-    <section id="commandAccountsSection" class="admin-card command-section" aria-labelledby="accountsHeading">
-      <div class="admin-header"><div><h2 id="accountsHeading">Accounts</h2><p class="muted">Choose the account role here; role capabilities are managed in Access Permissions.</p></div><button type="button" class="list-refresh" id="refreshAccounts" aria-label="Refresh accounts" title="Refresh accounts"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
-      <div class="admin-tabs" aria-label="Account status filter">
-        <button type="button" data-status="all" aria-pressed="true">All</button>
-        <button type="button" data-status="pending" aria-pressed="false">Pending <span class="tab-count" data-status-count="pending">(0)</span></button>
-        <button type="button" data-status="approved" aria-pressed="false">Active <span class="tab-count" data-status-count="approved">(0)</span></button>
-        <button type="button" data-status="deactivated" aria-pressed="false">Deactivated <span class="tab-count" data-status-count="deactivated">(0)</span></button>
-      </div>
-      <p id="onlineAccountCount" class="online-account-count" aria-live="polite">Online now: —</p>
-      <div class="admin-toolbar"><input id="accountSearch" type="search" placeholder="Search name or Callsign"><span id="accountCount" class="muted"></span></div>
-      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Account</th><th>Callsign</th><th>Status</th><th>Role</th><th>Presence</th><th>Created</th><th>Actions</th></tr></thead><tbody id="accountRows"><tr><td colspan="7">Loading accounts…</td></tr></tbody></table></div>
+            <form><button type="button" data-action="logout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></button></form></section></div>
+    </div>
+  </header>
+  <main>
+    <section class="portal-options" aria-label="Available applications">
+      <a class="portal-card" id="emsCard" href="/" hidden>
+        <div><h2>LVFR EMS Operations</h2><p>Open the member directory, training, ranks, and operations tools.</p></div>
+        <span>Open application →</span>
+      </a>
+      <a class="portal-card" id="watchCommandCard" href="/watch-command" hidden>
+        <div><h2>Watch Command</h2><p>Open the Watch Command workspace.</p></div>
+        <span>Open Watch Command →</span>
+      </a>
+      <a class="portal-card" id="administrationCard" href="/administration" hidden>
+        <div><h2>Operation Command</h2><p>Manage account access, roles, and account history.</p></div>
+        <span>Manage accounts</span>
+      </a>
     </section>
-    <section id="commandDiscordSection" class="admin-card command-section" aria-labelledby="discordSyncHeading" hidden>
-      <div class="admin-header"><div><h2 id="discordSyncHeading">Discord Synchronization</h2><p class="muted">Link roster callsigns to Discord User IDs once. Initial linking does not change any Discord nickname or role.</p></div></div>
-      <div class="admin-actions">
-        <button type="button" id="syncDiscordMembers" class="primary">Sync Discord Members</button>
-        <button type="button" id="retryDiscordUpdates">Retry Failed Discord Updates</button>
-        <button type="button" id="refreshDiscordStatus">Refresh Status</button>
-      </div>
-      <p id="discordSyncStatus" class="admin-status" role="status" aria-live="polite">Discord status has not been loaded.</p>
-      <div id="discordSyncReport" class="admin-card" hidden><h3>Synchronization Report</h3><pre id="discordSyncReportText" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:0"></pre></div>
-      <p class="muted">Required Cloudflare configuration: DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, and DISCORD_ROLE_MAP. The bot needs Manage Nicknames and Manage Roles, and the Server Members Intent must be enabled for initial member discovery.</p>
-        </section>
-    <section id="commandPermissionsSection" class="admin-card permissions-card command-section" aria-labelledby="permissionsHeading" hidden>
-      <div class="admin-header permissions-heading"><div><h2 id="permissionsHeading">Access Permissions</h2><p class="muted">Operation Command access manages role permission profiles. Separate permissions control adding, renaming, reordering, and deleting ranks below your own. Only Operation manages accounts and individual permissions.</p></div></div>
-      <nav class="role-tab-bar permission-subtabs" aria-label="Permission type"><button type="button" class="role-tab active" data-permission-subtab="rank">Rank Permission</button><button type="button" class="role-tab" data-permission-subtab="personal">Personal Permission</button></nav>
-      <div class="permission-subpanel" data-permission-subpanel="personal" hidden>
-      <div class="permission-member-picker"><label>Find a member <input id="permissionMemberSearch" type="search" placeholder="Search name or callsign"></label><div id="permissionMemberResults" class="permission-member-results" hidden></div></div>
-      <section id="individualPermissionsDialog" class="admin-card individual-permissions-dialog" role="dialog" aria-modal="true" aria-labelledby="individualPermissionsTitle" hidden>
-      <div class="admin-header"><div><h2 id="individualPermissionsTitle">Individual permissions</h2><p id="individualPermissionsStatus" class="muted" aria-live="polite"></p></div><button type="button" id="individualPermissionsClose">Close</button></div>
-      <label class="permission-search" for="individualPermissionMode"><span>Permission mode</span><select id="individualPermissionMode"><option value="role">Role default</option><option value="customize">Customize</option></select></label>
-      <div id="individualPermissionsList" class="role-permission-groups"></div>
-      <div class="admin-actions"><button type="button" id="individualPermissionsCustomize" class="primary">Customize permissions</button><button type="button" id="individualPermissionsReset" hidden>Restore to Role</button><button type="button" id="individualPermissionsSave" hidden>Save customization</button></div>
-      </section>
-      </div>
-      <div class="permission-subpanel" data-permission-subpanel="rank">
-      <label class="permission-search">Search permissions<input id="permissionSearch" type="search" autocomplete="off" placeholder="Search a permission, group or rank"></label>
-      <div class="role-editor-layout"><nav id="permissionRoleNav" class="permission-role-nav" aria-label="Permission profiles"></nav><div class="role-editor-main"><div id="rolePermissionsPanel" class="role-permissions-panel"><div class="empty">Loading role permissions...</div></div><div class="custom-role-tools"><label>New role <input id="newPermissionRole" maxlength="32" placeholder="e.g. training_lead"><label class="role-start-from">Start from <select id="newPermissionRoleFrom" aria-label="Start from"></select></label></label><button type="button" id="createPermissionRole">Create role</button></div></div></div>
-      </div>
-      <p id="permissionStatus" class="permission-status" role="status" aria-live="polite"></p>
-    </section>
-    <section id="commandHistorySection" class="admin-card command-section" aria-labelledby="auditHeading" hidden>
-      <div class="admin-header"><h2 id="auditHeading">History</h2><div class="admin-actions"><button type="button" id="openFullCleaning" class="danger" hidden>Full Cleaning</button><button type="button" id="clearAllNotifications" class="danger" hidden>Clear notifications for all</button><button type="button" id="clearAccountAuditBtn" class="danger">Clear D1 audit</button></div></div>
-      <nav class="role-tab-bar history-subtabs" aria-label="History type"><button type="button" class="role-tab active" data-history-tab="audit">Account Audit</button><button type="button" class="role-tab" data-history-tab="permission">Permission log</button></nav>
-      <div class="history-subpanel" data-history-subpanel="audit">
-      <div class="toolbar"><input id="auditSearch" type="text" autocomplete="off" placeholder="Search name, callsign, action, or by"></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Date</th><th>Account</th><th>Action</th><th>By</th></tr></thead><tbody id="auditRows"><tr><td colspan="4">Loading history…</td></tr></tbody></table></div>
-      </div>
-      <div class="history-subpanel" data-history-subpanel="permission" id="permissionLogPanel" hidden></div>
-    </section>
-    <section id="commandLinksSection" class="admin-card command-section" aria-labelledby="linkedMembersHeading" hidden>
-      <div class="admin-header"><div><h2 id="linkedMembersHeading">Linked members</h2></div></div>
-
-      <p class="muted">Edit changes the Discord User ID for a callsign after checking the nickname. Delink only removes the link; Discord is not changed.</p>
-      <div class="admin-actions"><button type="button" id="refreshLinkedMembers">Refresh list</button></div>
-      <div class="toolbar"><input id="linkedMembersSearch" type="text" autocomplete="off" aria-label="Search Linked members" placeholder="Search callsign, member, Discord ID, or nickname"></div>
-      <div class="admin-table-wrap"><table class="admin-table" data-sort-only="callsign,name"><thead><tr><th>Callsign</th><th>Name</th><th>Discord</th><th>Discord User ID</th><th>Nickname</th><th>Status</th><th>Roster</th><th>Actions</th></tr></thead><tbody id="linkedMemberRows"></tbody></table></div>
-    </section>
-    <section id="commandLogSection" class="admin-card command-section" aria-labelledby="discordLogHeading" hidden>
-      <div class="admin-header"><div><h2 id="discordLogHeading">Discord action log</h2></div><div class="admin-actions"><button type="button" class="danger" id="clearDiscordLog">Clear log</button></div></div>
-
-      <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Time</th><th>By</th><th>Action</th><th>Callsign</th><th>Result</th><th>Detail</th></tr></thead><tbody id="discordLogRows"></tbody></table></div>
-    </section>
-    <dialog id="fullCleaningDialog" aria-labelledby="fullCleaningTitle">
-      <form method="dialog" class="admin-card" style="min-width:min(440px,calc(100vw - 32px));margin:0">
-        <h2 id="fullCleaningTitle">Full Cleaning</h2><p class="muted">Choose the logs or notifications to remove from D1 and Google Sheets.</p>
-        <label class="permission-item"><input type="checkbox" id="cleanAllLogs"><span><strong>All</strong><small>Select every log and notifications.</small></span></label>
-        <div class="role-permission-groups">
-          <label class="permission-item"><input type="checkbox" data-clean-log="promotion"><span><strong>Promotion</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="callsign"><span><strong>Callsign</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="termination"><span><strong>Termination</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="training"><span><strong>Training</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="training_time"><span><strong>Training Hours</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="loi"><span><strong>LOI</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="exam"><span><strong>Exam</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="note"><span><strong>Notes</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="activity"><span><strong>Activity</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="instructor"><span><strong>Instructor</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="account_audit"><span><strong>Account Audit</strong></span></label>
-          <label class="permission-item"><input type="checkbox" data-clean-log="notifications"><span><strong>Notifications</strong></span></label>
-        </div>
-        <footer class="full-cleaning-footer">
-          <p id="fullCleaningStatus" class="admin-status" role="status"></p>
-          <div class="admin-actions"><button type="button" id="cancelFullCleaning">Cancel</button><button type="button" id="confirmFullCleaning" class="danger">Delete selected</button></div>
-        </footer>
-      </form>
-    </dialog>
   </main>
-  <script src="/static/date-format.js?v=ops-20261022-15"></script>
-  <script src="/static/session-auth.js?v=ops-20261022-15"></script>
-  <script src="/static/header-controls.js?v=ops-20261022-15"></script>
-  <script src="/static/notifications.js?v=ops-20261022-15"></script>
-<script src="/static/rank-badges.js?v=ops-20261022-15"></script>
-<script src="/static/account-settings.js?v=ops-20261022-15"></script>
-  <script src="/static/administration.js?v=discord-sync-20261029-1"></script>
+  <script src="/static/date-format.js?v=ops-20261022-2"></script>
+  <script src="/static/session-auth.js?v=ops-20261021-4"></script>
+  <script src="/static/notifications.js?v=ops-20261021-4"></script>
+<script src="/static/rank-badges.js?v=ops-20261021-4"></script>
+<script src="/static/account-settings.js?v=ops-20261021-4"></script>
+  <script src="/static/header-controls.js?v=ops-20261021-4"></script>
+  <script src="/static/portal.js?v=ops-20261029-1"></script>
   <script src="/static/sidebar.js?v=ops-20261028-2"></script>
-  <script src="/static/mobile-popovers.js?v=ops-20261022-15"></script>
-<script src="/static/search-clear.js?v=ops-20261022-15" defer></script>
-<script src="/static/table-sort.js?v=ops-20261028-2"></script>
-  <script src="/static/confirm-card.js?v=ops-20261029-3"></script>
+  <script src="/static/mobile-popovers.js?v=ops-20261021-4"></script>
+<script src="/static/table-sort.js?v=ops-20261021-4"></script>
+<script src="/static/confirm-card.js?v=ops-20261029-3"></script>
 </body>
 </html>
