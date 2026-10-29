@@ -9,6 +9,8 @@ function showAvailableApps(user) {
   // Everyone sees the sync status; only users with permission see the action buttons.
   const canSync = Boolean(user.is_command);
   ['#syncBtn', '#fullSyncBtn', '#logSyncBtn'].forEach(id => { const el = document.querySelector(id); if (el) el.hidden = !canSync; });
+  const syncDiscordBtn = document.querySelector('#syncDiscordBtn');
+  if (syncDiscordBtn) syncDiscordBtn.hidden = !(canSync || user.permissions?.discord_sync_manage === true);
 }
 
 document.querySelector('[data-action="logout"]')?.addEventListener('click', () => window.lvfrLogout?.());
@@ -195,7 +197,8 @@ async function refreshSyncStatus() {
 }
 
 async function runSyncAction(button, busyText, idleText, url, confirmText) {
-  if (!button || (confirmText && !window.confirm(confirmText))) return;
+  if (!button) return;
+  if (confirmText && !(await window.lvfrConfirm({ title: 'Sync', message: confirmText, confirmText: 'Run' }))) return;
   button.dataset.syncing = 'true';
   button.disabled = true;
   button.textContent = busyText;
@@ -228,6 +231,7 @@ document.addEventListener('click', event => {
 syncNowBtn?.addEventListener('click', () => runSyncAction(syncNowBtn, 'Syncing…', 'Sync now', '/api/sync'));
 fullSyncBtn?.addEventListener('click', () => runSyncAction(fullSyncBtn, 'Full Syncing…', 'Full Sync', '/api/full-sync',
   'Full Sync will replace the D1 roster and Callsign slots from the current Google Sheet. Continue?'));
+document.querySelector('#syncDiscordBtn')?.addEventListener('click', () => runSyncAction(document.querySelector('#syncDiscordBtn'), 'Syncing Discord…', 'Sync Discord', '/api/discord/sync', 'Refresh the roster and link Discord members by exact callsign? This will not change Discord nicknames or roles.'));
 logSyncBtn?.addEventListener('click', () => runSyncAction(logSyncBtn, 'Syncing logs…', 'Log sync', '/api/logs-sync',
   'Log sync copies logs from the Google Sheet into D1. Continue?'));
 void refreshSyncStatus();
