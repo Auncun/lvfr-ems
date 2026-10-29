@@ -1412,7 +1412,7 @@ function syncRosterSnapshotToD1_(source, forceFull) {
     }
     const callsign_slots = availableCallsignInventory_();
     const available_callsigns = availableCallsigns_();
-    const payload = { members, available_callsigns, callsign_slots };
+    const payload = { members, available_callsigns, callsign_slots, full_sync: forceFull };
     // Stable key ordering and stable array ordering make the fingerprint
     // describe roster content rather than incidental serialization order.
     const canonicalPayload = {
