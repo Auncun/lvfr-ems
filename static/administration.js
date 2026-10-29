@@ -1373,8 +1373,14 @@ const hiddenReportKeys = ['ok', 'message', 'ops_role_check', 'ops_role_message']
 const humanizeKey = key => key.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 function reportItemText(item) {
   if (item === null || typeof item !== 'object') return String(item ?? '');
-  return Object.entries(item).filter(([, v]) => v !== null && v !== '' && typeof v !== 'object')
-    .map(([k, v]) => `${humanizeKey(k)}: ${v}`).join(' · ');
+  const parts = item.callsign ? [String(item.callsign)] : [];
+  Object.entries(item).forEach(([key, value]) => {
+    if (key === 'callsign' || value === null || value === undefined || value === '') return;
+    if (Array.isArray(value)) parts.push(value.join(', '));
+    else if (key === 'count') parts.push(`${value} accounts`);
+    else parts.push(String(value));
+  });
+  return parts.join(' — ');
 }
 function showDiscordReport(value) {
   if (!discordReport || !discordReportText) return;
