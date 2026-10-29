@@ -1350,3 +1350,12 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 .training-actions, .activity-actions { align-items:flex-start; }
 /* Let the reason wrap under its button instead of sitting beside it. */
 .training-actions, .activity-actions, .actions, .admin-actions, .instructor-admin-buttons { flex-wrap:wrap }
+
+/* Styled dialogs: choice buttons, text fields, and the Edit link form, in the same look as the confirmation card. */
+.lvfr-form { display:grid; gap:12px; margin:0; }
+.lvfr-form-field { display:grid; gap:4px; }
+.lvfr-form-field > span { color:#9aa4b2; font-size:12px; }
+.lvfr-form-field input, .lvfr-form-field select { width:100%; padding:8px; font:inherit; }
+.lvfr-form-field small { font-size:11px; }
+.lvfr-choice-list { display:grid; gap:8px; margin:8px 0; }
+.lvfr-choice-list button { width:100%; text-align:left; }
