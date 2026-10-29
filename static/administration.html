@@ -107,7 +107,7 @@
       <p id="permissionStatus" class="permission-status" role="status" aria-live="polite"></p>
     </section>
     <section id="commandHistorySection" class="admin-card command-section" aria-labelledby="auditHeading" hidden>
-      <div class="admin-header"><h2 id="auditHeading">History</h2><div class="admin-actions"><button type="button" id="openFullCleaning" class="danger" hidden>Full Cleaning</button><button type="button" id="clearAllNotifications" class="danger" hidden>Clear notifications for all</button><button type="button" id="clearAccountAuditBtn" class="danger">Clear D1 audit</button></div></div>
+      <div class="admin-header"><h2 id="auditHeading">History</h2><div class="admin-actions"><button type="button" id="openFullCleaning" class="danger" hidden>Full Cleaning</button><button type="button" id="clearAllNotifications" class="danger" hidden>Clear notifications for all</button></div></div><div hidden><button type="button" id="clearAccountAuditBtn" class="danger">Clear D1 audit</button></div>
       <nav class="role-tab-bar history-subtabs" aria-label="History type"><button type="button" class="role-tab active" data-history-tab="audit">Account Audit</button><button type="button" class="role-tab" data-history-tab="permission">Permission log</button></nav>
       <div class="history-subpanel" data-history-subpanel="audit">
       <div class="toolbar"><input id="auditSearch" type="text" autocomplete="off" placeholder="Search name, callsign, action, or by"></div><div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Date</th><th>Account</th><th>Action</th><th>By</th></tr></thead><tbody id="auditRows"><tr><td colspan="4">Loading history…</td></tr></tbody></table></div>
@@ -129,7 +129,7 @@
     </section>
     <dialog id="fullCleaningDialog" aria-labelledby="fullCleaningTitle">
       <form method="dialog" class="admin-card" style="min-width:min(440px,calc(100vw - 32px));margin:0">
-        <h2 id="fullCleaningTitle">Full Cleaning</h2><p class="muted">Choose the logs or notifications to remove from D1 and Google Sheets.</p>
+        <h2 id="fullCleaningTitle">Full Cleaning</h2><p class="muted">Cleaning removes the selected items from D1 only. Full Cleaning removes them from D1 and Google Sheets.</p>
         <label class="permission-item"><input type="checkbox" id="cleanAllLogs"><span><strong>All</strong><small>Select every log and notifications.</small></span></label>
         <div class="role-permission-groups">
           <label class="permission-item"><input type="checkbox" data-clean-log="promotion"><span><strong>Promotion</strong></span></label>
@@ -144,10 +144,13 @@
           <label class="permission-item"><input type="checkbox" data-clean-log="instructor"><span><strong>Instructor</strong></span></label>
           <label class="permission-item"><input type="checkbox" data-clean-log="account_audit"><span><strong>Account Audit</strong></span></label>
           <label class="permission-item"><input type="checkbox" data-clean-log="notifications"><span><strong>Notifications</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="do_not_promote"><span><strong>Do Not Promote</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="do_not_terminate"><span><strong>Do Not Terminate</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="discord_action"><span><strong>Discord Action Log</strong><small>D1 only; not in Google Sheets.</small></span></label>
         </div>
         <footer class="full-cleaning-footer">
           <p id="fullCleaningStatus" class="admin-status" role="status"></p>
-          <div class="admin-actions"><button type="button" id="cancelFullCleaning">Cancel</button><button type="button" id="confirmFullCleaning" class="danger">Delete selected</button></div>
+          <div class="admin-actions"><button type="button" id="cancelFullCleaning">Cancel</button><button type="button" id="confirmCleaningD1" class="danger">Cleaning</button><button type="button" id="confirmFullCleaning" class="danger">Full Cleaning</button></div>
         </footer>
       </form>
     </dialog>
@@ -159,7 +162,7 @@
 <script src="/static/rank-badges.js?v=ops-20261022-15"></script>
 <script src="/static/account-settings.js?v=ops-20261022-15"></script>
   <script src="/static/administration.js?v=discord-sync-20261029-4"></script>
-  <script src="/static/sidebar.js?v=ops-20261029-1"></script>
+  <script src="/static/sidebar.js?v=ops-20261029-3"></script>
   <script src="/static/mobile-popovers.js?v=ops-20261022-15"></script>
 <script src="/static/search-clear.js?v=ops-20261022-15" defer></script>
 <script src="/static/table-sort.js?v=ops-20261028-2"></script>
