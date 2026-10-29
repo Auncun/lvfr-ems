@@ -163,6 +163,7 @@ function permissionForRequest(route, method, data={}) {
   if((route==="/api/members"||route==="/api/members/version")&&method==="GET") return ["members_view",...TRAINING_VIEW_PERMISSIONS,"training_view","statistics_view","loi_manage","training_fort_manage","training_hert_manage","training_hours_manage","instructor_manage"];
   if(route==="/api/eligible"&&method==="GET") return ["eligible_view","promotion_access"];
   if(route==="/api/inactive"&&method==="GET") return "inactive_view";
+  if(route==="/api/discord/link-status"&&method==="GET") return ["termination_manage","rank_manage","callsign_manage","discord_view"];
   if(route==="/api/training-overdue"&&method==="GET") return "inactive_view";
   if(route==="/api/members-log"&&method==="GET") return logViewPermission(data.log_type);
   if(route==="/api/members-log/clear"&&method==="POST") return "logs_delete_d1";
@@ -671,10 +672,9 @@ async function recordActionConfirmation(db,route,data,oldMember,result,actor){
   const callsign=String(oldMember.callsign||""), name=String(oldMember.name||"");
   const rank=String(oldMember.rank||"");
   let action="", needsDiscord=0, perms="", newRank=rank, newCallsign=callsign;
-  // A member without a Discord link has nothing to change in Discord, so no Discord confirmation is asked.
-  const hasDiscordLink=["/api/demote","/api/change-callsign","/api/terminate"].includes(route)
-    ? Boolean(await db.prepare("SELECT 1 AS found FROM discord_member_links WHERE upper(callsign)=upper(?)").bind(callsign).first()) : false;
-  const discordNeeded=hasDiscordLink?1:0;
+  // The Discord item always appears in the confirmation bar after these actions, even for a member who is not linked.
+  // Before the action, only a linked member is asked about Discord (see the app's pre-action confirmation).
+  const discordNeeded=1;
   if(route==="/api/demote"){ action="Demotion"; needsDiscord=discordNeeded; perms="rank_manage"; newRank=String(result.new_rank||rank); newCallsign=String(result.new_callsign||callsign); }
   else if(route==="/api/change-callsign"){ action="Callsign change"; needsDiscord=discordNeeded; perms="callsign_manage"; newCallsign=String(result.new_callsign||data.new_callsign||callsign); }
   else if(route==="/api/terminate"){ action="Termination"; needsDiscord=discordNeeded; perms="termination_manage"; newRank="Terminated"; }
@@ -1669,6 +1669,12 @@ export async function handleD1(context) {
       await db.prepare("UPDATE discord_member_links SET discord_nickname=?, updated_at=? WHERE callsign=?").bind(nick, new Date().toISOString(), cs).run();
       await writeDiscordLog(db, actor, "nickname", cs, link.member_name, link.discord_user_id, "done", nick ? "Nickname set to " + nick + "." : "Nickname cleared.");
       return json({ ok: true, nickname: nick });
+    }
+    if (route === "/api/discord/link-status" && method === "GET") {
+      // Only whether the callsign has a Discord link; no IDs or nicknames are returned.
+      const cs = normalizeDiscordCallsign(url.searchParams.get("callsign"));
+      const link = cs ? await db.prepare("SELECT 1 AS found FROM discord_member_links WHERE callsign=?").bind(cs).first() : null;
+      return json({ linked: Boolean(link) });
     }
     if (route === "/api/discord/status" && method === "GET") {
       await requireDiscordPermission(db, token, "discord_view");
