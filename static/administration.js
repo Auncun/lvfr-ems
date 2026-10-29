@@ -184,6 +184,7 @@ function renderAudit() {
 }
 document.querySelector('#auditSearch')?.addEventListener('input', renderAudit);
 document.querySelector('#clearAccountAuditBtn')?.addEventListener('click', async event => {
+  if (!canClearAccountAudit()) return;
   const button = event.currentTarget;
   if (!currentUser?.is_admin) return;
   if (!(await lvfrConfirm({ title: "Clear Account Audit", message: "The audit is cleared from D1 and the website. Google Sheets will remain unchanged.", confirmText: "Clear", danger: true }))) return;
@@ -222,19 +223,22 @@ fullCleaningDialog?.querySelectorAll('[data-clean-log]').forEach(input => input.
   cleanAllLogs.indeterminate = options.some(option => option.checked) && !cleanAllLogs.checked;
 }));
 document.querySelector('#cancelFullCleaning')?.addEventListener('click', () => fullCleaningDialog.close());
-document.querySelector('#confirmFullCleaning')?.addEventListener('click', async event => {
+async function runCleaning(scope) {
   if (!currentUser?.is_admin) return;
+  const full = scope === 'full';
   const items = cleanAllLogs.checked ? ['all'] : [...fullCleaningDialog.querySelectorAll('[data-clean-log]:checked')].map(input => input.dataset.cleanLog);
   const status = document.querySelector('#fullCleaningStatus');
   if (!items.length) { status.textContent = 'Select at least one log or choose All.'; status.className = 'admin-status error'; return; }
   const description = cleanAllLogs.checked ? 'all logs and notifications' : `${items.length} selected item(s)`;
-  if (!(await lvfrConfirm({ title: "Permanent Delete", subject: description, message: "This is removed from D1 and Google Sheets and cannot be undone.", confirmText: "Delete", danger: true }))) return;
-  const button = event.currentTarget;
-  button.disabled = true; status.textContent = 'Cleaning selected data...'; status.className = 'admin-status';
+  const where = full ? 'D1 and Google Sheets' : 'D1 only';
+  if (!(await lvfrConfirm({ title: full ? 'Full Cleaning' : 'Cleaning', subject: description, message: `This is removed from ${where} and cannot be undone.`, confirmText: 'Delete', danger: true }))) return;
+  const buttons = [...fullCleaningDialog.querySelectorAll('.full-cleaning-footer button')];
+  buttons.forEach(button => { button.disabled = true; });
+  status.textContent = 'Cleaning selected data...'; status.className = 'admin-status';
   try {
-    await api('/api/logs/clean', { method: 'POST', body: JSON.stringify({ items }) });
+    await api('/api/logs/clean', { method: 'POST', body: JSON.stringify({ items, scope: full ? 'full' : 'd1' }) });
     const accountId = currentUser.account_id || currentUser.id || 'current';
-    const knownLogs = ['promotion','callsign','termination','training','training_time','loi','exam','note','activity','instructor'];
+    const knownLogs = ['promotion','callsign','termination','training','training_time','loi','exam','note','activity','instructor','do_not_promote','do_not_terminate'];
     try { knownLogs.forEach(kind => sessionStorage.removeItem(`lvfr.log.${accountId}.${kind}.v1`)); } catch {}
     if (items.includes('account_audit') || items.includes('all')) { overview.audit = []; renderAudit(); void loadAccounts(true); }
     if (items.includes('notifications') || items.includes('all')) {
@@ -242,14 +246,20 @@ document.querySelector('#confirmFullCleaning')?.addEventListener('click', async 
       void window.lvfrNotifications?.load();
       window.lvfrNotifications?.render();
     }
-    status.textContent = 'Selected logs and notifications were removed from D1 and Google Sheets.';
+    status.textContent = full
+      ? 'Selected logs and notifications were removed from D1 and Google Sheets.'
+      : 'Selected logs and notifications were removed from D1. Google Sheets was not changed.';
     status.className = 'admin-status success';
     window.setTimeout(() => fullCleaningDialog.close(), 1000);
   } catch (error) {
     status.textContent = `Cleanup failed: ${error.message}`;
     status.className = 'admin-status error';
-  } finally { button.disabled = false; }
-});
+  } finally {
+    buttons.forEach(button => { button.disabled = false; });
+  }
+}
+document.querySelector('#confirmFullCleaning')?.addEventListener('click', () => runCleaning('full'));
+document.querySelector('#confirmCleaningD1')?.addEventListener('click', () => runCleaning('d1'));
 async function loadAccounts(silent = false) {
   const cachedUser = window.lvfrCachedUser?.();
   currentUser = currentUser || cachedUser;
