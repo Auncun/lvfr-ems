@@ -67,7 +67,11 @@
           { label: 'Deactivated accounts', status: 'deactivated' }
         ] },
         { label: 'Access Permissions', anchor: '#permissionsHeading', availability: '#commandPermissionsSection' },
-        { label: 'History', anchor: '#auditHeading', availability: '#commandHistorySection' },
+        { label: 'History', anchor: '#auditHeading', availability: '#commandHistorySection', children: [
+          { label: 'Account Audit', anchor: '#auditHeading', availability: '#commandHistorySection', children: [
+            { label: 'Clear D1 audit', clickTarget: '#clearAccountAuditBtn', sectionAnchor: '#auditHeading' }
+          ] }
+        ] },
         { label: 'Discord', children: [
           { label: 'Sync', anchor: '#discordSyncHeading', availability: '#commandDiscordSection', children: [
             { label: 'Sync Discord Members', clickTarget: '#syncDiscordMembers', sectionAnchor: '#discordSyncHeading', availability: '#commandDiscordSection' },
