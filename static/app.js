@@ -85,42 +85,9 @@ function memberRowsFromResponse(value) {
 // API
 // ============================================================
 
-// Actions that change the Discord nickname or role. Before saving, a linked member gets a Discord confirmation;
-// a member who is not linked gets none. After saving, the confirmation bar always shows the Discord item.
-const DISCORD_PRE_CONFIRM = {
-    "/api/promote": "Promotion",
-    "/api/force-promote": "Promotion (forced)",
-    "/api/change-rank": "Rank change",
-    "/api/demote": "Demotion",
-    "/api/change-callsign": "Callsign change"
-};
-async function confirmDiscordBeforeAction(url, options) {
-    const path = new URL(url, location.href).pathname;
-    const label = DISCORD_PRE_CONFIRM[path];
-    if (!label || String(options.body || "").includes('"dry_run":true')) return true;
-    let payload = {};
-    try { payload = JSON.parse(options.body || "{}"); } catch {}
-    const callsign = String(payload.callsign || "").trim().toUpperCase();
-    if (!callsign) return true;
-    const status = await fetch(`/api/discord/link-status?callsign=${encodeURIComponent(callsign)}`)
-        .then(response => response.ok ? response.json() : { linked: false })
-        .catch(() => ({ linked: false }));
-    if (!status.linked) return true;
-    const rows = [["Portal", label]];
-    if (path === "/api/change-callsign" && payload.new_callsign) rows.push(["New callsign", String(payload.new_callsign).trim().toUpperCase()]);
-    if (payload.new_rank) rows.push(["New rank", String(payload.new_rank)]);
-    rows.push(["Discord", "The Discord nickname and role will be updated after saving."]);
-    return window.lvfrConfirm({ title: "Portal and Discord Confirmation", subject: callsign, rows, confirmText: "Continue" });
-}
-
 async function api(url, options = {}) {
-    const method = String(options.method || "GET").toUpperCase();
-    if (["POST", "PUT", "PATCH", "DELETE"].includes(method) && !(await confirmDiscordBeforeAction(url, options))) {
-        const cancelled = new Error("Cancelled.");
-        cancelled.cancelled = true;
-        throw cancelled;
-    }
     if (isBackgroundMutationRequest(url, options)) return startBackgroundMutation(url, options);
+    const method = String(options.method || "GET").toUpperCase();
     const cacheableRead = method === "GET" && new URL(url, location.href).pathname.startsWith("/api/");
     if (cacheableRead) {
         const cached = apiReadCache.get(url);
