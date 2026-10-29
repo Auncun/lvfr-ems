@@ -1385,6 +1385,10 @@ export async function handleD1(context) {
           context.waitUntil(runRankChanges(db,env,rankChanges));
         }
       }
+      // Create notifications from the fresh roster even when nobody is signed in.
+      // Visibility is still decided per user when they read the list.
+      try { await refreshD1Notifications(db,{role:"admin",account_id:"system",callsign:""}); }
+      catch(error) { console.error("Notification refresh after roster sync failed:",error); }
       return json(result);
     }
     if(route==="/internal/accounts/sync"&&method==="POST") {
@@ -2003,23 +2007,26 @@ export async function handleD1(context) {
       return response;
     }
     if(route==="/api/account/notification-preferences" && method==="GET") {
-      const rows=(await db.prepare("SELECT kind,enabled FROM notification_preferences WHERE account_id=?").bind(user.account_id).all()).results||[];
-      const saved=new Map(rows.map(row=>[row.kind,Number(row.enabled)===1]));
-      const isAdmin=String(user.role||"").toLowerCase()==="admin";
-      const role=String(user.role||"").toLowerCase();
-      const options=NOTIFICATION_PREFERENCE_KINDS.map(item=>({kind:item.kind,label:item.label,allowed:notifAllowed(user,item),enabled:saved.has(item.kind)?saved.get(item.kind):DEFAULT_ON_NOTIFICATION_KINDS.includes(item.kind)}));
+      const row=(await db.prepare("SELECT * FROM notification_preferences_wide WHERE account_id=?").bind(user.account_id).first())||{};
+      const options=NOTIFICATION_PREFERENCE_KINDS.map(item=>{
+        const stored=row[item.kind];
+        return {kind:item.kind,label:item.label,allowed:notifAllowed(user,item),enabled:stored===null||stored===undefined?DEFAULT_ON_NOTIFICATION_KINDS.includes(item.kind):Number(stored)===1};
+      });
       return json({options});
     }
     if(route==="/api/account/notification-preferences" && method==="POST") {
-      const isAdmin=String(user.role||"").toLowerCase()==="admin";
+      // One write per save, whatever the number of kinds changed. Column names come from the fixed list above.
       const requested=data.preferences&&typeof data.preferences==="object"?data.preferences:{};
-      const statements=[];
+      const columns=[],values=[];
       for(const item of NOTIFICATION_PREFERENCE_KINDS) {
-        if(!notifAllowed(user,item)) continue;
-        if(!Object.hasOwn(requested,item.kind)) continue;
-        statements.push(db.prepare("INSERT INTO notification_preferences(account_id,kind,enabled) VALUES(?,?,?) ON CONFLICT(account_id,kind) DO UPDATE SET enabled=excluded.enabled").bind(user.account_id,item.kind,requested[item.kind]?1:0));
+        if(!notifAllowed(user,item)||!Object.hasOwn(requested,item.kind)) continue;
+        columns.push(item.kind); values.push(requested[item.kind]?1:0);
       }
-      if(statements.length) await db.batch(statements);
+      if(columns.length) {
+        const now=new Date().toISOString();
+        await db.prepare(`INSERT INTO notification_preferences_wide(account_id,${columns.join(",")},updated_at) VALUES(?,${columns.map(()=>"?").join(",")},?) ON CONFLICT(account_id) DO UPDATE SET ${columns.map(c=>`${c}=excluded.${c}`).join(",")},updated_at=excluded.updated_at`)
+          .bind(user.account_id,...values,now).run();
+      }
       return json({ok:true});
     }
     if(route==="/api/notifications/clear-mine" && method==="POST") {
