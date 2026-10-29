@@ -1,3 +1,4 @@
+import { memberColumnValues, planMemberWrites, slotValues, planSlotWrites, discordLinkUnchanged } from "./roster-diff.js";
 const enc = new TextEncoder();
 const json = (body, status = 200, headers = {}) => Response.json(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
 const nowSeconds = () => Math.floor(Date.now() / 1000);
@@ -297,9 +298,10 @@ async function syncMembersFromAppsScript(env, token = "", fullSync = false) {
   if (fullSync && snapshot.skipped) throw new Error("Apps Script unexpectedly skipped the requested Full Sync.");
   return snapshot;
 }
-async function saveCallsignSlots(db, slots) {
+async function saveCallsignSlots(db, slots, fullSync = true) {
   await ensureCallsignSlotsTable(db);
   const items=Array.isArray(slots)?slots:Object.entries(slots||{}).map(([rank,v])=>typeof v==="string"?({rank,callsign:v}):({rank,...v}));
+  if (!fullSync) return diffSaveCallsignSlots(db, items);
   const rows=items.filter(v=>v&&v.callsign).map(v=>db.prepare("INSERT INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?) ON CONFLICT(rank,callsign) DO UPDATE SET sheet_row=excluded.sheet_row,synced_at=excluded.synced_at").bind(String(v.rank||""),String(v.callsign).toUpperCase(),Number(v.row)||null,new Date().toISOString()));
   await db.prepare("DELETE FROM callsign_slots").run(); if(rows.length) await db.batch(rows);
 }
@@ -313,7 +315,47 @@ async function ensureCallsignSlotsTable(db) {
     UNIQUE (callsign)
   )`).run();
 }
-async function replaceMembers(db, members, syncedAt = new Date().toISOString()) {
+// Regular sync: compare with the stored slots and write only the rows that changed.
+const SLOT_INSERT_SQL = "INSERT INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)";
+const SLOT_UPDATE_SQL = "UPDATE callsign_slots SET sheet_row=?,synced_at=? WHERE rank=? AND callsign=?";
+async function diffSaveCallsignSlots(db, items) {
+  await ensureCallsignSlotsTable(db);
+  const incoming = items.filter(v => v && v.callsign).map(slotValues);
+  const stored = (await db.prepare("SELECT rank,callsign,sheet_row FROM callsign_slots").all()).results || [];
+  const plan = planSlotWrites(stored, incoming);
+  const now = new Date().toISOString();
+  const statements = [
+    ...plan.deletes.map(row => db.prepare("DELETE FROM callsign_slots WHERE rank=? AND callsign=?").bind(row.rank, row.callsign)),
+    ...plan.updates.map(slot => db.prepare(SLOT_UPDATE_SQL).bind(slot.sheet_row, now, slot.rank, slot.callsign)),
+    ...plan.inserts.map(slot => db.prepare(SLOT_INSERT_SQL).bind(slot.rank, slot.callsign, slot.sheet_row, now)),
+  ];
+  if (statements.length) await db.batch(statements);
+}
+// One row that records when the roster was last synchronised, so the status shows the time even when no member changed.
+async function ensureRosterSyncStateTable(db) {
+  await db.prepare(`CREATE TABLE IF NOT EXISTS roster_sync_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    synced_at TEXT NOT NULL
+  )`).run();
+}
+function rosterSyncStateStatement(db, syncedAt) {
+  return db.prepare("INSERT INTO roster_sync_state(id,synced_at) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET synced_at=excluded.synced_at").bind(syncedAt);
+}
+const MEMBER_INSERT_SQL = `INSERT INTO members (callsign,name,rank,date,rank_assigned_date,days_in_rank,discord_id,notes,has_basic_firefighting,has_advanced_firefighting,has_supervisor_exam,has_hert,activity,instructor_type,do_not_promote,do_not_terminate,sheet_row,synced_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+const MEMBER_UPDATE_SQL = "UPDATE members SET name=?,rank=?,date=?,rank_assigned_date=?,days_in_rank=?,discord_id=?,notes=?,has_basic_firefighting=?,has_advanced_firefighting=?,has_supervisor_exam=?,has_hert=?,activity=?,instructor_type=?,do_not_promote=?,do_not_terminate=?,sheet_row=?,synced_at=? WHERE callsign=?";
+// Regular sync: insert, update and delete only the members that differ from the stored rows.
+async function diffReplaceMembers(db, uniqueMembers, syncedAt) {
+  await ensureRosterSyncStateTable(db);
+  const stored = (await db.prepare("SELECT * FROM members").all()).results || [];
+  const plan = planMemberWrites(stored, uniqueMembers);
+  await db.batch([
+    ...plan.deletes.map(callsign => db.prepare("DELETE FROM members WHERE callsign=?").bind(callsign)),
+    ...plan.updates.map(values => db.prepare(MEMBER_UPDATE_SQL).bind(...values.slice(1), syncedAt, values[0])),
+    ...plan.inserts.map(values => db.prepare(MEMBER_INSERT_SQL).bind(...values, syncedAt)),
+    rosterSyncStateStatement(db, syncedAt),
+  ]);
+}
+async function replaceMembers(db, members, syncedAt = new Date().toISOString(), fullSync = true) {
   // A callsign can appear twice in the Sheet roster; D1 allows it only once.
   // Keep the first row, skip the rest, and log them so the Sheet can be corrected.
   const seenCallsigns = new Set();
@@ -327,6 +369,10 @@ async function replaceMembers(db, members, syncedAt = new Date().toISOString()) 
     uniqueMembers.push(member);
   }
   if (duplicateCallsigns.length) console.warn("Roster sync skipped duplicate callsigns:", duplicateCallsigns.join(", "));
+  if (!fullSync) {
+    await diffReplaceMembers(db, uniqueMembers, syncedAt);
+    return { ok: true, members: members.length, synced_at: syncedAt };
+  }
   const statements = [db.prepare("DELETE FROM members")];
 
   for (const member of uniqueMembers) {
@@ -376,6 +422,8 @@ async function replaceMembers(db, members, syncedAt = new Date().toISOString()) 
     );
   }
 
+  await ensureRosterSyncStateTable(db);
+  statements.push(rosterSyncStateStatement(db, syncedAt));
   await db.batch(statements);
 
   return { ok: true, members: members.length, synced_at: syncedAt };
@@ -1240,20 +1288,31 @@ async function runInitialDiscordLinkSync(db, env, user) {
   }
 
   const now = new Date().toISOString(), linked = [], conflicts = [], duplicates = [], unmatchedRoster = [];
+  const linksByCallsign = new Map(), linksByUser = new Map();
+  for (const row of ((await db.prepare("SELECT callsign,discord_user_id,member_name,rank,discord_nickname,status FROM discord_member_links").all()).results || [])) {
+    linksByCallsign.set(row.callsign, row);
+    if (!linksByUser.has(String(row.discord_user_id))) linksByUser.set(String(row.discord_user_id), row);
+  }
   for (const [callsign, rosterMember] of roster) {
     const candidates = foundByCallsign.get(callsign) || [];
     if (!candidates.length) { unmatchedRoster.push({ callsign, name: rosterMember.name }); continue; }
     if (candidates.length !== 1) { duplicates.push({ callsign, count: candidates.length, users: candidates.slice(0, 5).map(candidate => candidate.username || candidate.userId) }); continue; }
     const candidate = candidates[0];
     if (!/^\d{17,20}$/.test(candidate.userId)) { conflicts.push({ callsign, reason: "Discord returned an invalid user ID" }); continue; }
-    const byCallsign = await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE callsign=?").bind(callsign).first();
-    const byUser = await db.prepare("SELECT callsign FROM discord_member_links WHERE discord_user_id=?").bind(candidate.userId).first();
+    const byCallsign = linksByCallsign.get(callsign);
+    const byUser = linksByUser.get(String(candidate.userId));
     if ((byCallsign && String(byCallsign.discord_user_id) !== candidate.userId) || (byUser && normalizeDiscordCallsign(byUser.callsign) !== callsign)) {
       conflicts.push({ callsign, user: candidate.username, reason: "Existing Discord mapping conflicts with the discovered match" }); continue;
     }
+    if (discordLinkUnchanged(byCallsign, candidate, rosterMember)) {
+      linked.push({ callsign, name: rosterMember.name, rank: rosterMember.rank, user: candidate.username || candidate.userId });
+      continue;
+    }
     await db.prepare(`INSERT INTO discord_member_links(callsign,discord_user_id,member_name,rank,discord_nickname,status,pending_callsign,pending_rank,pending_update_roles,last_error,last_synced_at,created_at,updated_at)
       VALUES(?,?,?,?,?,'linked','','',0,'','',?,?)
-      ON CONFLICT(callsign) DO UPDATE SET member_name=excluded.member_name,rank=excluded.rank,discord_nickname=excluded.discord_nickname,updated_at=excluded.updated_at
+      ON CONFLICT(callsign) DO UPDATE SET member_name=excluded.member_name,rank=excluded.rank,discord_nickname=excluded.discord_nickname,updated_at=excluded.updated_at,
+        status=CASE WHEN discord_member_links.status='left' THEN 'linked' ELSE discord_member_links.status END,
+        last_error=CASE WHEN discord_member_links.status='left' THEN '' ELSE discord_member_links.last_error END
       WHERE discord_member_links.discord_user_id=excluded.discord_user_id`)
       .bind(callsign, candidate.userId, String(rosterMember.name || ""), String(rosterMember.rank || ""), String(candidate.nick || ""), now, now).run();
     linked.push({ callsign, name: rosterMember.name, rank: rosterMember.rank, user: candidate.username || candidate.userId });
@@ -1295,12 +1354,13 @@ export async function handleD1(context) {
       const callsignMoves=planDiscordCallsignMoves(linkRows,data.members);
       // Training flags before the replacement, so only members whose ops eligibility changed get a Discord update.
       const trainingBefore=new Map(((await db.prepare("SELECT callsign,name,rank,has_hert,has_basic_firefighting,has_advanced_firefighting FROM members").all()).results||[]).map(row=>[normalizeDiscordCallsign(row.callsign),row]));
-      const result=await replaceMembers(db,data.members);
+      const fullSync=data.full_sync!==false;
+      const result=await replaceMembers(db,data.members,undefined,fullSync);
       if(callsignMoves.length) {
         await moveDiscordLinks(db,callsignMoves);
         context.waitUntil(runDiscordCallsignMoves(db,env,callsignMoves));
       }
-      if(data.callsign_slots||data.available_callsigns) await saveCallsignSlots(db,data.callsign_slots||data.available_callsigns);
+      if(data.callsign_slots||data.available_callsigns) await saveCallsignSlots(db,data.callsign_slots||data.available_callsigns,fullSync);
       if(trainingBefore.size) {
         const trainingAfter=new Map(((await db.prepare("SELECT callsign,name,rank,has_hert,has_basic_firefighting,has_advanced_firefighting FROM members").all()).results||[]).map(row=>[normalizeDiscordCallsign(row.callsign),row]));
         const opsChanges=[];
@@ -2228,7 +2288,8 @@ export async function handleD1(context) {
       return json(viewableMembers?memberRows.filter(row=>viewableMembers.includes(row.rank)):memberRows);
     }
     if(route==="/api/sync-status" && method==="GET") {
-      const snapshot=await db.prepare("SELECT COUNT(*) AS members,COALESCE(MAX(synced_at),'') AS synced_at FROM members").first();
+      await ensureRosterSyncStateTable(db);
+      const snapshot=await db.prepare("SELECT COUNT(*) AS members,COALESCE((SELECT synced_at FROM roster_sync_state WHERE id=1),(SELECT MAX(synced_at) FROM members),'') AS synced_at FROM members").first();
       return json({synced_at:snapshot?.synced_at||null,members:Number(snapshot?.members||0),sync_running:false,sync_last_source:"",sync_last_success:snapshot?.synced_at||null,sync_error:null,auto_sync_enabled:false,auto_sync_interval_seconds:0,google_write:{running:false,pending:0,last_error:null,last_success:snapshot?.synced_at||null},archive:{enabled:true,status:"idle",pending:0,last_error:null,last_success:snapshot?.synced_at||null}});
     }
     if(route==="/api/config" && method==="GET") {
