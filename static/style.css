@@ -1359,3 +1359,8 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 .lvfr-form-field small { font-size:11px; }
 .lvfr-choice-list { display:grid; gap:8px; margin:8px 0; }
 .lvfr-choice-list button { width:100%; text-align:left; }
+
+.lvfr-discord-block { display:grid; gap:8px; padding:10px 12px; border:1px solid #303945; border-radius:8px; }
+.lvfr-discord-title { margin:0; font-weight:600; }
+.lvfr-radio { display:flex; gap:8px; align-items:center; cursor:pointer; }
+.lvfr-error { margin:0; color:#f85149; font-size:13px; }
