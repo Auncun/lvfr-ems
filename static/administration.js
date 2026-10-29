@@ -3,7 +3,13 @@ const accountRows = document.querySelector('#accountRows');
 const auditRows = document.querySelector('#auditRows');
 const countEl = document.querySelector('#accountCount');
 let overview = { approved: [], pending: [], deactivated: [], audit: [] };
-let selectedStatus = 'all';
+const accountStatusKey = 'lvfr.accounts.status';
+const accountStatuses = ['all', 'pending', 'approved', 'deactivated'];
+let selectedStatus = (() => { try { const saved = sessionStorage.getItem(accountStatusKey); return accountStatuses.includes(saved) ? saved : 'all'; } catch { return 'all'; } })();
+function setSelectedStatus(status) {
+  selectedStatus = accountStatuses.includes(status) ? status : 'all';
+  try { sessionStorage.setItem(accountStatusKey, selectedStatus); } catch {}
+}
 let currentUser = null;
 let rolePermissionsLoaded = false;
 let rolePermissionsLoadPromise = null;
@@ -1140,10 +1146,11 @@ document.querySelector('#accountRows').addEventListener('click', event => {
   if (button) performAction(button);
 });
 document.querySelectorAll('.admin-tabs button').forEach(button => button.addEventListener('click', () => {
-  selectedStatus = button.dataset.status;
+  setSelectedStatus(button.dataset.status);
   document.querySelectorAll('.admin-tabs button').forEach(tab => tab.setAttribute('aria-pressed', String(tab === button)));
   renderAccounts();
 }));
+document.querySelectorAll('.admin-tabs button').forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.status === selectedStatus)));
 document.querySelector('#accountSearch').addEventListener('input', renderAccounts);
 document.querySelector('#refreshAccounts').addEventListener('click', loadAccounts);
 window.setInterval(() => { if (!document.hidden) void loadAccounts(true); }, 30000);
@@ -1153,7 +1160,7 @@ window.lvfrOpenNotification = async id => {
   if (!item) return;
   await window.lvfrNotifications.markRead([id]);
   if (item.kind === 'request') {
-    selectedStatus = 'pending';
+    setSelectedStatus('pending');
     document.querySelectorAll('.admin-tabs button').forEach(tab => tab.setAttribute('aria-pressed', String(tab.dataset.status === 'pending')));
     renderAccounts();
     document.querySelector('#accountsHeading')?.scrollIntoView({ behavior: 'smooth' });
@@ -1208,58 +1215,6 @@ function selectCommandSectionFromHash() {
 }
 window.addEventListener('hashchange', selectCommandSectionFromHash);
 selectCommandSectionFromHash();
-
-const discordStatus = document.querySelector('#discordSyncStatus');
-const discordReport = document.querySelector('#discordSyncReport');
-const discordReportText = document.querySelector('#discordSyncReportText');
-function showDiscordReport(value) {
-  if (!discordReport || !discordReportText) return;
-  discordReport.hidden = false;
-  discordReportText.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-}
-async function refreshDiscordStatus() {
-  if (!discordStatus) return;
-  discordStatus.className = 'admin-status';
-  discordStatus.textContent = 'Loading Discord synchronization status…';
-  try {
-    const status = await api('/api/discord/status');
-    discordStatus.className = 'admin-status success';
-    discordStatus.textContent = `Linked: ${status.linked} · Failed: ${status.failed} · Pending: ${status.pending} · Total mappings: ${status.total}`;
-  } catch (error) {
-    discordStatus.className = 'admin-status error';
-    discordStatus.textContent = error.message;
-  }
-}
-document.querySelector('#syncDiscordMembers')?.addEventListener('click', async event => {
-  const button = event.currentTarget;
-  if (!(await lvfrConfirm({ title: "Sync Discord Members", message: "Refresh the roster from Google Sheets and link Discord members by exact callsign? This initial sync will not change Discord nicknames or roles.", confirmText: "Sync" }))) return;
-  button.disabled = true;
-  if (discordStatus) { discordStatus.className = 'admin-status'; discordStatus.textContent = 'Refreshing the roster and scanning Discord members…'; }
-  if (discordReport) discordReport.hidden = true;
-  try {
-    const result = await api('/api/discord/sync', { method: 'POST', body: '{}' });
-    showDiscordReport(result);
-    if (discordStatus) { discordStatus.className = 'admin-status success'; discordStatus.textContent = result.message || 'Initial Discord linking completed.'; }
-    await refreshDiscordStatus();
-  } catch (error) {
-    if (discordStatus) { discordStatus.className = 'admin-status error'; discordStatus.textContent = error.message; }
-    showDiscordReport({ error: error.message });
-  } finally { button.disabled = false; }
-});
-document.querySelector('#retryDiscordUpdates')?.addEventListener('click', async event => {
-  const button = event.currentTarget;
-  button.disabled = true;
-  if (discordStatus) { discordStatus.className = 'admin-status'; discordStatus.textContent = 'Queueing failed Discord updates…'; }
-  try {
-    const result = await api('/api/discord/retry', { method: 'POST', body: '{}' });
-    if (discordStatus) { discordStatus.className = 'admin-status success'; discordStatus.textContent = result.message || 'Retry request accepted.'; }
-    showDiscordReport(result);
-    window.setTimeout(() => { void refreshDiscordStatus(); }, 1500);
-  } catch (error) {
-    if (discordStatus) { discordStatus.className = 'admin-status error'; discordStatus.textContent = error.message; }
-  } finally { button.disabled = false; }
-});
-document.querySelector('#refreshDiscordStatus')?.addEventListener('click', () => void refreshDiscordStatus());
 loadAccounts();
 // Discord permissions on this page, and the disabled-reason display used by every Discord button here.
 function canUseDiscord() { return currentUser?.role === 'admin' || currentUser?.permissions?.discord_view === true; }
@@ -1402,6 +1357,93 @@ disabledReasonObserver.observe(document.body, { subtree: true, childList: true, 
   document.querySelector('[data-command-section="discord"]')?.addEventListener('click', () => refreshAll().catch(() => {}));
 })();
 
+// Discord page wiring: the Sync / Retry / Refresh buttons and the sync report.
+const discordStatus = document.querySelector('#discordSyncStatus');
+const discordReport = document.querySelector('#discordSyncReport');
+const discordReportText = document.querySelector('#discordSyncReportText');
+const reportLabels = {
+  roster_members: 'Roster members', processed: 'Discord members scanned', linked_count: 'Linked in this run',
+  total_linked: 'Total linked', left_count: 'Left the server', unmatched_roster_count: 'Roster members not found on Discord',
+  unmatched_discord_count: 'Discord members with no callsign', malformed_count: 'Malformed entries',
+  duplicate_count: 'Duplicates', conflict_count: 'Conflicts', error: 'Error',
+  unmatched_roster: 'Roster members not found on Discord', unmatched_discord: 'Discord members with no callsign',
+  malformed: 'Malformed entries', duplicates: 'Duplicates', conflicts: 'Conflicts',
+};
+const hiddenReportKeys = ['ok', 'message', 'ops_role_check', 'ops_role_message'];
+const humanizeKey = key => key.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+function reportItemText(item) {
+  if (item === null || typeof item !== 'object') return String(item ?? '');
+  return Object.entries(item).filter(([, v]) => v !== null && v !== '' && typeof v !== 'object')
+    .map(([k, v]) => `${humanizeKey(k)}: ${v}`).join(' · ');
+}
+function showDiscordReport(value) {
+  if (!discordReport || !discordReportText) return;
+  discordReport.hidden = false;
+  discordReportText.replaceChildren();
+  if (typeof value === 'string') { discordReportText.textContent = value; return; }
+  const rows = document.createElement('dl');
+  const lists = [];
+  Object.entries(value || {}).filter(([key]) => !hiddenReportKeys.includes(key)).forEach(([key, raw]) => {
+    const label = reportLabels[key] || humanizeKey(key);
+    if (Array.isArray(raw)) { if (raw.length) lists.push([label, raw]); return; }
+    if (raw !== null && typeof raw === 'object') { lists.push([label, [raw]]); return; }
+    const dt = document.createElement('dt'); dt.textContent = label;
+    const dd = document.createElement('dd');
+    dd.textContent = typeof raw === 'boolean' ? (raw ? 'Yes' : 'No') : String(raw ?? '');
+    rows.append(dt, dd);
+  });
+  discordReportText.append(rows);
+  lists.forEach(([label, items]) => {
+    const heading = document.createElement('h4'); heading.textContent = label;
+    const ul = document.createElement('ul');
+    items.forEach(item => { const li = document.createElement('li'); li.textContent = reportItemText(item) || '—'; ul.append(li); });
+    discordReportText.append(heading, ul);
+  });
+}
+async function refreshDiscordStatus() {
+  if (!discordStatus) return;
+  discordStatus.className = 'admin-status';
+  discordStatus.textContent = 'Loading Discord synchronization status…';
+  try {
+    const status = await api('/api/discord/status');
+    discordStatus.className = 'admin-status success';
+    discordStatus.textContent = `Linked: ${status.linked} · Failed: ${status.failed} · Pending: ${status.pending} · Total mappings: ${status.total}`;
+  } catch (error) {
+    discordStatus.className = 'admin-status error';
+    discordStatus.textContent = error.message;
+  }
+}
+document.querySelector('#syncDiscordMembers')?.addEventListener('click', async event => {
+  const button = event.currentTarget;
+  if (!(await lvfrConfirm({ title: "Sync Discord Members", message: "Refresh the roster from Google Sheets and link Discord members by exact callsign? This initial sync will not change Discord nicknames or roles.", confirmText: "Sync" }))) return;
+  button.disabled = true;
+  if (discordStatus) { discordStatus.className = 'admin-status'; discordStatus.textContent = 'Refreshing the roster and scanning Discord members…'; }
+  if (discordReport) discordReport.hidden = true;
+  try {
+    const result = await api('/api/discord/sync', { method: 'POST', body: '{}' });
+    showDiscordReport(result);
+    if (discordStatus) { discordStatus.className = 'admin-status success'; discordStatus.textContent = [result.message, result.ops_role_message].filter(Boolean).join(' ') || 'Initial Discord linking completed.'; }
+    await refreshDiscordStatus();
+  } catch (error) {
+    if (discordStatus) { discordStatus.className = 'admin-status error'; discordStatus.textContent = error.message; }
+    showDiscordReport({ error: error.message });
+  } finally { button.disabled = false; }
+});
+document.querySelector('#retryDiscordUpdates')?.addEventListener('click', async event => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  if (discordStatus) { discordStatus.className = 'admin-status'; discordStatus.textContent = 'Queueing failed Discord updates…'; }
+  try {
+    const result = await api('/api/discord/retry', { method: 'POST', body: '{}' });
+    if (discordStatus) { discordStatus.className = 'admin-status success'; discordStatus.textContent = result.message || 'Retry request accepted.'; }
+    showDiscordReport(result);
+    window.setTimeout(() => { void refreshDiscordStatus(); }, 1500);
+  } catch (error) {
+    if (discordStatus) { discordStatus.className = 'admin-status error'; discordStatus.textContent = error.message; }
+  } finally { button.disabled = false; }
+});
+document.querySelector('#refreshDiscordStatus')?.addEventListener('click', () => void refreshDiscordStatus());
+
 // Sidebar links for the new Discord pages: load their data when opened, and run a Discord button clicked from another page.
 (() => {
   const openSection = () => {
@@ -1435,6 +1477,11 @@ disabledReasonObserver.observe(document.body, { subtree: true, childList: true, 
     const view = { '#discordSyncHeading': 'discord', '#linkedMembersHeading': 'links', '#discordLogHeading': 'log' }[location.hash];
     if (view) markActive(view);
   });
-  const initial = { '#discordSyncHeading': 'discord', '#linkedMembersHeading': 'links', '#discordLogHeading': 'log' }[location.hash];
-  if (initial) markActive(initial);
+  const visibleView = () => {
+    if (!document.querySelector('#commandLinksSection')?.hidden) return 'links';
+    if (!document.querySelector('#commandLogSection')?.hidden) return 'log';
+    return 'discord';
+  };
+  window.addEventListener('lvfr:view-changed', () => markActive(visibleView()));
+  markActive(visibleView());
 })();
