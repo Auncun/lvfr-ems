@@ -223,7 +223,7 @@ function startBackgroundMutation(url, options) {
         if (path === "/api/terminate" && result.sheet_cleaned === false) toast(`Member terminated, but Google Sheets training cleanup failed: ${result.sheet_cleanup_error || "run cleanup manually"}.`);
         if (["/api/promote", "/api/force-promote", "/api/demote", "/api/change-rank", "/api/change-callsign"].includes(path)) {
             if (result.discord_sync === "pending") toast("Roster saved. Discord synchronization has been queued.");
-            else if (result.discord_sync === "not_linked") toast("Roster saved. This member is not linked to Discord yet; run Sync Discord Members in Operation Command.");
+            // "not_linked" is intentionally silent: members without a Discord link need no notice on every roster change.
             else if (result.discord_sync === "unavailable") toast(result.discord_sync_message || "Roster saved, but Discord synchronization could not be queued.");
         }
         if (path === "/api/training") toast(result.message || `${payload.training} ${result.changed ? (payload.remove ? "removed" : "added") : "already in that state"}.`);
