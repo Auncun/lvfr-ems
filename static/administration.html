@@ -22,6 +22,12 @@
     #fullCleaningDialog{max-width:calc(100vw - 28px);max-height:calc(100dvh - 28px);padding:0;border:1px solid #394555;border-radius:14px;background:#111720;color:#f3f6fa}#fullCleaningDialog::backdrop{background:#000a}#fullCleaningDialog form{max-height:calc(100dvh - 30px);overflow:auto}.full-cleaning-footer{position:sticky;bottom:0;z-index:2;margin:12px -20px -20px;padding:12px 20px max(12px,env(safe-area-inset-bottom));border-top:1px solid #303945;background:#111720}.full-cleaning-footer .admin-status{margin:0 0 8px}.full-cleaning-footer .admin-actions{margin:0}
     /* Phone: these three lists keep a plain table, one line per row, scrolling sideways (same as the Permission log). */
     @media(max-width:650px){.admin-table-wrap:has(.plain-table){overflow-x:auto;width:100%;-webkit-overflow-scrolling:touch}.admin-table.plain-table{display:table;min-width:720px;width:auto}.admin-table.plain-table thead{display:table-header-group}.admin-table.plain-table tbody{display:table-row-group}.admin-table.plain-table tbody tr{display:table-row;padding:0;border:0;border-radius:0;background:transparent}.admin-table.plain-table td,.admin-table.plain-table th{display:table-cell;white-space:nowrap;padding:8px 10px!important;border:0!important;border-bottom:1px solid #303945!important}.admin-table.plain-table td::before{content:none;display:none}.admin-table.plain-table td:first-child,.admin-table.plain-table td:last-child{grid-column:auto}}
+    .discord-report-body dl { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 16px; margin:0; }
+    .discord-report-body dt { color:var(--muted, #9aa4b2); }
+    .discord-report-body dd { margin:0; font-weight:600; text-align:end; }
+    .discord-report-body h4 { margin:14px 0 6px; }
+    .discord-report-body ul { margin:0; padding-inline-start:18px; overflow-wrap:anywhere; }
+    .discord-report-body li { margin:3px 0; }
   </style>
 </head>
 <body>
@@ -80,7 +86,7 @@
         <button type="button" id="refreshDiscordStatus">Refresh Status</button>
       </div>
       <p id="discordSyncStatus" class="admin-status" role="status" aria-live="polite">Discord status has not been loaded.</p>
-      <div id="discordSyncReport" class="admin-card" hidden><h3>Synchronization Report</h3><pre id="discordSyncReportText" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin:0"></pre></div>
+      <div id="discordSyncReport" class="admin-card" hidden><h3>Synchronization Report</h3><div id="discordSyncReportText" class="discord-report-body"></div></div>
       <p class="muted">Required Cloudflare configuration: DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, and DISCORD_ROLE_MAP. The bot needs Manage Nicknames and Manage Roles, and the Server Members Intent must be enabled for initial member discovery.</p>
         </section>
     <section id="commandPermissionsSection" class="admin-card permissions-card command-section" aria-labelledby="permissionsHeading" hidden>
@@ -153,7 +159,7 @@
   <script src="/static/notifications.js?v=ops-20261022-15"></script>
 <script src="/static/rank-badges.js?v=ops-20261022-15"></script>
 <script src="/static/account-settings.js?v=ops-20261022-15"></script>
-  <script src="/static/administration.js?v=discord-sync-20261029-2"></script>
+  <script src="/static/administration.js?v=discord-sync-20261029-3"></script>
   <script src="/static/sidebar.js?v=ops-20261029-1"></script>
   <script src="/static/mobile-popovers.js?v=ops-20261022-15"></script>
 <script src="/static/search-clear.js?v=ops-20261022-15" defer></script>
