@@ -79,7 +79,7 @@
       <div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Account</th><th>Callsign</th><th>Status</th><th>Role</th><th>Presence</th><th>Created</th><th>Actions</th></tr></thead><tbody id="accountRows"><tr><td colspan="7">Loading accounts…</td></tr></tbody></table></div>
     </section>
     <section id="commandDiscordSection" class="admin-card command-section" aria-labelledby="discordSyncHeading" hidden>
-      <div class="admin-header"><div><h2 id="discordSyncHeading">Discord Synchronization</h2><p class="muted">Link roster callsigns to Discord User IDs once. Initial linking does not change any Discord nickname or role.</p></div></div>
+      <div class="admin-header"><div><h2 id="discordSyncHeading">Discord Synchronization</h2></div></div>
       <div class="admin-actions">
         <button type="button" id="syncDiscordMembers" class="primary">Sync Discord Members</button>
         <button type="button" id="retryDiscordUpdates">Retry Failed Discord Updates</button>
@@ -87,7 +87,6 @@
       </div>
       <p id="discordSyncStatus" class="admin-status" role="status" aria-live="polite">Discord status has not been loaded.</p>
       <div id="discordSyncReport" class="admin-card" hidden><h3>Synchronization Report</h3><div id="discordSyncReportText" class="discord-report-body"></div></div>
-      <p class="muted">Required Cloudflare configuration: DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, and DISCORD_ROLE_MAP. The bot needs Manage Nicknames and Manage Roles, and the Server Members Intent must be enabled for initial member discovery.</p>
         </section>
     <section id="commandPermissionsSection" class="admin-card permissions-card command-section" aria-labelledby="permissionsHeading" hidden>
       <div class="admin-header permissions-heading"><div><h2 id="permissionsHeading">Access Permissions</h2><p class="muted">Operation Command access manages role permission profiles. Separate permissions control adding, renaming, reordering, and deleting ranks below your own. Only Operation manages accounts and individual permissions.</p></div></div>
@@ -159,7 +158,7 @@
   <script src="/static/notifications.js?v=ops-20261022-15"></script>
 <script src="/static/rank-badges.js?v=ops-20261022-15"></script>
 <script src="/static/account-settings.js?v=ops-20261022-15"></script>
-  <script src="/static/administration.js?v=discord-sync-20261029-3"></script>
+  <script src="/static/administration.js?v=discord-sync-20261029-4"></script>
   <script src="/static/sidebar.js?v=ops-20261029-1"></script>
   <script src="/static/mobile-popovers.js?v=ops-20261022-15"></script>
 <script src="/static/search-clear.js?v=ops-20261022-15" defer></script>
