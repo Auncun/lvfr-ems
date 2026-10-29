@@ -118,4 +118,52 @@
     input.focus();
     input.select();
   });
+
+  // Confirmation BEFORE termination: the callsign to type and an optional reason. A linked member also chooses the Discord action;
+  // a member who is not linked is not asked about Discord at all.
+  // Resolves { reason, discordAction } ("" when not linked) or null.
+  const normalizeCallsignText = value => String(value ?? '').replace(/[٠-٩۰-۹]/g, d => String(d.charCodeAt(0) % 16)).replace(/[^\p{L}\p{N}]/gu, '').toUpperCase();
+  window.lvfrTerminateCard = ({ callsign = '', name = '', rank = '', linked = false } = {}) => new Promise(resolve => {
+    const discordBlock = linked
+      ? `<div class="lvfr-discord-block">
+          <p class="lvfr-discord-title">Discord action (this member is linked)</p>
+          <label class="lvfr-radio"><input type="radio" name="discordAction" value="kick"><span>Kick from the Discord server</span></label>
+          <label class="lvfr-radio"><input type="radio" name="discordAction" value="remove_roles"><span>Remove job roles and clear nickname</span></label>
+          <label class="lvfr-radio"><input type="radio" name="discordAction" value="none"><span>Clear nickname only</span></label>
+          <small class="muted">Every option removes the Discord link. The roster termination is not undone.</small>
+        </div>`
+      : '';
+    const dialog = makeCard('Portal Confirmation', `
+      <h3>${esc(callsign)}${name ? ` · ${esc(name)}` : ''}${rank ? ` · ${esc(rank)}` : ''}</h3>
+      <p class="promotion-note">Terminating clears the member's active data and cannot be undone here.</p>
+      <form method="dialog" class="lvfr-form">
+        <label class="lvfr-form-field"><span>Type the callsign ${esc(callsign)} to confirm</span><input type="text" autocomplete="off" data-typed></label>
+        <label class="lvfr-form-field"><span>Termination reason (optional)</span><input type="text" autocomplete="off" data-reason></label>
+        ${discordBlock}
+        <p class="lvfr-error" data-error hidden></p>
+        <div class="confirm-actions"><button type="button" data-confirm-cancel>Cancel</button><button type="submit" class="danger">Terminate</button></div>
+      </form>`);
+    const finish = mountCard(dialog, resolve, null);
+    const typed = dialog.querySelector('[data-typed]');
+    const reason = dialog.querySelector('[data-reason]');
+    const error = dialog.querySelector('[data-error]');
+    const showError = message => { error.textContent = message; error.hidden = false; };
+    dialog.querySelector('form').addEventListener('submit', event => {
+      event.preventDefault();
+      if (normalizeCallsignText(typed.value) !== normalizeCallsignText(callsign)) return showError(`The callsign did not match. Type ${callsign} to confirm.`);
+      const choice = dialog.querySelector('input[name="discordAction"]:checked');
+      if (linked && !choice) return showError('Choose what to do in Discord.');
+      finish({ reason: reason.value.trim(), discordAction: linked ? choice.value : '' });
+    });
+    typed.focus();
+  });
+
+  // Confirmation bar AFTER the action: shows the result for Portal and for Discord, even when the member is not linked.
+  window.lvfrResultCard = ({ title = 'Confirmation', subject = '', rows = [], message = '', confirmText = 'OK' } = {}) => new Promise(resolve => {
+    const dialog = makeCard(title, `${subjectHtml(subject, message)}
+      ${rows.length ? `<table class="promotion-table">${rows.map(([label, value]) => `<tr><th>${esc(label)}</th><td>${esc(value)}</td></tr>`).join('')}</table>` : ''}
+      <div class="confirm-actions"><button type="button" class="promotion-save" data-confirm-ok>${esc(confirmText)}</button></div>`);
+    const finish = mountCard(dialog, resolve, undefined);
+    dialog.addEventListener('click', event => { if (event.target.closest('[data-confirm-ok]')) finish(true); });
+  });
 })();
