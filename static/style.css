@@ -1376,3 +1376,47 @@ th.sort-desc::after { content:" \25BC"; opacity:1 }
 }
 .lvfr-discord-block .lvfr-radio > span { display:inline; flex:1 1 auto; color:inherit; font-size:14px; }
 .lvfr-discord-block { align-items:stretch; }
+
+/* Phone: the Manage panel stacks as one column. Each section keeps its label, select, and buttons side by side with the reason under each button. */
+@media (max-width: 700px) {
+    #modalContent .manage-main-row,
+    #modalContent .manage-action-row {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        width: 100%;
+    }
+    #modalContent .manage-main-row > label,
+    #modalContent .manage-main-row > div,
+    #modalContent .manage-action-row > div {
+        width: 100%;
+        min-width: 0;
+    }
+    #modalContent .manage-main-row select { width: 100%; }
+    #modalContent .training-actions,
+    #modalContent .activity-actions,
+    #modalContent .instructor-admin-buttons {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 8px;
+        width: 100%;
+    }
+    #modalContent .action-cell {
+        flex: 1 1 140px;
+        min-width: 0;
+        max-width: 100%;
+    }
+    #modalContent .action-cell > button { width: 100%; }
+    #modalContent .action-cell > .disabled-reason { max-width: none; }
+    #modalContent hr { margin: 6px 0; }
+}
+
+/* Phone: Linked members and the Discord action log stay as one row per member, scrolling sideways inside the table. */
+@media (max-width: 700px) {
+    .admin-table-wrap table { min-width: 720px; }
+    .admin-table-wrap tr { display: table-row; }
+    .admin-table-wrap th,
+    .admin-table-wrap td { white-space: nowrap; padding: 8px 10px; }
+}
