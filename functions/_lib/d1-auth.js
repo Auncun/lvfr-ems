@@ -2559,3 +2559,4 @@ async function doNotListRows(db, env, user, kind, flag) {
     return { callsign, name, rank, added_at: hit?.log_date || "", added_by: hit?.changed_by || "" };
   });
 }
+
