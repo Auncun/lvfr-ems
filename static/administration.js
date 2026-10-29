@@ -1,60 +1,3 @@
-// Shared confirmation card: the same look as the Portal and Discord Confirmation card.
-(() => {
-  if (!document.getElementById('lvfr-confirm-style')) {
-    const style = document.createElement('style');
-    style.id = 'lvfr-confirm-style';
-    style.textContent = `
-      .lvfr-confirm-dialog { width:min(92vw,560px); max-height:92vh; padding:0; border:0; background:transparent; color:inherit; overflow:visible; }
-      .lvfr-confirm-dialog::backdrop { background:rgba(4,8,14,.72); backdrop-filter:blur(3px); }
-      .lvfr-confirm-dialog .promotion-box { width:100%; margin:0; }
-      .lvfr-confirm-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; margin-top:14px; }
-      .lvfr-confirm-actions button { min-width:96px; }
-    `;
-    document.head.append(style);
-  }
-
-  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-  window.lvfrConfirm = ({ title = 'Confirmation', subject = '', rows = [], message = '', confirmText = 'Confirm', cancelText = 'Cancel', danger = false } = {}) => new Promise(resolve => {
-    const dialog = document.createElement('dialog');
-    dialog.className = 'lvfr-confirm-dialog';
-    dialog.innerHTML = `<div class="promotion-box" role="document">
-      <div class="promotion-head">
-        <h2>${esc(title)}</h2>
-        <button type="button" class="promotion-close" data-confirm-cancel aria-label="Close">&times;</button>
-      </div>
-      <div class="promotion-body">
-        <section class="promotion-item">
-          ${subject ? `<h3>${esc(subject)}</h3>` : ''}
-          ${rows.length ? `<table class="promotion-table">${rows.map(([label, value]) => `<tr><th>${esc(label)}</th><td>${esc(value)}</td></tr>`).join('')}</table>` : ''}
-          ${message ? `<p class="promotion-note">${esc(message)}</p>` : ''}
-          <div class="lvfr-confirm-actions">
-            <button type="button" data-confirm-cancel>${esc(cancelText)}</button>
-            <button type="button" class="${danger ? 'danger' : 'promotion-save'}" data-confirm-ok>${esc(confirmText)}</button>
-          </div>
-        </section>
-      </div>
-    </div>`;
-
-    let answered = false;
-    const finish = answer => {
-      if (answered) return;
-      answered = true;
-      dialog.close();
-      dialog.remove();
-      resolve(answer);
-    };
-    dialog.addEventListener('click', event => {
-      if (event.target.closest('[data-confirm-ok]')) finish(true);
-      else if (event.target === dialog || event.target.closest('[data-confirm-cancel]')) finish(false);
-    });
-    dialog.addEventListener('cancel', event => { event.preventDefault(); finish(false); });
-    document.body.append(dialog);
-    dialog.showModal();
-    dialog.querySelector('[data-confirm-ok]')?.focus();
-  });
-})();
-
 const messageEl = document.querySelector('#adminMessage');
 const accountRows = document.querySelector('#accountRows');
 const auditRows = document.querySelector('#auditRows');
@@ -1451,4 +1394,47 @@ disabledReasonObserver.observe(document.body, { subtree: true, childList: true, 
       note('Discord action log cleared.', 'success');
       await loadLog();
     } catch (error) {
-      note(error.message || 'Could not clear the log.', '
+      note(error.message || 'Could not clear the log.', 'error');
+    }
+  });
+
+  document.querySelector('#refreshLinkedMembers')?.addEventListener('click', () => refreshAll().catch(error => note(error.message, 'error')));
+  document.querySelector('[data-command-section="discord"]')?.addEventListener('click', () => refreshAll().catch(() => {}));
+})();
+
+// Sidebar links for the new Discord pages: load their data when opened, and run a Discord button clicked from another page.
+(() => {
+  const openSection = () => {
+    if (location.hash === '#linkedMembersHeading') document.querySelector('#refreshLinkedMembers')?.click();
+    if (location.hash === '#discordLogHeading') document.querySelector('#refreshLinkedMembers')?.click();
+  };
+  window.addEventListener('hashchange', openSection);
+  const pending = sessionStorage.getItem('lvfr.sidebar.pending-click');
+  if (pending) {
+    sessionStorage.removeItem('lvfr.sidebar.pending-click');
+    setTimeout(() => document.querySelector(pending)?.click(), 600);
+  }
+})();
+
+// Discord sub-navigation shown inside the Discord tab: Sync, Linked members, Discord action log.
+(() => {
+  const views = [['discord', 'Sync'], ['links', 'Linked members'], ['log', 'Discord action log']];
+  const nav = `<nav class="role-tab-bar discord-subtabs" aria-label="Discord sections">${views.map(([key, label]) =>
+    `<button type="button" class="role-tab" data-discord-view="${key}">${label}</button>`).join('')}</nav>`;
+  ['#commandDiscordSection', '#commandLinksSection', '#commandLogSection'].forEach(selector => {
+    const section = document.querySelector(selector);
+    section?.querySelector('.admin-header')?.insertAdjacentHTML('beforebegin', nav);
+  });
+  const markActive = view => document.querySelectorAll('[data-discord-view]').forEach(button =>
+    button.classList.toggle('active', button.dataset.discordView === view));
+  document.querySelectorAll('[data-discord-view]').forEach(button => button.addEventListener('click', () => {
+    showCommandSection(button.dataset.discordView, true);
+    markActive(button.dataset.discordView);
+  }));
+  window.addEventListener('hashchange', () => {
+    const view = { '#discordSyncHeading': 'discord', '#linkedMembersHeading': 'links', '#discordLogHeading': 'log' }[location.hash];
+    if (view) markActive(view);
+  });
+  const initial = { '#discordSyncHeading': 'discord', '#linkedMembersHeading': 'links', '#discordLogHeading': 'log' }[location.hash];
+  if (initial) markActive(initial);
+})();
