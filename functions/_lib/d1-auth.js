@@ -168,7 +168,7 @@ function permissionForRequest(route, method, data={}) {
   if(route==="/api/training-overdue"&&method==="GET") return "inactive_view";
   if(route==="/api/members-log"&&method==="GET") return logViewPermission(data.log_type);
   if(route==="/api/members-log/clear"&&method==="POST") return "logs_delete_d1";
-  if(route==="/api/logs/clean"&&method==="POST") return "logs_clean_full";
+  if(route==="/api/logs/clean"&&method==="POST") return String(data?.scope||"").toLowerCase()==="d1"?"logs_delete_d1":"logs_clean_full";
   if(route==="/api/promotions"&&method==="GET") return "promotion_log_view";
   if(route==="/api/training-log"&&method==="GET") return "training_log_view";
   if(route==="/api/exam-log"&&method==="GET") return "exam_log_view";
@@ -2072,24 +2072,31 @@ export async function handleD1(context) {
       return json({ok:true,kind});
     }
     if(route==="/api/logs/clean" && method==="POST") {
-      const allowed=["promotion","callsign","termination","training","training_time","loi","exam","note","activity","instructor","account_audit","notifications"];
+      const allowed=["promotion","callsign","termination","training","training_time","loi","exam","note","activity","instructor","account_audit","notifications","do_not_promote","do_not_terminate","discord_action"];
+      // "d1": removes from D1 only. "full": removes from D1 and the Google Sheet.
+      const scope=String(data.scope||"full").toLowerCase()==="d1"?"d1":"full";
       const selected=[...new Set((Array.isArray(data.items)?data.items:[]).map(value=>String(value||"").trim().toLowerCase()))];
       const kinds=selected.includes("all")?allowed:selected;
       if(!kinds.length||kinds.some(kind=>!allowed.includes(kind))) throw Object.assign(new Error("Choose valid log categories."),{status:400});
-      const assertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
-      const {proxyToAppsScript}=await import("../[[path]].js");
-      const mirror=await proxyToAppsScript(context,"/internal/logs/clear",url,assertion,{items:kinds});
-      const mirrorResult=await mirror.json().catch(()=>({}));
-      if(!mirror.ok||mirrorResult.ok!==true) throw Object.assign(new Error("Google Sheets cleanup failed: "+String(mirrorResult.detail||mirrorResult.error||"mirror failed")),{status:502});
+      // The Discord action log exists only in D1, so it is never sent to the Sheet.
+      const sheetKinds=kinds.filter(kind=>kind!=="discord_action");
+      if(scope==="full"&&sheetKinds.length) {
+        const assertion=env.LVFR_D1_AUTH_BRIDGE_SECRET?await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET):"";
+        const {proxyToAppsScript}=await import("../[[path]].js");
+        const mirror=await proxyToAppsScript(context,"/internal/logs/clear",url,assertion,{items:sheetKinds});
+        const mirrorResult=await mirror.json().catch(()=>({}));
+        if(!mirror.ok||mirrorResult.ok!==true) throw Object.assign(new Error("Google Sheets cleanup failed: "+String(mirrorResult.detail||mirrorResult.error||"mirror failed")),{status:502});
+      }
       const statements=[];
       for(const kind of kinds) {
-        if(kind==="notifications") statements.push(db.prepare("DELETE FROM notification_hidden"),db.prepare("DELETE FROM notification_reads"),db.prepare("DELETE FROM notifications"));
+        if(kind==="notifications") statements.push(db.prepare("DELETE FROM notification_hidden"),db.prepare("DELETE FROM notification_reads"),db.prepare("DELETE FROM account_notification_marks"),db.prepare("DELETE FROM notifications"));
         else if(kind==="account_audit") statements.push(db.prepare("DELETE FROM account_audit"));
         else if(kind==="training_time") statements.push(db.prepare("DELETE FROM training_hours_log"));
+        else if(kind==="discord_action") statements.push(db.prepare("DELETE FROM discord_action_log"));
         else statements.push(db.prepare("DELETE FROM operational_logs WHERE kind=?").bind(kind));
       }
       if(statements.length) await db.batch(statements);
-      return json({ok:true,items:kinds});
+      return json({ok:true,items:kinds,scope});
     }
     const directLogKind={"/api/promotions":"promotion","/api/training-log":"training","/api/exam-log":"exam","/api/termination-log":"termination"}[route];
     if((route==="/api/members-log"||directLogKind) && method==="GET") {
