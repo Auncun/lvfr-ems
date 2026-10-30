@@ -1,4 +1,4 @@
-﻿const message = document.querySelector('#authMessage');
+const message = document.querySelector('#authMessage');
 const loginForm = document.querySelector('#loginForm');
 const signupForm = document.querySelector('#signupForm');
 try {
@@ -68,21 +68,67 @@ signupForm.addEventListener('submit', event => { event.preventDefault(); submitA
 // The sign-up form is a separate panel so a new user can find it immediately.
 const signupPanel = document.querySelector('#signupPanel');
 const authSwitch = document.querySelector('.auth-switch');
+const forgotPanel = document.querySelector('#forgotPanel');
+const forgotForm = document.querySelector('#forgotForm');
+const resetForm = document.querySelector('#resetForm');
 function showAuthPanel(panel) {
-  const signingUp = panel === 'signup';
-  loginForm.hidden = signingUp;
-  authSwitch.hidden = signingUp;
-  signupPanel.hidden = !signingUp;
+  loginForm.hidden = panel !== 'login';
+  authSwitch.hidden = panel !== 'login';
+  signupPanel.hidden = panel !== 'signup';
+  forgotPanel.hidden = panel !== 'forgot';
   message.textContent = '';
   message.className = 'auth-message';
-  (signingUp ? signupForm.querySelector('input[name="name"]') : loginForm.querySelector('input[name="name"]'))?.focus();
+  const first = { login: loginForm, signup: signupForm, forgot: forgotForm }[panel]?.querySelector('input[name="name"]');
+  first?.focus();
 }
 document.querySelector('#showSignup').addEventListener('click', () => showAuthPanel('signup'));
 document.querySelector('#showLogin').addEventListener('click', () => showAuthPanel('login'));
+document.querySelector('#showForgot').addEventListener('click', () => showAuthPanel('forgot'));
+document.querySelector('#forgotBack').addEventListener('click', () => { resetForm.reset(); resetForm.hidden = true; showAuthPanel('login'); });
 document.querySelectorAll('[data-show-password]').forEach(toggle => {
   toggle.addEventListener('change', () => {
-    const password = toggle.closest('form').querySelector('input[name="password"]');
+    const password = toggle.closest('form').querySelector('input[name="password"], input[name="new_password"]');
     password.type = toggle.checked ? 'text' : 'password';
   });
+});
+async function postAuth(route, body) {
+  const response = await fetch(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.detail || 'Could not complete the request.');
+  return result;
+}
+// Forgot password: step 1 asks the bot for a code, step 2 sends the code with a new password.
+forgotForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = forgotForm.querySelector('button[type="submit"]');
+  const name = String(new FormData(forgotForm).get('name') || '').trim().replace(/\s+/g, ' ');
+  button.disabled = true;
+  message.className = 'auth-message';
+  message.textContent = 'Sending…';
+  try {
+    const result = await postAuth('/auth/forgot', { name });
+    resetForm.elements.name.value = name;
+    resetForm.hidden = false;
+    message.textContent = result.message + ' If nothing arrives, allow direct messages from server members in Discord, or ask a Commander to reset your password.';
+    message.className = 'auth-message success';
+    resetForm.querySelector('input[name="code"]').focus();
+  } catch (error) { message.textContent = error.message; } finally { button.disabled = false; }
+});
+resetForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = resetForm.querySelector('button[type="submit"]');
+  const fields = Object.fromEntries(new FormData(resetForm));
+  button.disabled = true;
+  message.className = 'auth-message';
+  message.textContent = 'Changing password…';
+  try {
+    const result = await postAuth('/auth/reset', fields);
+    resetForm.reset();
+    resetForm.hidden = true;
+    forgotForm.reset();
+    showAuthPanel('login');
+    message.textContent = result.message;
+    message.className = 'auth-message success';
+  } catch (error) { message.textContent = error.message; } finally { button.disabled = false; }
 });
 if (window.lvfrSessionToken()) checkAccount().catch(() => {});
