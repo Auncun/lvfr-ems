@@ -86,7 +86,7 @@
     }).catch(() => {});
   };
   sendPresence();
-  window.setInterval(sendPresence, 60000);
+  window.setInterval(sendPresence, 120000);
   document.addEventListener('visibilitychange', sendPresence);
 
   window.fetch = (input, init = {}) => {
