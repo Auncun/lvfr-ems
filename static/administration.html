@@ -65,6 +65,7 @@
       <button type="button" class="command-tab" data-command-section="permissions">Access Permissions</button>
       <button type="button" class="command-tab" data-command-section="history">History</button>
       <button type="button" class="command-tab" data-command-section="discord">Discord</button>
+      <button type="button" class="command-tab" data-command-section="mirror">Sheets Sync</button>
     </nav>
     <section id="commandAccountsSection" class="admin-card command-section" aria-labelledby="accountsHeading">
       <div class="admin-header"><div><h2 id="accountsHeading">Accounts</h2><p class="muted">Choose the account role here; role capabilities are managed in Access Permissions.</p></div><button type="button" class="list-refresh" id="refreshAccounts" aria-label="Refresh accounts" title="Refresh accounts"><span aria-hidden="true" class="list-refresh-glyph">⟳</span></button></div>
@@ -88,6 +89,16 @@
       <p id="discordSyncStatus" class="admin-status" role="status" aria-live="polite">Discord status has not been loaded.</p>
       <div id="discordSyncReport" class="admin-card" hidden><h3>Synchronization Report</h3><div id="discordSyncReportText" class="discord-report-body"></div></div>
         </section>
+    <section id="commandMirrorSection" class="admin-card command-section" aria-labelledby="mirrorQueueHeading" hidden>
+      <div class="admin-header"><div><h2 id="mirrorQueueHeading">Google Sheets sync queue</h2><p class="muted">Changes saved in D1 that Google Sheets did not receive. Nothing is retried automatically. A retry writes the old change to the Sheet, so check each row first; it can overwrite a newer value there.</p></div></div>
+      <div class="admin-actions">
+        <button type="button" id="mirrorRetryAll" class="primary">Retry all</button>
+        <button type="button" id="mirrorDiscardAll" class="danger">Discard all</button>
+        <button type="button" id="mirrorRefresh">Refresh</button>
+      </div>
+      <p id="mirrorQueueStatus" class="admin-status" role="status" aria-live="polite">The queue has not been loaded.</p>
+      <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Saved</th><th>Type</th><th>Tries</th><th>Last error</th><th>Change</th><th>Actions</th></tr></thead><tbody id="mirrorQueueRows"></tbody></table></div>
+    </section>
     <section id="commandPermissionsSection" class="admin-card permissions-card command-section" aria-labelledby="permissionsHeading" hidden>
       <div class="admin-header permissions-heading"><div><h2 id="permissionsHeading">Access Permissions</h2><p class="muted">Operation Command access manages role permission profiles. Separate permissions control adding, renaming, reordering, and deleting ranks below your own. Only Operation manages accounts and individual permissions.</p></div></div>
       <nav class="role-tab-bar permission-subtabs" aria-label="Permission type"><button type="button" class="role-tab active" data-permission-subtab="rank">Rank Permission</button><button type="button" class="role-tab" data-permission-subtab="personal">Personal Permission</button></nav>
@@ -161,7 +172,7 @@
   <script src="/static/notifications.js?v=ops-20261022-15"></script>
 <script src="/static/rank-badges.js?v=ops-20261022-15"></script>
 <script src="/static/account-settings.js?v=ops-20261022-15"></script>
-  <script src="/static/administration.js?v=discord-sync-20261029-4"></script>
+  <script src="/static/administration.js?v=password-reset-20261030-1"></script>
   <script src="/static/sidebar.js?v=ops-20261029-3"></script>
   <script src="/static/mobile-popovers.js?v=ops-20261022-15"></script>
 <script src="/static/search-clear.js?v=ops-20261022-15" defer></script>
