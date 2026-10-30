@@ -19,7 +19,7 @@
     .auth-form[hidden]{display:none!important}
     .auth-form input{width:100%;box-sizing:border-box}.auth-form .check{display:flex;align-items:center;gap:8px}
     .auth-form .check input{width:auto}.auth-message{min-height:20px;color:#ff8178;font-size:13px}
-    .auth-switch{margin-top:22px;padding-top:18px;border-top:1px solid #303945;display:grid;gap:10px}.auth-switch p{margin:0;color:#9aa4b2;font-size:14px}.auth-switch button,.auth-back{width:100%;min-height:44px;font-size:15px;font-weight:600}.auth-subtitle{margin:22px 0 6px;font-size:18px}.auth-back{margin-top:12px;background:transparent;border:1px solid #3d4854;color:#c9d1d9}#signupPanel{margin-top:4px;padding-top:4px}.auth-message.success{color:#56d364}.auth-message.notice{padding:10px 12px;border:1px solid #8d6b18;border-radius:8px;background:#2a210c;color:#ffd866}.auth-note{font-size:12px;color:#8b949e;line-height:1.4}
+    .auth-switch{margin-top:22px;padding-top:18px;border-top:1px solid #303945;display:grid;gap:10px}.auth-switch p{margin:0;color:#9aa4b2;font-size:14px}.auth-switch button,.auth-back{width:100%;min-height:44px;font-size:15px;font-weight:600}.auth-subtitle{margin:22px 0 6px;font-size:18px}.auth-back{margin-top:12px;background:transparent;border:1px solid #3d4854;color:#c9d1d9}#signupPanel{margin-top:4px;padding-top:4px}.auth-message.success{color:#56d364}.auth-message.notice{padding:10px 12px;border:1px solid #8d6b18;border-radius:8px;background:#2a210c;color:#ffd866}.auth-note{font-size:12px;color:#8b949e;line-height:1.4}.auth-forgot{justify-self:start;padding:0;min-height:0;background:none;border:0;color:#8cc8ff;font-size:13px;cursor:pointer}#forgotPanel{margin-top:4px;padding-top:4px}
   </style>
 </head>
 <body>
@@ -33,6 +33,7 @@
       <label class="check"><input type="checkbox" data-show-password> Show password</label>
       <label class="check"><input type="checkbox" name="remember_me"> Remember me on this device</label>
       <button type="submit" class="primary">Sign in</button>
+      <button type="button" id="showForgot" class="auth-forgot">Forgot your password?</button>
     </form>
     <div class="auth-links"><a href="/about.html">About this portal</a><a href="/privacy.html">Privacy policy</a></div>
     <div class="auth-switch">
@@ -50,9 +51,25 @@
       </form>
       <button type="button" id="showLogin" class="secondary auth-back">Back to sign in</button>
     </div>
+    <div id="forgotPanel" hidden>
+      <h2 class="auth-subtitle">Reset your password</h2>
+      <p class="auth-note">Enter your name. If your account is linked to Discord, the LVFR bot sends you a 6-digit code by direct message. Discord must allow direct messages from server members. If no code arrives, ask a Commander to reset your password.</p>
+      <form id="forgotForm" class="auth-form">
+        <label>Name<input name="name" minlength="2" maxlength="48" autocomplete="username" required></label>
+        <button type="submit" class="primary">Send code on Discord</button>
+      </form>
+      <form id="resetForm" class="auth-form" hidden>
+        <input type="hidden" name="name">
+        <label>6-digit code<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label>
+        <label>New password<input name="new_password" type="password" minlength="4" maxlength="20" pattern="[A-Za-z0-9]{4,20}" autocomplete="new-password" required></label>
+        <label class="check"><input type="checkbox" data-show-password> Show password</label>
+        <button type="submit" class="primary">Change password</button>
+      </form>
+      <button type="button" id="forgotBack" class="secondary auth-back">Back to sign in</button>
+    </div>
     <div id="authMessage" class="auth-message" role="status"></div>
   </main>
   <script src="/static/session-auth.js?v=shared-session-7"></script>
-  <script src="/static/login.js?v=signup-visible-20261009-1"></script>
+  <script src="/static/login.js?v=forgot-password-20261030-1"></script>
 </body>
 </html>
