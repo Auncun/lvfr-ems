@@ -680,6 +680,10 @@ async function sendDiscordDirectMessage(env, discordUserId, content) {
 async function linkedDiscordUser(db, callsign) {
   return db.prepare("SELECT discord_user_id FROM discord_member_links WHERE upper(callsign)=upper(?) AND status IN ('linked','pending')").bind(callsign).first();
 }
+// Why a code was not sent goes to the Discord action log, which only staff can open.
+function resetCodeLog(db, account, discordUserId, detail) {
+  return writeDiscordLog(db, { name: "Password reset" }, "Password reset code sent", account.callsign, account.name, discordUserId, "failed", detail).catch(() => {});
+}
 // The answer never says whether the name exists or is linked, and all the work after the
 // address check runs after the response, so nobody can learn which accounts are linked.
 function forgotPassword(context, db, env, request, data) {
@@ -690,11 +694,11 @@ function forgotPassword(context, db, env, request, data) {
       const account = await db.prepare("SELECT account_id,name,callsign FROM accounts WHERE name_key=? AND status='approved'").bind(key).first();
       if (!account) return;
       const link = await linkedDiscordUser(db, account.callsign);
-      if (!link) return;
+      if (!link) { await resetCodeLog(db, account, "", "No Discord link with status linked for this callsign, so no code was sent."); return; }
       const now = nowSeconds();
       const existing = await db.prepare("SELECT request_count,window_started_at FROM password_reset_codes WHERE account_id=?").bind(account.account_id).first();
       const inWindow = existing && now - existing.window_started_at < 3600;
-      if (inWindow && existing.request_count >= RESET_MAX_REQUESTS_PER_HOUR) return;
+      if (inWindow && existing.request_count >= RESET_MAX_REQUESTS_PER_HOUR) { await resetCodeLog(db, account, link.discord_user_id, "No code was sent: 3 requests in the last hour."); return; }
       const code = resetCode(), hash = await resetCodeHash(env, account.account_id, code);
       await db.prepare(`INSERT INTO password_reset_codes(account_id,code_hash,expires_at,attempts,request_count,window_started_at,requested_at) VALUES(?,?,?,0,?,?,?)
         ON CONFLICT(account_id) DO UPDATE SET code_hash=excluded.code_hash,expires_at=excluded.expires_at,attempts=0,request_count=excluded.request_count,window_started_at=excluded.window_started_at,requested_at=excluded.requested_at`)
@@ -704,11 +708,16 @@ function forgotPassword(context, db, env, request, data) {
         await writeDiscordLog(db, { name: "Password reset" }, "Password reset code sent", account.callsign, account.name, link.discord_user_id, "done", "A reset code was sent by direct message.");
       } catch (error) {
         await db.prepare("UPDATE password_reset_codes SET expires_at=0 WHERE account_id=?").bind(account.account_id).run();
-        await writeDiscordLog(db, { name: "Password reset" }, "Password reset code sent", account.callsign, account.name, link.discord_user_id, "failed",
-          "Discord did not deliver the message. The member may block direct messages from server members, or the bot is not configured.").catch(() => {});
+        await resetCodeLog(db, account, link.discord_user_id, "Discord did not deliver the message (the member may block direct messages from server members). " + String(error?.message || error).slice(0, 160));
         console.error("Password reset direct message failed:", String(error?.message || error).slice(0, 200));
       }
-    } catch (error) { console.error("Password reset request failed:", String(error?.message || error).slice(0, 200)); }
+    } catch (error) {
+      console.error("Password reset request failed:", String(error?.message || error).slice(0, 200));
+      try {
+        const known = key ? await db.prepare("SELECT name,callsign FROM accounts WHERE name_key=? AND status='approved'").bind(key).first() : null;
+        if (known) await resetCodeLog(db, known, "", "The code could not be created: " + String(error?.message || error).slice(0, 160) + " (is migration 0029 applied?)");
+      } catch {}
+    }
   })());
   return { ok: true, message: "If this account is linked to Discord, a 6-digit code was sent to it by direct message. It expires in 10 minutes." };
 }
