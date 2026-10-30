@@ -663,7 +663,10 @@ async function resetCodeHash(env, accountId, code) {
 }
 // Counts requests per client address in the sign-in attempts table (10 per 10 minutes by default).
 async function throttleByAddress(db, request, scope, max = 10, windowSeconds = 600) {
-  const key = await sha256(`${scope}-ip:${request.headers.get("CF-Connecting-IP") || "unknown"}`), now = nowSeconds();
+  return throttleCounter(db, `${scope}-ip:${request.headers.get("CF-Connecting-IP") || "unknown"}`, max, windowSeconds);
+}
+async function throttleCounter(db, rawKey, max, windowSeconds) {
+  const key = await sha256(rawKey), now = nowSeconds();
   const row = await db.prepare("SELECT window_started_at,attempts FROM auth_login_attempts WHERE login_key=?").bind(key).first();
   if (row && now - row.window_started_at < windowSeconds) {
     if (row.attempts >= max) throw Object.assign(new Error("Too many requests. Wait a few minutes and try again."), { status: 429 });
@@ -759,6 +762,100 @@ async function resetPasswordWithCode(context, db, env, request, data) {
     } catch (error) { console.error("Password change notice failed:", String(error?.message || error).slice(0, 200)); }
   })());
   return { ok: true, message: "Password changed. Sign in with your new password." };
+}
+// ---- Change the Discord ID from Account Settings ------------------------------
+// Three proofs: the site password, a nickname in the LVFR server that starts with the
+// account's own callsign, and a code the bot sends to the NEW Discord account.
+const DISCORD_CHANGE_COOLDOWN_SECONDS = 86400;
+async function discordChangeHash(env, accountId, newId, code) {
+  const key = String(env.LVFR_D1_AUTH_BRIDGE_SECRET || env.LVFR_D1_WORKER_SECRET || "");
+  const text = `discord:${accountId}:${newId}:${code}`;
+  return key ? hmac(key, text) : sha256(text);
+}
+// Checks the new ID against the server and the callsign. Used when the code is requested and again when it is confirmed.
+async function checkNewDiscordId(db, env, callsign, newId) {
+  if (!/^\d{17,20}$/.test(newId)) throw Object.assign(new Error("Enter a valid Discord User ID (17 to 20 digits)."), { status: 400 });
+  const taken = await db.prepare("SELECT callsign FROM discord_member_links WHERE discord_user_id=? AND callsign<>?").bind(newId, callsign).first();
+  if (taken) throw Object.assign(new Error("This Discord User ID is already linked to another member."), { status: 409 });
+  const { guildId } = discordConfig(env);
+  let guildMember;
+  try { guildMember = await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(newId)}`); }
+  catch { throw Object.assign(new Error("This Discord User ID was not found in the LVFR Discord server."), { status: 400 }); }
+  const nickname = String(guildMember?.nick || "");
+  const parsed = parseDiscordNickname(nickname);
+  if (!parsed || parsed.callsign !== callsign) throw Object.assign(new Error("Callsign doesn't match"), { status: 400 });
+  return { nickname };
+}
+async function startDiscordIdChange(context, db, env, request, user, data) {
+  const member = await resolveAccountMember(db, env, user);
+  if (!member) throw Object.assign(new Error("Member not found."), { status: 404 });
+  const callsign = String(member.callsign || "").trim().toUpperCase(), newId = String(data.discord_user_id || "").trim();
+  const account = await db.prepare("SELECT password_salt,password_hash FROM accounts WHERE account_id=?").bind(user.account_id).first();
+  if (!account || await passwordHash(String(data.current_password || ""), account.password_salt) !== account.password_hash) {
+    // Wrong passwords are counted, so a stolen session cannot guess the password here (5 tries per 10 minutes).
+    await throttleCounter(db, `discord-password:${user.account_id}`, 5, 600);
+    throw Object.assign(new Error("Current password is incorrect."), { status: 400 });
+  }
+  const link = await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE callsign=?").bind(callsign).first();
+  if (link && String(link.discord_user_id) === newId) throw Object.assign(new Error("This Discord User ID is already linked to your account."), { status: 400 });
+  const now = nowSeconds();
+  const row = await db.prepare("SELECT request_count,window_started_at,last_changed_at FROM discord_change_codes WHERE account_id=?").bind(user.account_id).first();
+  if (row && row.last_changed_at && now - row.last_changed_at < DISCORD_CHANGE_COOLDOWN_SECONDS) throw Object.assign(new Error("Your Discord ID was changed in the last 24 hours. Try again tomorrow, or ask a Commander."), { status: 429 });
+  const inWindow = row && now - row.window_started_at < 3600;
+  if (inWindow && row.request_count >= RESET_MAX_REQUESTS_PER_HOUR) throw Object.assign(new Error("Too many codes were requested. Try again in an hour."), { status: 429 });
+  await checkNewDiscordId(db, env, callsign, newId);
+  const code = resetCode(), hash = await discordChangeHash(env, user.account_id, newId, code);
+  await db.prepare(`INSERT INTO discord_change_codes(account_id,new_discord_id,code_hash,expires_at,attempts,request_count,window_started_at,requested_at)
+    VALUES(?,?,?,?,0,?,?,?)
+    ON CONFLICT(account_id) DO UPDATE SET new_discord_id=excluded.new_discord_id,code_hash=excluded.code_hash,expires_at=excluded.expires_at,attempts=0,request_count=excluded.request_count,window_started_at=excluded.window_started_at,requested_at=excluded.requested_at`)
+    .bind(user.account_id, newId, hash, now + RESET_CODE_SECONDS, inWindow ? row.request_count + 1 : 1, inWindow ? row.window_started_at : now, now).run();
+  try {
+    await sendDiscordDirectMessage(env, newId, `LVFR EMS Discord link code: **${code}**\nIt expires in 10 minutes. Enter it in Account Settings to link this Discord account to callsign ${callsign}. Never share it. If you did not ask for it, ignore this message.`);
+  } catch (error) {
+    await db.prepare("UPDATE discord_change_codes SET expires_at=0,code_hash='' WHERE account_id=?").bind(user.account_id).run();
+    console.error("Discord link code message failed:", String(error?.message || error).slice(0, 200));
+    throw Object.assign(new Error("The bot could not send a message to that Discord account. Allow direct messages from server members in Discord, then try again."), { status: 400 });
+  }
+  return { ok: true, message: "A 6-digit code was sent to that Discord account by direct message. It expires in 10 minutes." };
+}
+async function confirmDiscordIdChange(context, db, env, request, user, data) {
+  const member = await resolveAccountMember(db, env, user);
+  if (!member) throw Object.assign(new Error("Member not found."), { status: 404 });
+  const callsign = String(member.callsign || "").trim().toUpperCase();
+  await throttleCounter(db, `discord-confirm:${user.account_id}`, 10, 600);
+  const invalid = () => Object.assign(new Error("The code is incorrect or has expired. Request a new code."), { status: 400 });
+  const code = String(data.code || "").trim();
+  if (!/^\d{6}$/.test(code)) throw invalid();
+  const row = await db.prepare("SELECT new_discord_id,code_hash,expires_at,attempts FROM discord_change_codes WHERE account_id=?").bind(user.account_id).first();
+  const now = nowSeconds();
+  if (!row || !row.code_hash || row.expires_at <= now || row.attempts >= RESET_MAX_CODE_TRIES) throw invalid();
+  const newId = String(row.new_discord_id);
+  if (await discordChangeHash(env, user.account_id, newId, code) !== row.code_hash) {
+    const attempts = row.attempts + 1;
+    await db.prepare("UPDATE discord_change_codes SET attempts=?,expires_at=CASE WHEN ?>=? THEN 0 ELSE expires_at END WHERE account_id=?").bind(attempts, attempts, RESET_MAX_CODE_TRIES, user.account_id).run();
+    throw invalid();
+  }
+  // The server and the nickname may have changed since the code was sent, so they are checked again.
+  const { nickname } = await checkNewDiscordId(db, env, callsign, newId);
+  const spent = await db.prepare("UPDATE discord_change_codes SET code_hash='',expires_at=0,last_changed_at=? WHERE account_id=? AND code_hash=? AND expires_at>?").bind(now, user.account_id, row.code_hash, now).run();
+  if (!spent.meta?.changes) throw invalid();
+  const previous = await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE callsign=?").bind(callsign).first();
+  const stamp = new Date().toISOString();
+  await db.prepare(`INSERT INTO discord_member_links(callsign,discord_user_id,member_name,rank,discord_nickname,status,created_at,updated_at)
+    VALUES(?,?,?,?,?,'linked',?,?)
+    ON CONFLICT(callsign) DO UPDATE SET discord_user_id=excluded.discord_user_id,member_name=excluded.member_name,rank=excluded.rank,discord_nickname=excluded.discord_nickname,status='linked',last_error='',last_synced_at=excluded.updated_at,updated_at=excluded.updated_at`)
+    .bind(callsign, newId, String(member.name || ""), String(member.rank || ""), nickname, stamp, stamp).run();
+  const oldId = previous?.discord_user_id ? String(previous.discord_user_id) : "";
+  await writeDiscordLog(db, user, oldId ? "edit" : "link", callsign, member.name, newId, "done", oldId ? `Changed by the member after a code check: ${oldId} to ${newId}.` : `Linked by the member after a code check: ${newId}.`);
+  await db.prepare("INSERT INTO account_audit(created_at,account_id,name,callsign,action,actor_name) VALUES(?,?,?,?,?,?)").bind(stamp, user.account_id, user.name, callsign, "discord_id_changed", user.name).run();
+  if (env.LVFR_D1_AUTH_BRIDGE_SECRET) context.waitUntil(mirrorToSheetInBackground(context, "Account audit", "/internal/logs/mirror", new URL(request.url), "", { kind: "account_audit", account_id: user.account_id, name: user.name, callsign, action: "discord_id_changed", actor_name: user.name }));
+  context.waitUntil((async () => {
+    try {
+      if (oldId && oldId !== newId) await sendDiscordDirectMessage(env, oldId, `Your LVFR EMS account ${callsign} was linked to a different Discord account. If this was not you, tell a Commander now.`);
+      await sendDiscordDirectMessage(env, newId, `This Discord account is now linked to LVFR EMS callsign ${callsign}.`);
+    } catch (error) { console.error("Discord link notice failed:", String(error?.message || error).slice(0, 200)); }
+  })());
+  return { ok: true, discord_user_id: newId };
 }
 async function login(db, data) {
   const name = nameKey(data.username || data.name), password = String(data.password || "");
@@ -2565,30 +2662,9 @@ export async function handleD1(context) {
     if(route==="/api/do-not-terminate" && method==="GET") return json(await doNotListRows(db,env,user,"do_not_terminate","do_not_terminate"));
     if(route==="/api/do-not-promote" && method==="GET") return json(await doNotListRows(db,env,user,"do_not_promote","do_not_promote"));
     if(route==="/api/instructors" && method==="GET") return json((await readMembers(db,"",env,await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET))).flatMap(row=>String(row.instructor_type||"").toUpperCase().split(/\s*\/\s*/).filter(type=>(type==="HERT"&&user.permissions.hert_instructor_view)||(type==="FORT"&&user.permissions.fort_instructor_view)).map(type=>({name:row.name,type,date:""}))));
-    if(route==="/api/account/discord-id" && method==="POST") {
-      const member=await resolveAccountMember(db,env,user);
-      if(!member) throw Object.assign(new Error("Member not found."),{status:404});
-      const discordId=String(data.discord_user_id||"").trim();
-      if(!/^\d{17,20}$/.test(discordId)) throw Object.assign(new Error("Enter a valid Discord User ID (17 to 20 digits)."),{status:400});
-      const memberCallsign=String(member.callsign||"").trim().toUpperCase();
-      const taken=await db.prepare("SELECT callsign FROM discord_member_links WHERE discord_user_id=? AND callsign<>?").bind(discordId,memberCallsign).first();
-      if(taken) throw Object.assign(new Error("This Discord User ID is already linked to another member."),{status:409});
-      // The ID must belong to a member of the LVFR Discord server, so an arbitrary number cannot be linked.
-      const { guildId } = discordConfig(env);
-      let guildMember;
-      try { guildMember = await discordRequest(env,`/guilds/${guildId}/members/${encodeURIComponent(discordId)}`); }
-      catch { throw Object.assign(new Error("This Discord User ID was not found in the LVFR Discord server."),{status:400}); }
-      // The Discord nickname must start with the account's own callsign, so nobody can claim another member's Discord account.
-      const nickname = String(guildMember?.nick || "");
-      const parsedNick = parseDiscordNickname(nickname);
-      if (!parsedNick || parsedNick.callsign !== memberCallsign) throw Object.assign(new Error("Callsign doesn't match"),{status:400});
-      const stamp=new Date().toISOString();
-      await db.prepare(`INSERT INTO discord_member_links(callsign,discord_user_id,member_name,rank,discord_nickname,status,created_at,updated_at)
-        VALUES(?,?,?,?,?,'linked',?,?)
-        ON CONFLICT(callsign) DO UPDATE SET discord_user_id=excluded.discord_user_id,member_name=excluded.member_name,rank=excluded.rank,discord_nickname=excluded.discord_nickname,status='linked',last_error='',last_synced_at=excluded.updated_at,updated_at=excluded.updated_at`)
-        .bind(memberCallsign,discordId,String(member.name||""),String(member.rank||""),nickname,stamp,stamp).run();
-      return json({ok:true,discord_user_id:discordId});
-    }
+    if(route==="/api/account/discord-id/start" && method==="POST") return json(await startDiscordIdChange(context,db,env,request,user,data));
+    if(route==="/api/account/discord-id/confirm" && method==="POST") return json(await confirmDiscordIdChange(context,db,env,request,user,data));
+    if(route==="/api/account/discord-id" && method==="POST") throw Object.assign(new Error("Changing the Discord ID now needs a verification code. Use Account Settings and follow the steps."),{status:400});
     const memberRoute=route.match(/^\/api\/member\/([^/]+)$/);
     if(route==="/api/account/profile" && method==="GET") {
       const member=await resolveAccountMember(db,env,user);
