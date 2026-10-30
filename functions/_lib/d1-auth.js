@@ -857,6 +857,10 @@ async function confirmDiscordIdChange(context, db, env, request, user, data) {
   })());
   return { ok: true, discord_user_id: newId };
 }
+// Presence: the page sends a heartbeat every 120 s, D1 writes at most once per 100 s per account,
+// and an account counts as online for 180 s after its last write. D1 charges every row written
+// (an index counts as an extra row), so this keeps the online list inside the free daily limit.
+const PRESENCE_WRITE_GAP_SECONDS = 100, PRESENCE_ONLINE_SECONDS = 180;
 async function login(db, data) {
   const name = nameKey(data.username || data.name), password = String(data.password || "");
   const loginKey = await sha256(name), now = nowSeconds();
@@ -1001,7 +1005,7 @@ function requireRankPermission(actor,key) {
 async function leaders(db, actor) {
   const rows = await db.prepare("SELECT account_id,name,callsign,status,role,permissions_override_json,created_at,activated_at,approved_by,admin_changed_at,admin_changed_by FROM accounts WHERE status NOT IN ('removed','denied') ORDER BY created_at DESC").all();
   const audit = await db.prepare("SELECT id,created_at,account_id,name,callsign,action,actor_name,actor_name AS by FROM account_audit ORDER BY id DESC LIMIT 200").all();
-  const online = await db.prepare("SELECT account_id,last_seen FROM account_presence WHERE last_seen>?").bind(nowSeconds() - 90).all();
+  const online = await db.prepare("SELECT account_id,last_seen FROM account_presence WHERE last_seen>?").bind(nowSeconds() - PRESENCE_ONLINE_SECONDS).all();
   const on = new Set((online.results || []).map(x => x.account_id));
   const accounts = (rows.results || []).map(({ permissions_override_json, ...row }) => ({ ...row, permission_overrides: actor.role === "admin" ? parsePermissionOverrides(permissions_override_json) : undefined, id: row.account_id, display_name: row.name, requested_at: row.created_at, linked_at: row.created_at, approved_at: row.activated_at, is_admin: row.role === "admin", is_commander: row.role === "commander", is_elevated: ["admin","commander"].includes(row.role), online: row.status === "approved" && on.has(row.account_id) }));
   return { approved: accounts.filter(x => x.status === "approved"), pending: accounts.filter(x => x.status === "pending"), deactivated: accounts.filter(x => x.status === "deactivated"), audit: audit.results || [], online_count: accounts.filter(x => x.online).length };
@@ -2800,13 +2804,13 @@ export async function handleD1(context) {
       return json(result);
     }
     // Only the heartbeat writes presence, and only when the stored value is older
-    // than 45 s. Writing on every request (the members view polls every 3 s)
+    // than 100 s. Writing on every request (the members view polls every 3 s)
     // consumed D1 rows for no benefit.
     if (route==="/api/presence" && method==="POST") {
-      await db.prepare("INSERT INTO account_presence(account_id,last_seen) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET last_seen=excluded.last_seen WHERE account_presence.last_seen < excluded.last_seen - 45").bind(user.account_id,nowSeconds()).run();
+      await db.prepare("INSERT INTO account_presence(account_id,last_seen) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET last_seen=excluded.last_seen WHERE account_presence.last_seen < excluded.last_seen - ?").bind(user.account_id,nowSeconds(),PRESENCE_WRITE_GAP_SECONDS).run();
       return json({ok:true});
     }
-    if (route==="/api/presence/summary" && method==="GET") { const r=await db.prepare("SELECT a.name,a.callsign FROM account_presence p JOIN accounts a ON a.account_id=p.account_id WHERE a.status='approved' AND p.last_seen>? ORDER BY lower(a.name)").bind(nowSeconds()-90).all(); const online=(r.results||[]).map(x=>({name:x.name,callsign:x.callsign})); return json({online_count:online.length,online}); }
+    if (route==="/api/presence/summary" && method==="GET") { const r=await db.prepare("SELECT a.name,a.callsign FROM account_presence p JOIN accounts a ON a.account_id=p.account_id WHERE a.status='approved' AND p.last_seen>? ORDER BY lower(a.name)").bind(nowSeconds()-PRESENCE_ONLINE_SECONDS).all(); const online=(r.results||[]).map(x=>({name:x.name,callsign:x.callsign})); return json({online_count:online.length,online}); }
     if (route==="/api/leaders" && method==="GET") { const admin=await requireAdmin(db,token); return json(await leaders(db,admin)); }
     if (route==="/api/leaders/audit" && method==="GET") { await requireAdmin(db,token); const r=await db.prepare("SELECT id,created_at,account_id,name,callsign,action,actor_name,actor_name AS by FROM account_audit ORDER BY id DESC LIMIT 200").all(); return json(r.results||[]); }
     const passwordReset=route.match(/^\/api\/leaders\/([^/]+)\/reset-password$/);
