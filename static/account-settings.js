@@ -54,11 +54,17 @@
         <p class="muted">Current: <span id="accountSettingsDiscordCurrent">Loading…</span></p>
         <div class="acct-actions"><button type="button" id="accountSettingsChangeDiscord" class="secondary">Change Discord ID</button></div>
         <form id="accountDiscordForm" class="acct-form" style="display:none;margin-top:8px">
-              <input name="discord_user_id" type="text" inputmode="numeric" autocomplete="off" placeholder="17 to 20 digit Discord User ID" required>
-              <button type="submit" class="primary small">Save</button>
+              <p class="muted">Your Discord nickname in the LVFR server must start with your callsign. The bot sends a 6-digit code to the new Discord account, so allow direct messages from server members.</p>
+              <input name="discord_user_id" type="text" inputmode="numeric" autocomplete="off" placeholder="New 17 to 20 digit Discord User ID" required>
+              <input name="current_password" type="password" autocomplete="current-password" placeholder="Your current password" required>
+              <button type="submit" class="primary small">Send code</button>
               <button type="button" id="accountDiscordCancel" class="secondary small">Cancel</button>
-              <p id="accountDiscordMessage" class="acct-message" role="status" aria-live="polite"></p>
             </form>
+        <form id="accountDiscordCodeForm" class="acct-form" style="display:none;margin-top:8px">
+              <input name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="6-digit code from Discord" required>
+              <button type="submit" class="primary small">Confirm</button>
+            </form>
+        <p id="accountDiscordMessage" class="acct-message" role="status" aria-live="polite"></p>
       </section>
       <section class="acct-card">
         <h3 class="acct-card-title">Change password</h3>
@@ -244,33 +250,50 @@
     const open = discordForm.style.display === 'none';
     discordForm.style.display = open ? '' : 'none';
     discordMessage.textContent = '';
-    if (open) { discordInput.value = ''; discordInput.focus(); }
+    discordCodeForm.style.display = 'none';
+    if (open) { discordForm.reset(); discordInput.focus(); }
   });
-  $('accountDiscordCancel').addEventListener('click', () => { discordForm.style.display = 'none'; discordMessage.textContent = ''; });
+  $('accountDiscordCancel').addEventListener('click', () => { discordForm.style.display = 'none'; discordCodeForm.style.display = 'none'; discordMessage.textContent = ''; });
+  const discordCodeForm = $('accountDiscordCodeForm');
+  const discordPost = async (path, body) => {
+    const headers = { 'Content-Type': 'application/json' };
+    const token = window.lvfrSessionToken?.();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const response = await fetch(path, { method: 'POST', headers, body: JSON.stringify(body) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.detail || result.error || 'Could not complete the request.');
+    return result;
+  };
+  const discordStatus = (text, kind) => { discordMessage.style.color = kind === 'error' ? '#ff4d4d' : kind === 'ok' ? '#4ade80' : ''; discordMessage.textContent = text; };
+  // Step 1: the new ID and the current password; the bot then sends a code to the new Discord account.
   discordForm.addEventListener('submit', async event => {
     event.preventDefault();
     const discordId = discordInput.value.trim();
-    if (!/^\d{17,20}$/.test(discordId)) { discordMessage.style.color = '#ff4d4d'; discordMessage.textContent = 'Enter a 17 to 20 digit Discord User ID.'; return; }
-    discordMessage.style.color = '';
-    discordMessage.textContent = 'Saving…';
+    if (!/^\d{17,20}$/.test(discordId)) return discordStatus('Enter a 17 to 20 digit Discord User ID.', 'error');
+    discordStatus('Sending the code…');
     try {
-      const headers = { 'Content-Type': 'application/json' };
-      const token = window.lvfrSessionToken?.();
-      if (token) headers.Authorization = `Bearer ${token}`;
-      const response = await fetch('/api/account/discord-id', { method: 'POST', headers, body: JSON.stringify({ discord_user_id: discordId }) });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.detail || result.error || 'Could not save the Discord ID.');
-      discordMessage.style.color = '#4ade80';
-      discordMessage.textContent = 'Saved.';
+      const result = await discordPost('/api/account/discord-id/start', { discord_user_id: discordId, current_password: discordForm.elements.current_password.value });
+      discordForm.elements.current_password.value = '';
+      discordCodeForm.style.display = '';
+      discordCodeForm.elements.code.focus();
+      discordStatus(result.message, 'ok');
+    } catch (error) { discordStatus(error.message, 'error'); }
+  });
+  // Step 2: the code proves the new Discord account is yours.
+  discordCodeForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    discordStatus('Checking the code…');
+    try {
+      await discordPost('/api/account/discord-id/confirm', { code: discordCodeForm.elements.code.value.trim() });
+      discordStatus('Discord ID changed.', 'ok');
       discordForm.style.display = 'none';
+      discordCodeForm.style.display = 'none';
+      discordCodeForm.reset();
       accountProfile = null;
       const user = window.lvfrCachedUser?.();
       if (user?.account_id || user?.id) { try { sessionStorage.removeItem(profileCacheKey(user.account_id || user.id)); } catch {} }
       await loadProfile();
-    } catch (error) {
-      discordMessage.style.color = '#ff4d4d';
-      discordMessage.textContent = error.message;
-    }
+    } catch (error) { discordStatus(error.message, 'error'); }
   });
 
   document.querySelector('#manageAccountButton')?.addEventListener('click', () => openWindow(profileDialog));
