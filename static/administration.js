@@ -144,7 +144,8 @@ function accountActions(account) {
   const deleteButton = elevated
     ? '<button type="button" disabled title="Remove elevated role first">Delete</button>'
     : `<button type="button" class="danger" data-action="delete" data-id="${id}">Delete</button>`;
-  return `${memberButton}${roleButton}${permissionButton}${deactivateButton}${deleteButton}`;
+  const resetButton = `<button type="button" data-action="reset-password" data-id="${id}">Reset password</button>`;
+  return `${memberButton}${roleButton}${permissionButton}${resetButton}${deactivateButton}${deleteButton}`;
 }
 // Shows how many accounts are in each status tab.
 function updateStatusCounts() {
@@ -297,11 +298,28 @@ async function loadAccounts(silent = false) {
     accountRows.innerHTML = '<tr><td colspan="7">Could not load accounts.</td></tr>';
   }
 }
+async function resetAccountPassword(button, account) {
+  const label = account.display_name || account.name;
+  const confirmed = await lvfrConfirm({ title: 'Reset password', subject: label, rows: [['Action', 'Reset password']], message: `Create a temporary password for ${label}? Their current password stops working and every device they are signed in on is signed out.`, confirmText: 'Reset', danger: true });
+  if (!confirmed) return;
+  button.disabled = true;
+  try {
+    const result = await api(`/api/leaders/${encodeURIComponent(account.account_id)}/reset-password`, { method: 'POST' });
+    setMessage(`Password reset for ${label}.`, 'success');
+    // The password is shown once. It is not stored anywhere readable, so copy it before closing this box.
+    window.prompt(`Temporary password for ${label}. Send it to them privately; it is not shown again.`, result.temporary_password);
+  } catch (error) {
+    setMessage(error.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
 async function performAction(button) {
   const { action, id } = button.dataset;
   const account = allAccounts().find(row => row.account_id === id);
   if (!account) return;
   if (action === 'permissions') return openIndividualPermissions(account);
+  if (action === 'reset-password') return resetAccountPassword(button, account);
   const accountLabel = account.display_name || account.name;
   const confirmations = {
     deny: `Deny the account request for ${accountLabel}?`,
@@ -1193,6 +1211,7 @@ const commandSections = {
   discord: document.querySelector('#commandDiscordSection'),
   links: document.querySelector('#commandLinksSection'),
   log: document.querySelector('#commandLogSection'),
+  mirror: document.querySelector('#commandMirrorSection'),
 };
 function showCommandSection(name, updateHash = false) {
   if (!canManageCommandAccounts() && !canAccessPermissionPanel() && !canUseDiscord()) return;
@@ -1210,16 +1229,17 @@ function showCommandSection(name, updateHash = false) {
     else button.removeAttribute('aria-current');
   });
   if (updateHash) {
-    const anchors = { accounts: 'accountsHeading', permissions: 'permissionsHeading', history: 'auditHeading', discord: 'discordSyncHeading', links: 'linkedMembersHeading', log: 'discordLogHeading' };
+    const anchors = { accounts: 'accountsHeading', permissions: 'permissionsHeading', history: 'auditHeading', discord: 'discordSyncHeading', links: 'linkedMembersHeading', log: 'discordLogHeading', mirror: 'mirrorQueueHeading' };
     history.replaceState(null, '', `#${anchors[name]}`);
   }
   // replaceState does not fire hashchange, so load the list here and tell the sidebar which item is current.
   if (name === 'links' || name === 'log') document.querySelector('#refreshLinkedMembers')?.click();
+  if (name === 'mirror') void loadMirrorQueue();
   window.dispatchEvent(new Event('lvfr:view-changed'));
 }
 document.querySelectorAll('[data-command-section]').forEach(button => button.addEventListener('click', () => showCommandSection(button.dataset.commandSection, true)));
 function selectCommandSectionFromHash() {
-  const sections = { '#permissionsHeading': 'permissions', '#auditHeading': 'history', '#accountsHeading': 'accounts', '#discordSyncHeading': 'discord', '#discordHeading': 'discord', '#linkedMembersHeading': 'links', '#discordLogHeading': 'log' };
+  const sections = { '#permissionsHeading': 'permissions', '#auditHeading': 'history', '#accountsHeading': 'accounts', '#discordSyncHeading': 'discord', '#discordHeading': 'discord', '#linkedMembersHeading': 'links', '#discordLogHeading': 'log', '#mirrorQueueHeading': 'mirror' };
   const section = sections[location.hash];
   if (section) showCommandSection(section);
 }
@@ -1501,3 +1521,38 @@ document.querySelector('#refreshDiscordStatus')?.addEventListener('click', () =>
   window.addEventListener('lvfr:view-changed', () => markActive(visibleView()));
   markActive(visibleView());
 })();
+
+// Google Sheets sync queue (manual). Rows are changes D1 saved but the Sheet missed.
+const mirrorRows = document.querySelector('#mirrorQueueRows');
+const mirrorStatus = document.querySelector('#mirrorQueueStatus');
+function mirrorStatusMessage(text, kind = '') { if (mirrorStatus) { mirrorStatus.className = 'admin-status' + (kind ? ' ' + kind : ''); mirrorStatus.textContent = text; } }
+async function loadMirrorQueue() {
+  if (!mirrorRows) return;
+  mirrorStatusMessage('Loading the Sheets sync queue…');
+  try {
+    const data = await api('/internal/mirror-queue');
+    const items = data.items || [];
+    mirrorRows.innerHTML = items.length ? items.map(item => `<tr>
+      <td>${esc(new Date(Number(item.created_at) * 1000).toLocaleString())}</td>
+      <td>${esc(item.label || item.route)}</td>
+      <td>${esc(item.attempts)}</td>
+      <td>${esc(item.last_error)}</td>
+      <td><code>${esc(item.preview)}</code></td>
+      <td><button type="button" data-mirror-retry="${esc(item.id)}">Retry</button> <button type="button" class="danger" data-mirror-discard="${esc(item.id)}">Discard</button></td>
+    </tr>`).join('') : '<tr><td colspan="6">Nothing is waiting. Google Sheets has every saved change.</td></tr>';
+    mirrorStatusMessage(items.length ? `${items.length} change${items.length === 1 ? '' : 's'} waiting for Google Sheets.` : 'Google Sheets is up to date.', items.length ? 'error' : 'success');
+  } catch (error) { mirrorStatusMessage(error.message, 'error'); }
+}
+async function mirrorAction(path, body, success) {
+  mirrorStatusMessage('Working…');
+  try { const result = await api(path, { method: 'POST', body: JSON.stringify(body) }); await loadMirrorQueue(); if (success) mirrorStatusMessage(success(result), result.failed ? 'error' : 'success'); }
+  catch (error) { mirrorStatusMessage(error.message, 'error'); }
+}
+document.querySelector('#mirrorRefresh')?.addEventListener('click', () => void loadMirrorQueue());
+document.querySelector('#mirrorRetryAll')?.addEventListener('click', () => void mirrorAction('/internal/mirror-queue/retry', {}, result => `Retried ${result.processed}: ${result.done} sent, ${result.failed} failed.`));
+document.querySelector('#mirrorDiscardAll')?.addEventListener('click', () => { if (confirm('Discard every waiting change? Google Sheets will not receive them.')) void mirrorAction('/internal/mirror-queue/discard', { all: true }, result => `Discarded ${result.removed}.`); });
+mirrorRows?.addEventListener('click', event => {
+  const retry = event.target.closest('[data-mirror-retry]'), discard = event.target.closest('[data-mirror-discard]');
+  if (retry) void mirrorAction('/internal/mirror-queue/retry', { id: Number(retry.dataset.mirrorRetry) }, result => result.failed ? 'The retry failed again.' : 'Sent to Google Sheets.');
+  if (discard && confirm('Discard this change? Google Sheets will not receive it.')) void mirrorAction('/internal/mirror-queue/discard', { id: Number(discard.dataset.mirrorDiscard) }, () => 'Discarded.');
+});
