@@ -648,6 +648,109 @@ export function temporaryPassword(length = 10) {
   }
   return out;
 }
+// ---- Forgot password: a code sent by the Discord bot --------------------------
+const RESET_CODE_SECONDS = 600, RESET_MAX_CODE_TRIES = 5, RESET_MAX_REQUESTS_PER_HOUR = 3;
+// Six digits, uniformly random.
+export function resetCode() {
+  const limit = 4294967296 - (4294967296 % 1000000);
+  let value;
+  do { value = crypto.getRandomValues(new Uint32Array(1))[0]; } while (value >= limit);
+  return String(value % 1000000).padStart(6, "0");
+}
+async function resetCodeHash(env, accountId, code) {
+  const key = String(env.LVFR_D1_AUTH_BRIDGE_SECRET || env.LVFR_D1_WORKER_SECRET || "");
+  return key ? hmac(key, `reset:${accountId}:${code}`) : sha256(`reset:${accountId}:${code}`);
+}
+// Counts requests per client address in the sign-in attempts table (10 per 10 minutes by default).
+async function throttleByAddress(db, request, scope, max = 10, windowSeconds = 600) {
+  const key = await sha256(`${scope}-ip:${request.headers.get("CF-Connecting-IP") || "unknown"}`), now = nowSeconds();
+  const row = await db.prepare("SELECT window_started_at,attempts FROM auth_login_attempts WHERE login_key=?").bind(key).first();
+  if (row && now - row.window_started_at < windowSeconds) {
+    if (row.attempts >= max) throw Object.assign(new Error("Too many requests. Wait a few minutes and try again."), { status: 429 });
+    await db.prepare("UPDATE auth_login_attempts SET attempts=attempts+1 WHERE login_key=?").bind(key).run();
+  } else {
+    await db.prepare("INSERT OR REPLACE INTO auth_login_attempts(login_key,window_started_at,attempts) VALUES(?,?,1)").bind(key, now).run();
+  }
+}
+async function sendDiscordDirectMessage(env, discordUserId, content) {
+  const channel = await discordRequest(env, "/users/@me/channels", { method: "POST", body: JSON.stringify({ recipient_id: String(discordUserId) }) });
+  if (!channel?.id) throw new Error("Discord did not open a direct message channel.");
+  await discordRequest(env, `/channels/${channel.id}/messages`, { method: "POST", body: JSON.stringify({ content, allowed_mentions: { parse: [] } }) });
+}
+async function linkedDiscordUser(db, callsign) {
+  return db.prepare("SELECT discord_user_id FROM discord_member_links WHERE upper(callsign)=upper(?) AND status IN ('linked','pending')").bind(callsign).first();
+}
+// The answer never says whether the name exists or is linked, and all the work after the
+// address check runs after the response, so nobody can learn which accounts are linked.
+function forgotPassword(context, db, env, request, data) {
+  const key = nameKey(data.name);
+  context.waitUntil((async () => {
+    try {
+      if (!key) return;
+      const account = await db.prepare("SELECT account_id,name,callsign FROM accounts WHERE name_key=? AND status='approved'").bind(key).first();
+      if (!account) return;
+      const link = await linkedDiscordUser(db, account.callsign);
+      if (!link) return;
+      const now = nowSeconds();
+      const existing = await db.prepare("SELECT request_count,window_started_at FROM password_reset_codes WHERE account_id=?").bind(account.account_id).first();
+      const inWindow = existing && now - existing.window_started_at < 3600;
+      if (inWindow && existing.request_count >= RESET_MAX_REQUESTS_PER_HOUR) return;
+      const code = resetCode(), hash = await resetCodeHash(env, account.account_id, code);
+      await db.prepare(`INSERT INTO password_reset_codes(account_id,code_hash,expires_at,attempts,request_count,window_started_at,requested_at) VALUES(?,?,?,0,?,?,?)
+        ON CONFLICT(account_id) DO UPDATE SET code_hash=excluded.code_hash,expires_at=excluded.expires_at,attempts=0,request_count=excluded.request_count,window_started_at=excluded.window_started_at,requested_at=excluded.requested_at`)
+        .bind(account.account_id, hash, now + RESET_CODE_SECONDS, inWindow ? existing.request_count + 1 : 1, inWindow ? existing.window_started_at : now, now).run();
+      try {
+        await sendDiscordDirectMessage(env, link.discord_user_id, `LVFR EMS password reset code: **${code}**\nIt expires in 10 minutes. Never share it. If you did not ask for it, ignore this message and tell a Commander.`);
+        await writeDiscordLog(db, { name: "Password reset" }, "Password reset code sent", account.callsign, account.name, link.discord_user_id, "done", "A reset code was sent by direct message.");
+      } catch (error) {
+        await db.prepare("UPDATE password_reset_codes SET expires_at=0 WHERE account_id=?").bind(account.account_id).run();
+        await writeDiscordLog(db, { name: "Password reset" }, "Password reset code sent", account.callsign, account.name, link.discord_user_id, "failed",
+          "Discord did not deliver the message. The member may block direct messages from server members, or the bot is not configured.").catch(() => {});
+        console.error("Password reset direct message failed:", String(error?.message || error).slice(0, 200));
+      }
+    } catch (error) { console.error("Password reset request failed:", String(error?.message || error).slice(0, 200)); }
+  })());
+  return { ok: true, message: "If this account is linked to Discord, a 6-digit code was sent to it by direct message. It expires in 10 minutes." };
+}
+async function resetPasswordWithCode(context, db, env, request, data) {
+  await throttleByAddress(db, request, "reset");
+  const invalid = () => Object.assign(new Error("The code is incorrect or has expired. Request a new code."), { status: 400 });
+  const key = nameKey(data.name), code = String(data.code || "").trim();
+  if (!key || !/^\d{6}$/.test(code)) throw invalid();
+  const account = await db.prepare("SELECT account_id,name,name_key,callsign FROM accounts WHERE name_key=? AND status='approved'").bind(key).first();
+  if (!account) throw invalid();
+  const row = await db.prepare("SELECT code_hash,expires_at,attempts FROM password_reset_codes WHERE account_id=?").bind(account.account_id).first();
+  const now = nowSeconds();
+  if (!row || row.expires_at <= now || row.attempts >= RESET_MAX_CODE_TRIES) throw invalid();
+  const supplied = await resetCodeHash(env, account.account_id, code);
+  if (supplied !== row.code_hash) {
+    const attempts = row.attempts + 1;
+    await db.prepare("UPDATE password_reset_codes SET attempts=?,expires_at=CASE WHEN ?>=? THEN 0 ELSE expires_at END WHERE account_id=?").bind(attempts, attempts, RESET_MAX_CODE_TRIES, account.account_id).run();
+    throw invalid();
+  }
+  const password = String(data.new_password || "");
+  if (!/^[A-Za-z0-9]{4,20}$/.test(password)) throw new Error("New password must be 4–20 letters or numbers.");
+  // Spend the code first so it works exactly once, even if two requests arrive together.
+  // The row stays, emptied, so the 3-requests-per-hour count is not reset by a successful change.
+  const spent = await db.prepare("UPDATE password_reset_codes SET code_hash='',expires_at=0 WHERE account_id=? AND code_hash=? AND expires_at>?").bind(account.account_id, row.code_hash, now).run();
+  if (!spent.meta?.changes) throw invalid();
+  const salt = b64url(crypto.getRandomValues(new Uint8Array(16))), hash = await passwordHash(password, salt), stamp = new Date().toISOString();
+  await db.batch([
+    db.prepare("UPDATE accounts SET password_salt=?,password_hash=?,password_hash_version='pbkdf2-sha256-100000',updated_at=? WHERE account_id=?").bind(salt, hash, stamp, account.account_id),
+    db.prepare("DELETE FROM auth_sessions WHERE account_id=?").bind(account.account_id),
+    db.prepare("DELETE FROM auth_login_attempts WHERE login_key=?").bind(await sha256(account.name_key)),
+    db.prepare("INSERT INTO account_audit(created_at,account_id,name,callsign,action,actor_name) VALUES(?,?,?,?,?,?)").bind(stamp, account.account_id, account.name, account.callsign, "reset_password_discord", account.name)
+  ]);
+  if (env.LVFR_D1_AUTH_BRIDGE_SECRET) context.waitUntil(mirrorToSheetInBackground(context, "Account audit", "/internal/logs/mirror", new URL(request.url), "", { kind: "account_audit", account_id: account.account_id, name: account.name, callsign: account.callsign, action: "reset_password_discord", actor_name: account.name }));
+  // Tell the member on Discord so a stolen account is noticed.
+  context.waitUntil((async () => {
+    try {
+      const link = await linkedDiscordUser(db, account.callsign);
+      if (link) await sendDiscordDirectMessage(env, link.discord_user_id, "Your LVFR EMS password was just changed with a Discord code. If this was not you, tell a Commander now.");
+    } catch (error) { console.error("Password change notice failed:", String(error?.message || error).slice(0, 200)); }
+  })());
+  return { ok: true, message: "Password changed. Sign in with your new password." };
+}
 async function login(db, data) {
   const name = nameKey(data.username || data.name), password = String(data.password || "");
   const loginKey = await sha256(name), now = nowSeconds();
@@ -1674,6 +1777,11 @@ export async function handleD1(context) {
       delete result.sheet_account;
       return json(result);
     }
+    if (route==="/auth/forgot" && method==="POST") {
+      await throttleByAddress(db,request,"forgot");
+      return json(forgotPassword(context,db,env,request,data));
+    }
+    if (route==="/auth/reset" && method==="POST") return json(await resetPasswordWithCode(context,db,env,request,data));
     if (route==="/auth/login" && method==="POST") {
       const result = await login(db,data);
       return json({ token:result.token, user:result.user },200,{ "Set-Cookie":`lvfr_d1_session=${encodeURIComponent(result.token)}; Path=/; Max-Age=${result.max_age}; HttpOnly; Secure; SameSite=Lax` });
