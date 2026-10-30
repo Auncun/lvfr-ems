@@ -272,17 +272,24 @@ async function gasCall(env, route, method, data = {}, token = "", params = {}) {
   if (!payload.ok) throw new Error(payload.error || "Apps Script request failed.");
   return payload.data;
 }
-async function rosterIdentity(env, name, db = null) {
-  // Fast path: the roster is already mirrored in D1, so look the name up there
-  // instead of waiting for a round trip to Apps Script and Google Sheets.
-  // Only an unambiguous single match is trusted; anything else falls back to Apps Script.
+export async function rosterIdentity(env, name, db = null) {
+  // D1 holds the roster mirror, so registration is answered from D1 alone.
+  // Apps Script is asked only when the roster was never synced into D1 (empty
+  // members table) or when no D1 binding is supplied (initial Operation setup).
   if (db) {
-    try {
+    let rows;
+    try { rows = (await db.prepare("SELECT name,callsign FROM members").all()).results || []; }
+    catch (error) {
+      console.error("D1 roster lookup failed:", error);
+      throw Object.assign(new Error("The roster is temporarily unavailable. Try again in a minute."), { status: 503 });
+    }
+    if (rows.length) {
       const key = nameKey(name);
-      const { results } = await db.prepare("SELECT name,callsign FROM members WHERE lower(trim(name))=? LIMIT 2").bind(key).all();
-      const matches = (results || []).filter(row => nameKey(row.name) === key && row.callsign);
+      const matches = rows.filter(row => nameKey(row.name) === key && row.callsign);
       if (matches.length === 1) return { name: matches[0].name, callsign: matches[0].callsign };
-    } catch (error) { console.error("D1 roster lookup failed, falling back to Apps Script: " + error); }
+      if (matches.length > 1) throw Object.assign(new Error("More than one roster member matches this name. Contact a Commander."), { status: 409 });
+      throw new Error("Name was not found on the LVFR roster.");
+    }
   }
   const member = await gasCall(env, "/auth/roster-lookup", "POST", { name });
   if (!member || !member.name || !member.callsign) throw new Error("Name was not found on the LVFR roster.");
@@ -629,6 +636,18 @@ async function publicUser(db, account) {
     is_command: ["admin", "commander"].includes(account.role) || /^(E|C|DIV|B|CHIEF|COM)-/.test(account.callsign),
     instructor_type: String(member?.instructor_type || ""), permissions, permission_overrides: parsePermissionOverrides(account.permissions_override_json) };
 }
+// 10 characters without look-alikes (0/O, 1/l/I). Always passes the 4-20 letters-or-numbers rule.
+export function temporaryPassword(length = 10) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  const limit = 256 - (256 % alphabet.length);
+  let out = "";
+  while (out.length < length) {
+    for (const byte of crypto.getRandomValues(new Uint8Array(length * 2))) {
+      if (byte < limit && out.length < length) out += alphabet[byte % alphabet.length];
+    }
+  }
+  return out;
+}
 async function login(db, data) {
   const name = nameKey(data.username || data.name), password = String(data.password || "");
   const loginKey = await sha256(name), now = nowSeconds();
@@ -903,9 +922,36 @@ async function createLogNotification(db,kind,info) {
 // FORT LOI passes may certify Basic and/or Advanced Firefighting.
 const FORT_PASS_TRAININGS=["Basic Firefighting","Advanced Firefighting"];
 
+// ---- Sheet mirror queue (manual) -------------------------------------------
+// D1 is the source of truth. A Google Sheet mirror that still fails after its
+// immediate retries is stored in mirror_queue. Nothing replays it automatically:
+// a replay writes the old change into the Sheet, so an Operation or Commander
+// account reviews the rows and retries or discards them from Operation Command.
+const MIRROR_MAX_PENDING = 500;
+const MIRROR_MAX_PAYLOAD = 200000;
+async function enqueueMirror(db, { label, route, method, query, actorId, data, error, dedupe }) {
+  try {
+    if (!db) return false;
+    const payload = JSON.stringify(data ?? {});
+    if (payload.length > MIRROR_MAX_PAYLOAD) { console.error(label + " Sheet mirror is too large to queue."); return false; }
+    const actor = String(actorId || "");
+    if (dedupe) {
+      const existing = await db.prepare("SELECT id FROM mirror_queue WHERE status IN ('pending','running') AND route=? AND actor_account_id=? AND data_json=? LIMIT 1").bind(route, actor, payload).first();
+      if (existing) return true;
+    }
+    const pending = await db.prepare("SELECT COUNT(*) AS n FROM mirror_queue WHERE status IN ('pending','running')").first();
+    if (Number(pending?.n || 0) >= MIRROR_MAX_PENDING) { console.error(label + " Sheet mirror was dropped: the queue is full."); return false; }
+    const now = nowSeconds();
+    await db.prepare("INSERT INTO mirror_queue(label,route,method,query,actor_account_id,data_json,status,attempts,last_error,next_attempt_at,created_at,updated_at) VALUES(?,?,?,?,?,?,'pending',1,?,0,?,?)")
+      .bind(String(label || ""), route, String(method || "POST").toUpperCase(), String(query || "").replace(/^\?/, ""), actor, payload, String(error || "").slice(0, 500), now, now).run();
+    return true;
+  } catch (queueError) { console.error("Could not queue the Sheet mirror:", queueError); return false; }
+}
+
 // Sheet mirror for writes whose D1 change is already committed. Runs after the
-// response via waitUntil and retries transient failures; D1 is never rolled back.
-async function mirrorToSheetInBackground(context,label,route,url,assertion,data){
+// response via waitUntil, retries transient failures, then queues what is left.
+// D1 is never rolled back.
+async function mirrorToSheetInBackground(context,label,route,url,assertion,data,actorId="",options={}){
   let lastError="";
   for(let attempt=1;attempt<=3;attempt++){
     try {
@@ -916,7 +962,51 @@ async function mirrorToSheetInBackground(context,label,route,url,assertion,data)
     } catch(error) { lastError=String(error?.message||error).slice(0,500); }
     if(attempt<3) await new Promise(resolve=>setTimeout(resolve,1000*attempt));
   }
-  console.error(label+" Sheet mirror failed after retries:",lastError);
+  console.error(label+" Sheet mirror failed after retries; kept in the mirror queue:",lastError);
+  await enqueueMirror(context.env.LVFR_DB,{label,route,method:context.request.method,query:url.search,actorId,data,error:lastError,dedupe:options.dedupe===true});
+}
+
+// Replays pending rows oldest first (or just one row when id is given).
+export async function processMirrorQueue(context, { id = null, limit = 20 } = {}) {
+  const { env } = context, db = env.LVFR_DB;
+  const summary = { processed: 0, done: 0, failed: 0 };
+  if (!db) return summary;
+  const now = nowSeconds();
+  const due = id
+    ? (await db.prepare("SELECT * FROM mirror_queue WHERE id=? AND (status='pending' OR (status='running' AND locked_until<?))").bind(Number(id), now).all()).results || []
+    : (await db.prepare("SELECT * FROM mirror_queue WHERE status='pending' OR (status='running' AND locked_until<?) ORDER BY id LIMIT ?").bind(now, limit).all()).results || [];
+  for (const row of due) {
+    // Claim the row first so two clicks never replay the same write twice.
+    const claim = await db.prepare("UPDATE mirror_queue SET status='running',locked_until=?,updated_at=? WHERE id=? AND (status='pending' OR (status='running' AND locked_until<?))").bind(now + 120, now, row.id, now).run();
+    if (!claim.meta?.changes) continue;
+    summary.processed++;
+    let error = "";
+    try {
+      let assertion = "";
+      if (row.actor_account_id) {
+        if (!env.LVFR_D1_AUTH_BRIDGE_SECRET) throw new Error("LVFR_D1_AUTH_BRIDGE_SECRET is not configured.");
+        const actor = await db.prepare("SELECT account_id,name,callsign,status,role,permissions_override_json FROM accounts WHERE account_id=?").bind(row.actor_account_id).first();
+        if (!actor) throw new Error("The account that made this change no longer exists.");
+        actor.permissions = await accountPermissions(db, actor);
+        // Assertions expire after 90 seconds, so a fresh one is signed for every replay.
+        assertion = await signedClaims(actor, env.LVFR_D1_AUTH_BRIDGE_SECRET);
+      }
+      const target = new URL(row.route + (row.query ? "?" + row.query : ""), "https://lvfr.invalid");
+      const replayContext = { env, request: new Request(target.toString(), { method: row.method || "POST" }) };
+      const { proxyToAppsScript } = await import("../[[path]].js");
+      const response = await proxyToAppsScript(replayContext, row.route, target, assertion, JSON.parse(row.data_json || "{}"));
+      if (!response.ok) error = String(await response.text()).slice(0, 500) || ("HTTP " + response.status);
+    } catch (replayError) { error = String(replayError?.message || replayError).slice(0, 500); }
+    const finished = nowSeconds();
+    if (!error) {
+      await db.prepare("UPDATE mirror_queue SET status='done',locked_until=0,last_error='',updated_at=? WHERE id=?").bind(finished, row.id).run();
+      summary.done++;
+    } else {
+      await db.prepare("UPDATE mirror_queue SET status='pending',attempts=attempts+1,last_error=?,locked_until=0,updated_at=? WHERE id=?").bind(error, finished, row.id).run();
+      summary.failed++;
+    }
+  }
+  return summary;
 }
 
 const DISCORD_API_BASE = "https://discord.com/api/v10";
@@ -1580,7 +1670,7 @@ export async function handleD1(context) {
     if (route==="/auth/signup" && method==="POST") {
       const result=await signup(db,env,data);
       const sheetAccount=result.sheet_account;
-      if(env.LVFR_D1_AUTH_BRIDGE_SECRET) context.waitUntil((async()=>{try{const {proxyToAppsScript}=await import("../[[path]].js");const mirror=await proxyToAppsScript(context,"/internal/accounts/mirror",url,"",sheetAccount);if(!mirror.ok)console.error("Account Sheet mirror failed:",await mirror.text());}catch(error){console.error("Account Sheet mirror failed:",error);}})());
+      if(env.LVFR_D1_AUTH_BRIDGE_SECRET) context.waitUntil(mirrorToSheetInBackground(context,"Account signup","/internal/accounts/mirror",url,"",sheetAccount));
       delete result.sheet_account;
       return json(result);
     }
@@ -1611,6 +1701,26 @@ export async function handleD1(context) {
     if(!user) return json({detail:"Session token was not found or has expired in D1."},401);
     if(user.status!=="approved") return json({detail:"This D1 account is not approved."},401);
     user.permissions=await accountPermissions(db,user);
+    if (route.startsWith("/internal/mirror-queue")) {
+      if (!["admin","commander"].includes(user.role)) return json({detail:"Only Operation or Commander accounts can manage the Sheet mirror queue."},403);
+      if (route === "/internal/mirror-queue" && method === "GET") {
+        const counts=(await db.prepare("SELECT status,COUNT(*) AS n FROM mirror_queue GROUP BY status").all()).results||[];
+        const items=(await db.prepare("SELECT id,label,route,status,attempts,last_error,created_at,updated_at,substr(data_json,1,300) AS preview FROM mirror_queue WHERE status<>'done' ORDER BY id LIMIT 100").all()).results||[];
+        return json({counts:Object.fromEntries(counts.map(row=>[row.status,Number(row.n)])),items});
+      }
+      if (route === "/internal/mirror-queue/retry" && method === "POST") {
+        const result=await processMirrorQueue(context,{id:data.id||null});
+        await db.prepare("DELETE FROM mirror_queue WHERE status='done' AND updated_at<?").bind(nowSeconds()-7*86400).run();
+        return json(result);
+      }
+      if (route === "/internal/mirror-queue/discard" && method === "POST") {
+        const removed=data.all===true
+          ? await db.prepare("DELETE FROM mirror_queue WHERE status='pending'").run()
+          : await db.prepare("DELETE FROM mirror_queue WHERE id=? AND status='pending'").bind(Number(data.id)||0).run();
+        return json({removed:Number(removed.meta?.changes||0)});
+      }
+      return json({detail:"Mirror queue route was not found."},404);
+    }
     if (route === "/api/discord/sync" && method === "POST") {
       const actor = await requireDiscordPermission(db, token, "discord_sync_manage");
       const lockToken = crypto.randomUUID();
@@ -2043,8 +2153,8 @@ export async function handleD1(context) {
       const throughId=requested.length?Math.max(...requested):Number((await db.prepare("SELECT COALESCE(MAX(id),0) AS id FROM notifications").first())?.id||0);
       if(throughId>0) await db.prepare("INSERT INTO account_notification_marks(account_id,read_through_id,hidden_through_id,updated_at) VALUES(?,?,0,?) ON CONFLICT(account_id) DO UPDATE SET read_through_id=MAX(read_through_id,excluded.read_through_id),updated_at=excluded.updated_at").bind(user.account_id,throughId,now).run();
       if(env.LVFR_D1_AUTH_BRIDGE_SECRET) {
-        const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET), {proxyToAppsScript}=await import("../[[path]].js");
-        context.waitUntil((async()=>{try{const mirror=await proxyToAppsScript(context,route,url,assertion,data);if(!mirror.ok)console.error("Notification read Sheet mirror failed:",await mirror.text());}catch(error){console.error("Notification read Sheet mirror failed:",error);}})());
+        const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
+        context.waitUntil(mirrorToSheetInBackground(context,"Notification read",route,url,assertion,data,user.account_id,{dedupe:true}));
       }
       return json({ok:true});
     }
@@ -2198,8 +2308,13 @@ export async function handleD1(context) {
           }
         } catch(error) { console.error("LOI Sheet mirror failed:",error); }
         try {
-          const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,logAssertion,{kind:"loi",log_date:logDate,callsign:member.callsign,member_name:member.name,action:eventAction,details,changed_by:String(user.name||"")});
-          if(!mirror.ok) console.error("LOI log Sheet mirror failed:",await mirror.text());
+          const loiLogData={kind:"loi",log_date:logDate,callsign:member.callsign,member_name:member.name,action:eventAction,details,changed_by:String(user.name||"")};
+          const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,logAssertion,loiLogData);
+          if(!mirror.ok) {
+            const mirrorText=String(await mirror.text()).slice(0,500);
+            console.error("LOI log Sheet mirror failed:",mirrorText);
+            await enqueueMirror(db,{label:"LOI log",route:"/internal/logs/mirror",method:request.method,query:url.search,actorId:user.account_id,data:loiLogData,error:mirrorText});
+          }
         } catch(error) { console.error("LOI log Sheet mirror failed:",error); }
       })();
       context.waitUntil(loiMirrorTask);
@@ -2462,7 +2577,7 @@ export async function handleD1(context) {
       // claiming the instructor was removed.
       if(instructorWrite) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
-        context.waitUntil(mirrorToSheetInBackground(context,"Instructor",route,url,assertion,mutationData));
+        context.waitUntil(mirrorToSheetInBackground(context,"Instructor",route,url,assertion,mutationData,user.account_id));
       } else if(route==="/api/terminate") {
         // The member no longer exists on the roster; drop their Discord link so the callsign can be reused safely.
         result.discord_termination=await discordTerminationAction(db,env,user,mutationData.callsign,String(mutationData.discord_action||""),oldMember?.name||"");
@@ -2483,19 +2598,11 @@ export async function handleD1(context) {
         if(sheetCleanupError) result.sheet_cleanup_error=sheetCleanupError;
       } else if(route==="/api/training") {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
-        context.waitUntil(mirrorToSheetInBackground(context,"Training",route,url,assertion,mutationData));
+        context.waitUntil(mirrorToSheetInBackground(context,"Training",route,url,assertion,mutationData,user.account_id));
       } else if(result.changed!==false) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
         // D1 is already committed, so reply at once and mirror to the Sheet in the background.
-        const { proxyToAppsScript } = await import("../[[path]].js");
-        context.waitUntil((async()=>{
-          try {
-            const response=await proxyToAppsScript(context,route,url,assertion,mutationData);
-            if(!response.ok) console.error("Google Sheets background write failed:",String(await response.text()).slice(0,500));
-          } catch(error) {
-            console.error("Google Sheets background write failed:",error);
-          }
-        })());
+        context.waitUntil(mirrorToSheetInBackground(context,"Sheet write",route,url,assertion,mutationData,user.account_id));
       }
       return json(result);
     }
@@ -2509,6 +2616,29 @@ export async function handleD1(context) {
     if (route==="/api/presence/summary" && method==="GET") { const r=await db.prepare("SELECT a.name,a.callsign FROM account_presence p JOIN accounts a ON a.account_id=p.account_id WHERE a.status='approved' AND p.last_seen>? ORDER BY lower(a.name)").bind(nowSeconds()-90).all(); const online=(r.results||[]).map(x=>({name:x.name,callsign:x.callsign})); return json({online_count:online.length,online}); }
     if (route==="/api/leaders" && method==="GET") { const admin=await requireAdmin(db,token); return json(await leaders(db,admin)); }
     if (route==="/api/leaders/audit" && method==="GET") { await requireAdmin(db,token); const r=await db.prepare("SELECT id,created_at,account_id,name,callsign,action,actor_name,actor_name AS by FROM account_audit ORDER BY id DESC LIMIT 200").all(); return json(r.results||[]); }
+    const passwordReset=route.match(/^\/api\/leaders\/([^/]+)\/reset-password$/);
+    if(passwordReset && method==="POST") {
+      // A Commander or Operation account sets a temporary password for a member who is locked out.
+      const admin=await requireAdmin(db,token), targetId=decodeURIComponent(passwordReset[1]);
+      const target=await db.prepare("SELECT account_id,name,name_key,callsign,role,status FROM accounts WHERE account_id=?").bind(targetId).first();
+      if(!target||["removed","denied"].includes(target.status)) throw Object.assign(new Error("Account was not found."),{status:404});
+      if(target.account_id===admin.account_id) throw new Error("Change your own password from Account settings.");
+      if(admin.role==="commander"&&["admin","commander"].includes(target.role)) throw Object.assign(new Error("Only Operation can manage Operation or Commander accounts."),{status:403});
+      const temporary=temporaryPassword(), salt=b64url(crypto.getRandomValues(new Uint8Array(16))), hash=await passwordHash(temporary,salt), now=new Date().toISOString();
+      await db.batch([
+        db.prepare("UPDATE accounts SET password_salt=?,password_hash=?,password_hash_version='pbkdf2-sha256-100000',updated_at=? WHERE account_id=?").bind(salt,hash,now,target.account_id),
+        // Every open session of that account ends, and the sign-in lockout for its name is cleared.
+        db.prepare("DELETE FROM auth_sessions WHERE account_id=?").bind(target.account_id),
+        db.prepare("DELETE FROM auth_login_attempts WHERE login_key=?").bind(await sha256(target.name_key)),
+        db.prepare("INSERT INTO account_audit(created_at,account_id,name,callsign,action,actor_name) VALUES(?,?,?,?,?,?)").bind(now,target.account_id,target.name,target.callsign,"reset_password",admin.name)
+      ]);
+      if(env.LVFR_D1_AUTH_BRIDGE_SECRET) {
+        const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET);
+        context.waitUntil(mirrorToSheetInBackground(context,"Account audit","/internal/logs/mirror",url,assertion,{kind:"account_audit",account_id:target.account_id,name:target.name,callsign:target.callsign,action:"reset_password",actor_name:admin.name},user.account_id));
+      }
+      // The temporary password is shown once here and is stored only as a salted hash.
+      return json({ok:true,account_id:target.account_id,name:target.name,callsign:target.callsign,temporary_password:temporary});
+    }
     const action=route.match(/^\/api\/leaders\/([^/]+)\/(allow|deny|admin|commander|demote|member|leader|deactivate|reactivate)$/);
     if(action && method==="POST") {
       if(!env.LVFR_D1_AUTH_BRIDGE_SECRET) return json({detail:"Account Sheet mirroring is not configured: set LVFR_D1_AUTH_BRIDGE_SECRET in the Worker and Apps Script."},503);
@@ -2518,12 +2648,21 @@ export async function handleD1(context) {
       if(env.LVFR_D1_AUTH_BRIDGE_SECRET) {
         const {proxyToAppsScript}=await import("../[[path]].js");
         const mirror=await proxyToAppsScript(context,"/internal/accounts/mirror",url,"",result.sheet_account);
-        if(!mirror.ok) return json({detail:"D1 account change was saved, but the Accounts Sheet could not be updated: "+String(await mirror.text()).slice(0,500)},502);
+        if(!mirror.ok) {
+          const mirrorText=String(await mirror.text()).slice(0,500);
+          const queued=await enqueueMirror(db,{label:"Account",route:"/internal/accounts/mirror",method:request.method,query:url.search,actorId:"",data:result.sheet_account,error:mirrorText});
+          return json({detail:"D1 account change was saved, but the Accounts Sheet could not be updated: "+mirrorText+(queued?" It was queued and will be retried automatically.":"")},502);
+        }
       }
       if(target&&env.LVFR_D1_AUTH_BRIDGE_SECRET) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET), {proxyToAppsScript}=await import("../[[path]].js");
-        const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,assertion,{kind:"account_audit",account_id:target.account_id,name:target.name,callsign:target.callsign,action:action[2],actor_name:admin.name});
-        if(!mirror.ok) console.error("Account change audit Sheet mirror failed:",await mirror.text());
+        const auditData={kind:"account_audit",account_id:target.account_id,name:target.name,callsign:target.callsign,action:action[2],actor_name:admin.name};
+        const mirror=await proxyToAppsScript(context,"/internal/logs/mirror",url,assertion,auditData);
+        if(!mirror.ok) {
+          const mirrorText=String(await mirror.text()).slice(0,500);
+          console.error("Account change audit Sheet mirror failed:",mirrorText);
+          await enqueueMirror(db,{label:"Account audit",route:"/internal/logs/mirror",method:request.method,query:url.search,actorId:user.account_id,data:auditData,error:mirrorText});
+        }
       }
       return json(result);
     }
@@ -2536,7 +2675,11 @@ export async function handleD1(context) {
       if(env.LVFR_D1_AUTH_BRIDGE_SECRET) {
         const {proxyToAppsScript}=await import("../[[path]].js");
         const mirror=await proxyToAppsScript(context,"/internal/accounts/mirror",url,"",result.sheet_account);
-        if(!mirror.ok) return json({detail:"D1 account deletion was saved, but the Accounts Sheet could not be updated: "+String(await mirror.text()).slice(0,500)},502);
+        if(!mirror.ok) {
+          const mirrorText=String(await mirror.text()).slice(0,500);
+          const queued=await enqueueMirror(db,{label:"Account",route:"/internal/accounts/mirror",method:request.method,query:url.search,actorId:"",data:result.sheet_account,error:mirrorText});
+          return json({detail:"D1 account deletion was saved, but the Accounts Sheet could not be updated: "+mirrorText+(queued?" It was queued and will be retried automatically.":"")},502);
+        }
       }
       if(target&&env.LVFR_D1_AUTH_BRIDGE_SECRET) {
         const assertion=await signedClaims(user,env.LVFR_D1_AUTH_BRIDGE_SECRET), {proxyToAppsScript}=await import("../[[path]].js");
