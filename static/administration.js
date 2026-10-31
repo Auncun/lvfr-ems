@@ -145,7 +145,8 @@ function accountActions(account) {
     ? '<button type="button" disabled title="Remove elevated role first">Delete</button>'
     : `<button type="button" class="danger" data-action="delete" data-id="${id}">Delete</button>`;
   const resetButton = `<button type="button" data-action="reset-password" data-id="${id}">Reset password</button>`;
-  return `${memberButton}${roleButton}${permissionButton}${resetButton}${deactivateButton}${deleteButton}`;
+  const items = `${memberButton}${roleButton}${permissionButton}${resetButton}${deactivateButton}${deleteButton}`;
+  return items ? `<details class="row-action"><summary class="role-tab">Action</summary><div class="row-action-menu">${items}</div></details>` : '';
 }
 // Shows how many accounts are in each status tab.
 function updateStatusCounts() {
@@ -1606,7 +1607,7 @@ function showCommandSection(name, updateHash = false) {
 }
 document.querySelectorAll('[data-command-section]').forEach(button => button.addEventListener('click', () => showCommandSection(button.dataset.commandSection, true)));
 function selectCommandSectionFromHash() {
-  const sections = { '#permissionsHeading': 'permissions', '#auditHeading': 'history', '#accountsHeading': 'accounts', '#discordSyncHeading': 'discord', '#discordHeading': 'discord', '#linkedMembersHeading': 'links', '#discordLogHeading': 'log', '#mirrorQueueHeading': 'mirror' };
+  const sections = { '#permissionsHeading': 'permissions', '#auditHeading': 'history', '#accountsHeading': 'accounts', '#discordSyncHeading': 'discord', '#discordHeading': 'discord', '#discordRoleIdsHeading': 'roles', '#linkedMembersHeading': 'links', '#discordLogHeading': 'log', '#mirrorQueueHeading': 'mirror' };
   const section = sections[location.hash];
   if (section) showCommandSection(section);
 }
@@ -1820,7 +1821,7 @@ async function loadDiscordRoleMap() {
     document.querySelector('#discordGuildIdInput').value = data.guild_id || '';
     document.querySelector('#discordOpsRoleInput').value = data.ops_role_id || '';
     document.querySelector('#discordOpsRoleInput').disabled = !canEditDiscordSettings();
-    body.innerHTML = data.ranks.map(row => `<tr><td>${roleMapEsc(row.rank)}</td><td><input type="text" inputmode="numeric" autocomplete="off" data-rank="${roleMapEsc(row.rank)}" value="${roleMapEsc(row.role_id)}" placeholder="17 to 20 digits" ${canEditDiscordSettings() ? '' : 'disabled'} aria-label="Discord role ID for ${roleMapEsc(row.rank)}"></td></tr>`).join('');
+    body.innerHTML = data.ranks.map(row => `<tr><td>${roleMapEsc(row.rank)}</td><td><input type="text" inputmode="numeric" autocomplete="off" data-rank="${roleMapEsc(row.rank)}" value="${roleMapEsc(row.role_id)}" placeholder="17 to 20 digits" ${canEditDiscordSettings() ? '' : 'disabled'} aria-label="Discord role ID for ${roleMapEsc(row.rank)}">${row.source === 'secret' ? '<small class="muted"> from DISCORD_ROLE_MAP secret</small>' : ''}</td></tr>`).join('');
   } catch (error) {
     body.innerHTML = `<tr><td colspan="2">${roleMapEsc(error.message)}</td></tr>`;
   }
