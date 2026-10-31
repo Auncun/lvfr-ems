@@ -1537,7 +1537,7 @@ async function runRankChanges(db, env, changes) {
 }
 async function queueDiscordRosterChange(db, context, env, oldMember, result) {
   const route = String(new URL(context.request.url).pathname);
-  if (!oldMember || !["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign","/api/academy/exam"].includes(route)) return "not_applicable";
+  if (!oldMember || !["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign","/api/academy/exam","/api/academy/switch"].includes(route)) return "not_applicable";
   const oldCallsign = normalizeDiscordCallsign(oldMember.callsign);
   const newCallsign = normalizeDiscordCallsign(result?.new_callsign || oldCallsign);
   const newRank = String(result?.new_rank || oldMember.rank || "").trim();
