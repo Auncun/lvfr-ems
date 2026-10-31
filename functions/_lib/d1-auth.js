@@ -1954,19 +1954,29 @@ export async function handleD1(context) {
       };
       const discordRoster = (oldMember, result) => queueDiscordRosterChange(db, context, env, oldMember, result);
       const recruitDiscord = (discordId, name) => updateDiscordMemberFromMapping(db, env, discordId, { allowPrefix: true, fallbackName: name });
+      // Every Academy link attempt is written to the Discord action log: "link" with done or failed.
+      const logRecruitDiscord = async (discordId, name, outcome, detail) => {
+        const link = await db.prepare("SELECT callsign,pending_callsign FROM discord_member_links WHERE discord_user_id=?").bind(String(discordId)).first().catch(() => null);
+        await writeDiscordLog(db, user, "link", link?.pending_callsign || link?.callsign || "", name, discordId, outcome, detail).catch(() => {});
+      };
       const discordRecruit = {
         queue: (discordId, name) => {
           context.waitUntil((async () => {
-            try { await recruitDiscord(discordId, name); }
-            catch (error) { await db.prepare("UPDATE discord_member_links SET status='failed',last_error=?,updated_at=? WHERE discord_user_id=?").bind(String(error?.message || error).slice(0, 400), new Date().toISOString(), discordId).run(); }
+            try { await recruitDiscord(discordId, name); await logRecruitDiscord(discordId, name, "done", "Linked when the recruit was added to the Academy."); }
+            catch (error) {
+              const message = String(error?.message || error).slice(0, 400);
+              await db.prepare("UPDATE discord_member_links SET status='failed',last_error=?,updated_at=? WHERE discord_user_id=?").bind(message, new Date().toISOString(), discordId).run();
+              await logRecruitDiscord(discordId, name, "failed", message);
+            }
           })());
           return "pending";
         },
         run: async (discordId, name) => {
-          try { await recruitDiscord(discordId, name); return { ok: true, message: "Discord updated." }; }
+          try { await recruitDiscord(discordId, name); await logRecruitDiscord(discordId, name, "done", "Linked by the Academy retry."); return { ok: true, message: "Discord updated." }; }
           catch (error) {
             const message = String(error?.message || error).slice(0, 400);
             await db.prepare("UPDATE discord_member_links SET status='failed',last_error=?,updated_at=? WHERE discord_user_id=?").bind(message, new Date().toISOString(), discordId).run();
+            await logRecruitDiscord(discordId, name, "failed", message);
             return { ok: false, message };
           }
         }
