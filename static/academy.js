@@ -3,6 +3,8 @@
   const message = $('#academyMessage'), rows = $('#academyRows'), graduates = $('#academyGraduates');
   const recruitSection = $('#academyRecruitSection'), recruitForm = $('#academyRecruitForm');
   const passDialog = $('#academyPassDialog'), passStatus = $('#academyPassStatus');
+  const termDialog = $('#academyTermDialog'), termStatus = $('#academyTermStatus');
+  let termingId = 0, termingName = '';
   const TRAININGS = [['BM', 'Basic Medical'], ['EC', 'Basic Communication'], ['BV', 'Basic Vehicle']];
   let canManage = false, recruits = [], passingId = 0, busy = false;
 
@@ -44,11 +46,11 @@
       const discord = r.discord_status === 'failed' && canManage
         ? `<span class="acad-sub acad-failed" title="${esc(r.discord_error)}">Discord not updated. <button type="button" data-act="discord" data-id="${r.id}">Retry Discord</button></span>` : '';
       return `<tr>
-        <td><strong>${esc(r.name)}</strong><span class="acad-sub">${esc(r.callsign)} · ${esc(r.recruit_type)} · since ${esc(dateText(r.recruited_at))}</span>${discord}${canManage ? `<div class="admin-actions"><button type="button" class="danger" data-act="remove" data-id="${r.id}" data-name="${esc(r.name)}">Resigned</button></div>` : ''}</td>
+        <td><strong>${esc(r.name)}</strong><span class="acad-sub">${esc(r.callsign)} · ${esc(r.recruit_type)} · since ${esc(dateText(r.recruited_at))}</span>${discord}${canManage ? `<div class="admin-actions"><button type="button" class="danger" data-act="remove" data-id="${r.id}" data-name="${esc(r.name)}">Resigned</button>${r.overdue ? `<button type="button" class="danger" data-act="terminate" data-id="${r.id}" data-name="${esc(r.name)}">Terminate</button>` : ''}</div>` : ''}</td>
         <td><div class="acad-chips">${chips}</div></td>
         <td>${r.tig_days} / 5 days${r.tig_ok ? ' ✓' : ''}</td>
         <td>${patrol}</td>
-        <td>${status}</td>
+        <td>${status}${r.overdue ? '<br><span class="acad-failed">Training overdue</span>' : ''}</td>
         <td>${exam}</td></tr>`;
     }).join('');
   }
@@ -93,6 +95,7 @@
     else if (act === 'patrol') run(() => api('/api/academy/patrol', { id, done: button.dataset.done === 'true' }), 'Saved.');
     else if (act === 'discord') run(() => api('/api/academy/discord-retry', { id }), result => result.discord?.ok ? 'Discord updated.' : `Discord still failed: ${result.discord?.message}`);
     else if (act === 'remove') { if (confirm(`Remove ${button.dataset.name} from the Academy as resigned?`)) run(() => api('/api/academy/remove', { id: Number(button.dataset.id) }), 'Recruit removed from the Academy.'); }
+    else if (act === 'terminate') { termingId = Number(button.dataset.id); termingName = button.dataset.name; termStatus.textContent = ''; $('#academyTermText').textContent = `${termingName} has been in probie rank for 21 days without passing the Exit Exam.`; termDialog.showModal(); }
     else if (act === 'failed') { if (confirm(`Record the Exit Exam of ${button.dataset.name} as failed?`)) run(() => api('/api/academy/exam', { id, result: 'failed' }), 'Exit Exam recorded as failed.'); }
     else if (act === 'passed') {
       passingId = id; passStatus.textContent = '';
@@ -116,6 +119,21 @@
     finally { passDialog.querySelectorAll('button').forEach(b => { b.disabled = false; }); }
   });
   $('#academyPassCancel').addEventListener('click', () => passDialog.close());
+  $('#academyTermCancel').addEventListener('click', () => termDialog.close());
+  termDialog.addEventListener('click', async event => {
+    const choice = event.target.closest('button[data-discord-action]');
+    if (!choice) return;
+    const buttons = termDialog.querySelectorAll('button');
+    buttons.forEach(b => { b.disabled = true; });
+    termStatus.textContent = 'Terminating…';
+    try {
+      const result = await api('/api/academy/terminate', { id: termingId, discord_action: choice.dataset.discordAction });
+      termDialog.close();
+      await load();
+      say(`${termingName} was terminated.` + (result.discord?.ok ? ' Discord updated.' : ` Discord was not updated: ${result.discord?.message || 'unknown error'}.`), result.discord?.ok ? 'success' : 'error');
+    } catch (error) { termStatus.textContent = error.message; termStatus.className = 'admin-status error'; }
+    finally { buttons.forEach(b => { b.disabled = false; }); }
+  });
 
   load();
 })();
