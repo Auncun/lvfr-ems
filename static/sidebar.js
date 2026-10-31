@@ -63,7 +63,6 @@
         { label: 'Recruit', anchor: '#academyRecruitHeading' },
         { label: 'Full time recruits', anchor: '#academyFullHeading' },
         { label: 'Volunteer recruits', anchor: '#academyVolunteerHeading' },
-        { label: 'Graduates', anchor: '#academyGraduatesHeading' },
         { label: 'Log', anchor: '#academyLogHeading' }
       ]
     },
