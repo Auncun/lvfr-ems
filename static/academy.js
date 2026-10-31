@@ -9,6 +9,7 @@
   let termingId = 0, termingName = '', termingCallsign = '', termMode = 'terminate', nextCallsigns = {};
   const confirmDialog = $('#academyConfirmDialog');
   const TRAININGS = [['BM', 'Basic Medical'], ['EC', 'Basic Communication'], ['BV', 'Basic Vehicle']];
+  let canTerminate = false, canResign = false, canKick = false;
   let canManage = false, recruits = [], passingId = 0, busy = false;
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
@@ -57,11 +58,11 @@
       const discord = r.discord_status === 'failed' && canManage
         ? `<span class="acad-sub acad-failed" title="${esc(r.discord_error)}">Discord not updated. <button type="button" data-act="discord" data-id="${r.id}">Retry Discord</button></span>` : '';
       return `<tr>
-        <td>${esc(r.callsign)}</td><td><strong>${esc(r.name)}</strong><span class="acad-sub">${esc(r.recruit_type)} · since ${esc(dateText(r.recruited_at))}</span>${discord}${canManage ? `<details class="acad-action"><summary class="tab">Action</summary><div class="acad-action-menu"><button type="button" data-act="switch" data-id="${r.id}" data-name="${esc(r.name)}" data-to="${r.recruit_type === 'Probationary' ? 'Probationary Volunteer' : 'Probationary'}">${r.recruit_type === 'Probationary' ? 'Switch to Volunteer' : 'Switch to Full time'}</button><button type="button" class="danger" data-act="remove" data-id="${r.id}" data-name="${esc(r.name)}">Resigned</button>${r.overdue ? `<button type="button" class="danger" data-act="terminate" data-id="${r.id}" data-name="${esc(r.name)}">Terminate</button>` : ''}</div></details>` : ''}</td>
+        <td>${esc(r.callsign)}</td><td><strong>${esc(r.name)}</strong><span class="acad-sub">${esc(r.recruit_type)} · since ${esc(dateText(r.recruited_at))}</span>${discord}${canManage ? `<details class="acad-action"><summary class="tab">Action</summary><div class="acad-action-menu"><button type="button" data-act="switch" data-id="${r.id}" data-name="${esc(r.name)}" data-to="${r.recruit_type === 'Probationary' ? 'Probationary Volunteer' : 'Probationary'}">${r.recruit_type === 'Probationary' ? 'Switch to Volunteer' : 'Switch to Full time'}</button><button type="button" class="danger" data-act="remove" data-id="${r.id}" data-name="${esc(r.name)}" ${canResign ? '' : 'disabled'}>Resigned</button>${canResign ? '' : '<small class="acad-note">Needs the Academy: resign permission.</small>'}${r.overdue ? `<button type="button" class="danger" data-act="terminate" data-id="${r.id}" data-name="${esc(r.name)}" ${canTerminate ? '' : 'disabled'}>Terminate</button>${canTerminate ? '' : '<small class="acad-note">Needs the Academy: terminate permission.</small>'}` : ''}</div></details>` : ''}</td>
         <td><div class="acad-chips">${chips}</div></td>
         <td>${r.tig_days} / 5 days${r.tig_ok ? ' ✓' : ''}</td>
         <td>${patrol}</td>
-        <td>${status}${r.overdue ? '<br><span class="acad-failed">Training overdue</span>' : ''}</td>
+        <td>${status}${r.overdue ? '<br><span class="acad-failed">Exit Exam overdue</span>' : ''}</td>
         <td>${exam}</td></tr>`;
     }).join('');
   }
@@ -70,6 +71,9 @@
     try {
       const data = await api('/api/academy');
       canManage = data.can_manage === true;
+      canTerminate = data.can_terminate === true;
+      canResign = data.can_resign === true;
+      canKick = data.can_kick === true;
       recruits = data.recruits || [];
       recruitSection.hidden = !canManage;
       nextCallsigns = data.next_callsigns || {};
@@ -235,10 +239,11 @@
   function syncTermButtons() {
     const typed = termInput.value.trim().toUpperCase();
     const ok = !!termingCallsign && typed === termingCallsign.toUpperCase();
-    termDialog.querySelectorAll('button[data-discord-action]').forEach(b => { b.disabled = !ok; });
+    termDialog.querySelectorAll('button[data-discord-action]').forEach(b => { b.disabled = !ok || (b.dataset.discordAction === 'kick' && !canKick); });
   }
   function openTermDialog() {
     $('#academyTermCallsign').textContent = termingCallsign;
+    $('#academyKickNote').hidden = canKick;
     termInput.value = '';
     syncTermButtons();
     termDialog.showModal();
