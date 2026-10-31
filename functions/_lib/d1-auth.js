@@ -61,9 +61,40 @@ async function roleScopes(db,role){
   const row=await db.prepare("SELECT scopes_json FROM role_permissions WHERE role=?").bind(String(role||"").toLowerCase()).first();
   try { return JSON.parse(row?.scopes_json||"{}")||{}; } catch { return {}; }
 }
+// Every role of an account. The main role always counts, even if account_roles has no row for it.
+async function accountRoles(db,account){
+  const rows=(await db.prepare("SELECT role FROM account_roles WHERE account_id=?").bind(String(account.account_id||"")).all()).results||[];
+  return [...new Set([String(account.role||"").toLowerCase(),...rows.map(row=>String(row.role).toLowerCase())].filter(Boolean))];
+}
+// Rank limits of an account: the union of its roles. A scope is unlimited if any role has no limit for it.
+async function accountScopes(db,account){
+  const roles=await accountRoles(db,account), all=await Promise.all(roles.map(role=>roleScopes(db,role)));
+  const merged={};
+  for(const scope of ["promote","demote","terminate","view"]){
+    const rules=all.map(scopes=>scopes[scope]);
+    if(rules.some(rule=>!rule)) continue;
+    const fields=scope==="terminate"||scope==="view"?["from"]:["from","to"];
+    merged[scope]={};
+    for(const field of fields){
+      if(rules.some(rule=>!Array.isArray(rule[field]))) continue;
+      merged[scope][field]=[...new Set(rules.flatMap(rule=>rule[field]))];
+    }
+  }
+  return merged;
+}
+// Roles listed in the Sheet (Role column plus Roles column). Unknown roles stop the sync, as before.
+async function sheetRoleStatements(db,accountId,primary,rolesText,now,source){
+  const names=[...new Set([String(primary||"").toLowerCase(),...String(rolesText||"").split(/[,;]/).map(role=>role.trim().toLowerCase())].filter(Boolean))];
+  for(const name of names){
+    if(!/^([a-z][a-z0-9_-]{1,31})$/.test(name)) throw Object.assign(new Error(`Invalid role "${name}" in the Accounts Sheet; D1 was not changed.`),{status:400});
+    if(name!=="admin"&&!await db.prepare("SELECT role FROM role_permissions WHERE role=?").bind(name).first()) throw Object.assign(new Error(`Unknown role "${name}" in the Accounts Sheet; D1 was not changed.`),{status:400});
+  }
+  return [db.prepare("DELETE FROM account_roles WHERE account_id=?").bind(accountId),
+    ...names.map(name=>db.prepare("INSERT INTO account_roles(account_id,role,assigned_at,assigned_by) VALUES(?,?,?,?)").bind(accountId,name,now,source))];
+}
 async function assertRankScope(db,actor,scope,fromRank,toRank){
   if(String(actor.role||"").toLowerCase()==="admin") return;
-  const rule=(await roleScopes(db,actor.role))[scope];
+  const rule=(await accountScopes(db,actor))[scope];
   if(!rule) return;
   if(Array.isArray(rule.from)&&!rule.from.includes(fromRank)) throw Object.assign(new Error("Your role cannot change members of rank "+fromRank+"."),{status:403});
   if(toRank&&Array.isArray(rule.to)&&!rule.to.includes(toRank)) throw Object.assign(new Error("Your role cannot move a member to "+toRank+"."),{status:403});
@@ -71,7 +102,7 @@ async function assertRankScope(db,actor,scope,fromRank,toRank){
 // Ranks whose members the actor may see in lists and notifications. Null means no limit.
 async function viewRanks(db,actor){
   if(String(actor.role||"").toLowerCase()==="admin") return null;
-  const rule=(await roleScopes(db,actor.role)).view;
+  const rule=(await accountScopes(db,actor)).view;
   return rule&&Array.isArray(rule.from)?rule.from:null;
 }
 async function filterRowsByViewRanks(db,actor,rows){
@@ -149,7 +180,9 @@ function expandLegacyPermissionOverrides(value) {
 }
 async function accountPermissions(db, account) {
   if(String(account.role||"").toLowerCase()==="admin") return Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,true]));
-  const role=await rolePermissions(db,account.role), overrides=expandLegacyPermissionOverrides(parsePermissionOverrides(account.permissions_override_json));
+  const profiles=await Promise.all((await accountRoles(db,account)).map(name=>rolePermissions(db,name)));
+  const role=Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,profiles.some(profile=>profile[key]===true)]));
+  const overrides=expandLegacyPermissionOverrides(parsePermissionOverrides(account.permissions_override_json));
   const result=Object.fromEntries(ROLE_PERMISSION_KEYS.map(key=>[key,Object.hasOwn(overrides,key)?overrides[key]:role[key]]));
   for(const key of LOG_VIEW_PERMISSIONS) if(!Object.hasOwn(overrides,key)&&Object.hasOwn(overrides,"logs_view")) result[key]=overrides.logs_view;
   for(const key of TRAINING_VIEW_PERMISSIONS) if(!Object.hasOwn(overrides,key)&&Object.hasOwn(overrides,"training_view")) result[key]=overrides.training_view;
@@ -1032,6 +1065,7 @@ async function accountAction(db, id, action, actor) {
   }
   await db.batch([
     db.prepare("INSERT INTO account_audit(created_at,account_id,name,callsign,action,actor_name) VALUES(?,?,?,?,?,?)").bind(now,id,target.name,target.callsign,action,actor.name),
+    ...(role!==target.role&&action!=="delete" ? [db.prepare("DELETE FROM account_roles WHERE account_id=?").bind(id), db.prepare("INSERT INTO account_roles(account_id,role,assigned_at,assigned_by) VALUES(?,?,?,?)").bind(id,role,now,actor.name)] : []),
     ...(["deny","delete","deactivate"].includes(action) ? [db.prepare("DELETE FROM auth_sessions WHERE account_id=?").bind(id)] : []),
     ...(action==="delete" ? [db.prepare("DELETE FROM account_presence WHERE account_id=?").bind(id)] : []),
     ...(action==="delete" ? [db.prepare("DELETE FROM accounts WHERE account_id=?").bind(id)] : [db.prepare("UPDATE accounts SET status=?,role=?,permissions_override_json=?,activated_at=?,approved_by=?,admin_changed_at=?,admin_changed_by=?,updated_at=? WHERE account_id=?").bind(status,role,role!==target.role?"{}":target.permissions_override_json||"{}",activated,approvedBy,changedAt,changedBy,now,id)])
@@ -1710,7 +1744,7 @@ export async function handleD1(context) {
       const profile=await db.prepare("SELECT role FROM role_permissions WHERE role=?").bind(role).first();
       if(!existing||(!profile&&role!=="admin")) return json({detail:"Account or role was not found."},404);
       const timestamp=new Date().toISOString();
-      await db.prepare("UPDATE accounts SET name=?,name_key=?,callsign=?,status=?,role=?,updated_at=? WHERE account_id=?").bind(String(account.name).trim(),nameKey(account.name),String(account.callsign).trim().toUpperCase(),status,role,timestamp,id).run();
+      await db.batch([db.prepare("UPDATE accounts SET name=?,name_key=?,callsign=?,status=?,role=?,updated_at=? WHERE account_id=?").bind(String(account.name).trim(),nameKey(account.name),String(account.callsign).trim().toUpperCase(),status,role,timestamp,id),...(await sheetRoleStatements(db,id,role,account.roles,timestamp,"Sheet"))]);
       await db.prepare("DELETE FROM auth_sessions WHERE account_id=? AND ? IN ('denied','removed','deactivated')").bind(id,status).run();
       return json({ok:true,account_id:id});
     }
@@ -1743,6 +1777,7 @@ export async function handleD1(context) {
         if(!sheet) {
           statements.push(db.prepare("DELETE FROM auth_sessions WHERE account_id=?").bind(row.account_id));
           statements.push(db.prepare("DELETE FROM account_presence WHERE account_id=?").bind(row.account_id));
+          statements.push(db.prepare("DELETE FROM account_roles WHERE account_id=?").bind(row.account_id));
           statements.push(db.prepare("DELETE FROM accounts WHERE account_id=?").bind(row.account_id)); deleted++; continue;
         }
         incoming.delete(String(row.account_id));
@@ -1750,6 +1785,7 @@ export async function handleD1(context) {
         if(!name||!['pending','approved','deactivated','denied','removed'].includes(status)||!/^([a-z][a-z0-9_-]{1,31})$/.test(role)) return json({detail:"Accounts Sheet row is invalid for account "+row.account_id+"; D1 was not changed."},400);
         if(!await db.prepare("SELECT role FROM role_permissions WHERE role=?").bind(role).first()&&role!=="admin") return json({detail:"Unknown account role in Sheet: "+role+"; D1 was not changed."},400);
         statements.push(db.prepare("UPDATE accounts SET name=?,name_key=?,callsign=?,status=?,role=?,updated_at=? WHERE account_id=?").bind(name,nameKey(name),callsign,status,role,new Date().toISOString(),row.account_id));
+        statements.push(...(await sheetRoleStatements(db,row.account_id,role,sheet.roles,new Date().toISOString(),"Sheet")));
         if(['denied','removed','deactivated'].includes(status)) statements.push(db.prepare("DELETE FROM auth_sessions WHERE account_id=?").bind(row.account_id));
         updated++;
       }
