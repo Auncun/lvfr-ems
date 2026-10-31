@@ -102,6 +102,18 @@
       </div>
       <p id="academyPassStatus" class="admin-status" role="status" aria-live="polite"></p>
     </dialog>
+    <dialog id="academyTermDialog" aria-labelledby="academyTermTitle">
+      <h2 id="academyTermTitle">Terminate recruit</h2>
+      <p id="academyTermText"></p>
+      <p class="muted">Choose what happens to the Discord account.</p>
+      <div class="admin-actions" style="flex-direction:column;align-items:stretch">
+        <button type="button" class="danger" data-discord-action="kick">Kick from the Discord server</button>
+        <button type="button" data-discord-action="remove_roles">Remove managed roles and clear nickname</button>
+        <button type="button" data-discord-action="none">Clear nickname only</button>
+        <button type="button" id="academyTermCancel">Cancel</button>
+      </div>
+      <p id="academyTermStatus" class="admin-status" role="status" aria-live="polite"></p>
+    </dialog>
   </main>
   <script src="/static/date-format.js?v=ops-20261022-15"></script>
   <script src="/static/session-auth.js?v=presence-20261030-1"></script>
