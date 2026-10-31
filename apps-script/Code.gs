@@ -2031,7 +2031,7 @@ function academyTerminate_(data, user) {
   requireRolePermission_(user, 'academy_manage');
   const member = memberByCallsign_(data.callsign);
   if (!['Probationary', 'Probationary Volunteer'].includes(member.rank)) throw new Error('This member is not an academy recruit.');
-  return terminateMember_({ callsign: member.callsign, note: String(data.note || 'Training overdue') }, user);
+  return terminateMember_({ callsign: member.callsign, note: String(data.note || 'Exit Exam overdue') }, user);
 }
 
 // AOS History sheet in the roster spreadsheet. Created with its header row if missing.
