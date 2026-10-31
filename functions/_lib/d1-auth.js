@@ -2075,7 +2075,8 @@ export async function handleD1(context) {
         try { const { guildId } = discordConfig(env); await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(discordId))}`); return { ok: true }; }
         catch { return { ok: false, message: "This Discord User ID is not a member of the LVFR Discord server. Add the member to the server first." }; }
       };
-      return handleAcademy({ db, user, route, method, data, mirror: academyMirror, discordRoster, discordRecruit, discordTerminate, discordCheck });
+      // await keeps a thrown Academy error inside this try, so it becomes a JSON answer instead of a 500.
+      return await handleAcademy({ db, user, route, method, data, mirror: academyMirror, discordRoster, discordRecruit, discordTerminate, discordCheck });
     }
     if (route === "/api/discord/settings" && method === "POST") {
       if (!(user.role === "admin" || user.permissions?.discord_settings_manage === true)) throw Object.assign(new Error("Discord settings access is required."), { status: 403 });
