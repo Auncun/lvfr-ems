@@ -5,6 +5,7 @@ function showAvailableApps(user) {
   const role = String(user.role || '').trim().toLowerCase();
   const approved = String(user.status || '').toLowerCase() === 'approved';
   document.querySelector('#emsCard')?.toggleAttribute('hidden', !approved || !(role === 'admin' || user.permissions?.portal_access === true));
+  document.querySelector('#academyCard')?.toggleAttribute('hidden', !approved || !(role === 'admin' || user.permissions?.academy_view === true));
   document.querySelector('#watchCommandCard')?.toggleAttribute('hidden', !approved || !(role === 'admin' || user.permissions?.watch_command_view === true));
   // Everyone sees the sync status; only users with permission see the action buttons.
   const canSync = Boolean(user.is_command);
