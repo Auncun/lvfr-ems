@@ -87,17 +87,6 @@
         <button type="button" id="refreshDiscordStatus">Refresh Status</button>
       </div>
       <p id="discordSyncStatus" class="admin-status" role="status" aria-live="polite">Discord status has not been loaded.</p>
-      <div id="discordRoleMapCard" class="admin-card" hidden>
-        <h3>Discord role IDs</h3>
-        <p class="muted">Enter the Discord role ID for each website rank. In Discord: Server Settings → Roles → right-click the role → Copy Role ID (Developer Mode must be on). Until a rank is saved here, the DISCORD_ROLE_MAP secret is used for it.</p>
-        <div class="toolbar"><label>Discord server ID <input id="discordGuildIdInput" type="text" inputmode="numeric" autocomplete="off" placeholder="17 to 20 digits"></label> <button type="button" id="saveDiscordGuildId" disabled>Save server ID</button></div>
-        <p class="muted">Changing the server ID changes every Discord action. Existing links are kept. The bot token stays a Cloudflare secret.</p>
-        <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Rank</th><th>Discord role ID</th></tr></thead><tbody id="discordRoleMapRows"><tr><td colspan="2">Loading…</td></tr></tbody></table></div>
-        <div class="toolbar"><label>Ops role ID <input id="discordOpsRoleInput" type="text" inputmode="numeric" autocomplete="off" placeholder="17 to 20 digits"></label></div>
-        <p class="muted">Ops is a Discord-only role. It is added to a linked member who has HERT, Basic FORT or Advanced FORT, and removed when none of them is held. It is not shown on the website or in the Sheet.</p>
-        <div class="admin-actions"><button type="button" class="primary" id="saveDiscordRoleMap" disabled>Save role IDs</button></div>
-        <p id="discordRoleMapStatus" class="admin-status" role="status" aria-live="polite"></p>
-      </div>
       <div id="discordSyncReport" class="admin-card" hidden><h3>Synchronization Report</h3><div id="discordSyncReportText" class="discord-report-body"></div></div>
         </section>
     <section id="commandMirrorSection" class="admin-card command-section" aria-labelledby="mirrorQueueHeading" hidden>
@@ -135,6 +124,20 @@
       <div class="toolbar"><input id="auditSearch" type="text" autocomplete="off" placeholder="Search name, callsign, action, or by"></div><div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Date</th><th>Account</th><th>Action</th><th>By</th></tr></thead><tbody id="auditRows"><tr><td colspan="4">Loading history…</td></tr></tbody></table></div>
       </div>
       <div class="history-subpanel" data-history-subpanel="permission" id="permissionLogPanel" hidden></div>
+    </section>
+    <section id="commandRoleIdsSection" class="admin-card command-section" aria-labelledby="discordRoleIdsHeading" hidden>
+      <div class="admin-header"><div><h2 id="discordRoleIdsHeading">Discord role IDs</h2></div></div>
+      <div id="discordRoleMapCard">
+        <h3>Discord role IDs</h3>
+        <p class="muted">Enter the Discord role ID for each website rank. In Discord: Server Settings → Roles → right-click the role → Copy Role ID (Developer Mode must be on). Until a rank is saved here, the DISCORD_ROLE_MAP secret is used for it.</p>
+        <div class="toolbar"><label>Discord server ID <input id="discordGuildIdInput" type="text" inputmode="numeric" autocomplete="off" placeholder="17 to 20 digits"></label> <button type="button" id="saveDiscordGuildId" disabled>Save server ID</button></div>
+        <p class="muted">Changing the server ID changes every Discord action. Existing links are kept. The bot token stays a Cloudflare secret.</p>
+        <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Rank</th><th>Discord role ID</th></tr></thead><tbody id="discordRoleMapRows"><tr><td colspan="2">Loading…</td></tr></tbody></table></div>
+        <div class="toolbar"><label>Ops role ID <input id="discordOpsRoleInput" type="text" inputmode="numeric" autocomplete="off" placeholder="17 to 20 digits"></label></div>
+        <p class="muted">Ops is a Discord-only role. It is added to a linked member who has HERT, Basic FORT or Advanced FORT, and removed when none of them is held. It is not shown on the website or in the Sheet.</p>
+        <div class="admin-actions"><button type="button" class="primary" id="saveDiscordRoleMap" disabled>Save role IDs</button></div>
+        <p id="discordRoleMapStatus" class="admin-status" role="status" aria-live="polite"></p>
+      </div>
     </section>
     <section id="commandLinksSection" class="admin-card command-section" aria-labelledby="linkedMembersHeading" hidden>
       <div class="admin-header"><div><h2 id="linkedMembersHeading">Linked members</h2></div></div>
