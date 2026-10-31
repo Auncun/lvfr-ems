@@ -2499,9 +2499,12 @@ export async function handleD1(context) {
     requireRolePermission(user,user.permissions,permissionForRequest(route,method,{...data,log_type:data.log_type||url.searchParams.get("log_type")}));
     if(route==="/api/notifications" && method==="GET") {
       await refreshD1Notifications(db,user);
-      const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN n.id<=COALESCE(m.read_through_id,0) OR r.notification_id IS NOT NULL THEN 1 ELSE 0 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? LEFT JOIN account_notification_marks m ON m.account_id=? LEFT JOIN notification_hidden h ON h.notification_id=n.id AND h.account_id=? LEFT JOIN notification_preferences p ON p.account_id=? AND p.kind=n.kind WHERE n.id>COALESCE(m.hidden_through_id,0) AND h.notification_id IS NULL AND COALESCE(p.enabled, CASE WHEN n.kind IN ('eligible','inactive','overdue','request') THEN 1 ELSE 0 END)=1 ORDER BY n.id DESC LIMIT 250").bind(user.account_id,user.account_id,user.account_id,user.account_id).all()).results||[];
+      const recent=(await db.prepare("SELECT n.id,n.kind,n.title,n.message,n.callsign,n.target_rank,n.created_at,CASE WHEN n.id<=COALESCE(m.read_through_id,0) OR r.notification_id IS NOT NULL THEN 1 ELSE 0 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.account_id=? LEFT JOIN account_notification_marks m ON m.account_id=? LEFT JOIN notification_hidden h ON h.notification_id=n.id AND h.account_id=? WHERE n.id>COALESCE(m.hidden_through_id,0) AND h.notification_id IS NULL ORDER BY n.id DESC LIMIT 250").bind(user.account_id,user.account_id,user.account_id).all()).results||[];
+      // Per-kind switches live in notification_preferences_wide (the same source the settings page reads and writes).
+      const prefRow=(await db.prepare("SELECT * FROM notification_preferences_wide WHERE account_id=?").bind(user.account_id).first())||{};
+      const kindOn=kind=>{const v=prefRow[kind]; return v===null||v===undefined ? DEFAULT_ON_NOTIFICATION_KINDS.includes(kind) : Number(v)===1;};
       const viewableNotif=await viewRanks(db,user);
-      let visibleItems=recent.filter(item=>notificationVisible(item,user));
+      let visibleItems=recent.filter(item=>kindOn(item.kind)&&notificationVisible(item,user));
       if(viewableNotif){
         const rankByCallsign=new Map(((await db.prepare("SELECT callsign,rank FROM members").all()).results||[]).map(row=>[String(row.callsign||"").toUpperCase(),row.rank]));
         visibleItems=visibleItems.filter(item=>!item.callsign||viewableNotif.includes(rankByCallsign.get(String(item.callsign).toUpperCase())||""));
