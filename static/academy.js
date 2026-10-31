@@ -44,7 +44,7 @@
       const discord = r.discord_status === 'failed' && canManage
         ? `<span class="acad-sub acad-failed" title="${esc(r.discord_error)}">Discord not updated. <button type="button" data-act="discord" data-id="${r.id}">Retry Discord</button></span>` : '';
       return `<tr>
-        <td><strong>${esc(r.name)}</strong><span class="acad-sub">${esc(r.callsign)} · ${esc(r.recruit_type)} · since ${esc(dateText(r.recruited_at))}</span>${discord}</td>
+        <td><strong>${esc(r.name)}</strong><span class="acad-sub">${esc(r.callsign)} · ${esc(r.recruit_type)} · since ${esc(dateText(r.recruited_at))}</span>${discord}${canManage ? `<div class="admin-actions"><button type="button" class="danger" data-act="remove" data-id="${r.id}" data-name="${esc(r.name)}">Resigned</button></div>` : ''}</td>
         <td><div class="acad-chips">${chips}</div></td>
         <td>${r.tig_days} / 5 days${r.tig_ok ? ' ✓' : ''}</td>
         <td>${patrol}</td>
@@ -92,6 +92,7 @@
     if (act === 'training') run(() => api('/api/academy/training', { id, training: button.dataset.training, done: button.dataset.done === 'true' }), 'Saved.');
     else if (act === 'patrol') run(() => api('/api/academy/patrol', { id, done: button.dataset.done === 'true' }), 'Saved.');
     else if (act === 'discord') run(() => api('/api/academy/discord-retry', { id }), result => result.discord?.ok ? 'Discord updated.' : `Discord still failed: ${result.discord?.message}`);
+    else if (act === 'remove') { if (confirm(`Remove ${button.dataset.name} from the Academy as resigned?`)) run(() => api('/api/academy/remove', { id: Number(button.dataset.id) }), 'Recruit removed from the Academy.'); }
     else if (act === 'failed') { if (confirm(`Record the Exit Exam of ${button.dataset.name} as failed?`)) run(() => api('/api/academy/exam', { id, result: 'failed' }), 'Exit Exam recorded as failed.'); }
     else if (act === 'passed') {
       passingId = id; passStatus.textContent = '';
