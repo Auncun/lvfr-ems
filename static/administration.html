@@ -121,10 +121,10 @@
       <p id="permissionStatus" class="permission-status" role="status" aria-live="polite"></p>
     </section>
     <section id="commandHistorySection" class="admin-card command-section" aria-labelledby="auditHeading" hidden>
-      <div class="admin-header"><h2 id="auditHeading">History</h2><div class="admin-actions"><button type="button" id="openFullCleaning" class="danger" hidden>Full Cleaning</button><button type="button" id="clearAllNotifications" class="danger" hidden>Clear notifications for all</button></div></div><div hidden><button type="button" id="clearAccountAuditBtn" class="danger">Clear D1 audit</button></div>
+      <div class="admin-header"><h2 id="auditHeading">History</h2><div class="admin-actions"><button type="button" id="openFullCleaning" class="danger" hidden>Full Cleaning</button><button type="button" id="clearAllNotifications" class="danger" hidden>Clear notifications for all</button></div></div>
       <nav class="role-tab-bar history-subtabs" aria-label="History type"><button type="button" class="role-tab active" data-history-tab="audit">Account Audit</button><button type="button" class="role-tab" data-history-tab="permission">Permission log</button></nav>
       <div class="history-subpanel" data-history-subpanel="audit">
-      <div class="toolbar"><input id="auditSearch" type="text" autocomplete="off" placeholder="Search name, callsign, action, or by"></div><div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Date</th><th>Account</th><th>Action</th><th>By</th></tr></thead><tbody id="auditRows"><tr><td colspan="4">Loading history…</td></tr></tbody></table></div>
+      <div class="toolbar"><input id="auditSearch" type="text" autocomplete="off" placeholder="Search name, callsign, action, or by"><button type="button" id="clearAccountAuditBtn" class="danger" hidden>Delete logs from D1</button></div><div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Date</th><th>Account</th><th>Action</th><th>By</th></tr></thead><tbody id="auditRows"><tr><td colspan="4">Loading history…</td></tr></tbody></table></div>
       </div>
       <div class="history-subpanel" data-history-subpanel="permission" id="permissionLogPanel" hidden></div>
     </section>
@@ -171,6 +171,7 @@
           <label class="permission-item"><input type="checkbox" data-clean-log="activity"><span><strong>Activity</strong></span></label>
           <label class="permission-item"><input type="checkbox" data-clean-log="instructor"><span><strong>Instructor</strong></span></label>
           <label class="permission-item"><input type="checkbox" data-clean-log="account_audit"><span><strong>Account Audit</strong></span></label>
+          <label class="permission-item"><input type="checkbox" data-clean-log="academy"><span><strong>Academy Log</strong><small>Google Sheets: the Academy rows in AOS History.</small></span></label>
           <label class="permission-item"><input type="checkbox" data-clean-log="notifications"><span><strong>Notifications</strong></span></label>
           <label class="permission-item"><input type="checkbox" data-clean-log="do_not_promote"><span><strong>Do Not Promote</strong></span></label>
           <label class="permission-item"><input type="checkbox" data-clean-log="do_not_terminate"><span><strong>Do Not Terminate</strong></span></label>
