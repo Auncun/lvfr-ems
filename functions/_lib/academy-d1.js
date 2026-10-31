@@ -240,11 +240,15 @@ async function exam(db, user, data, mirror, discordRoster) {
   return { ok: true, new_callsign: newCs, new_rank: newRank, discord: { ok: sync === "pending", message: messages[sync] || messages.unavailable } };
 }
 
-async function removeRecruit(db, user, data, mirror) {
+async function removeRecruit(db, user, data, mirror, discordTerminate) {
   const r = await loadActive(db, Number(data.id) || 0);
   const member = await db.prepare("SELECT * FROM members WHERE upper(callsign)=upper(?)").bind(r.callsign).first();
   if (!member) throw fail("Member not found on the roster.", 404);
   if (!PROBIE_RANKS.includes(member.rank)) throw fail("This member is not an academy recruit.");
+  // A linked Discord account needs an explicit choice before anything is changed (same rule as the termination).
+  const link = await db.prepare("SELECT 1 AS found FROM discord_member_links WHERE upper(callsign)=upper(?)").bind(member.callsign).first();
+  const discordAction = String(data.discord_action || "");
+  if (link && !["kick", "remove_roles", "none"].includes(discordAction)) throw fail("Choose what to do in Discord: kick, remove roles only, or clear the nickname only.", 409);
   const now = nowIso();
   await db.batch([
     db.prepare("INSERT OR REPLACE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(member.rank, member.callsign, member.sheet_row ?? null, now),
@@ -253,7 +257,11 @@ async function removeRecruit(db, user, data, mirror) {
   ]);
   await academyLog(db, user, "Removed — Resigned", r.callsign, r.name, "");
   await mirror("Academy remove", "/api/academy/remove", { callsign: member.callsign, name: member.name });
-  return { ok: true };
+  let discord = { ok: true, message: "No Discord account is linked." };
+  if (link && discordTerminate) {
+    discord = await discordTerminate(member.callsign, member.name, discordAction).then(() => ({ ok: true, message: discordAction === "kick" ? "Kicked from the Discord server." : "Discord updated." })).catch(error => ({ ok: false, message: String(error?.message || error).slice(0, 200) }));
+  }
+  return { ok: true, discord };
 }
 
 // Training overdue: the Academy terminates a recruit who has been in probie rank OVERDUE_DAYS days without passing the Exit Exam.
@@ -296,10 +304,10 @@ export async function handleAcademy({ db, user, route, method, data, mirror, dis
   if (route === "/api/academy/training" && method === "POST") { requireManage(user); return json(await setTraining(db, user, data)); }
   if (route === "/api/academy/patrol" && method === "POST") { requireManage(user); return json(await setPatrol(db, user, data)); }
   if (route === "/api/academy/exam" && method === "POST") { requireManage(user); return json(await exam(db, user, data, mirror, discordRoster)); }
-  if (route === "/api/academy/remove" && method === "POST") { requireManage(user); return json(await removeRecruit(db, user, data, mirror)); }
+  if (route === "/api/academy/remove" && method === "POST") { requireManage(user); return json(await removeRecruit(db, user, data, mirror, discordTerminate)); }
   if (route === "/api/academy/switch" && method === "POST") { requireManage(user); return json(await switchRecruit(db, user, data, mirror, discordRoster)); }
   if (route === "/api/academy/log" && method === "GET") { requireView(user); return json(await academyLogList(db)); }
-  if (route === "/api/academy/log/delete" && method === "POST") { requireManage(user); await db.prepare("DELETE FROM academy_log WHERE id=?").bind(Number(data.id) || 0).run(); return json({ ok: true }); }
+  if (route === "/api/academy/log/clear" && method === "POST") { requireManage(user); await db.prepare("DELETE FROM academy_log").run(); return json({ ok: true }); }
   if (route === "/api/academy/terminate" && method === "POST") { requireManage(user); return json(await terminateRecruit(db, user, data, mirror, discordTerminate)); }
   return json({ detail: "Academy route was not found." }, 404);
 }
