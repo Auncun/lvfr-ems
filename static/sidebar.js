@@ -92,10 +92,12 @@
             { label: 'Sync Discord Members', clickTarget: '#syncDiscordMembers', sectionAnchor: '#discordSyncHeading', availability: '#commandDiscordSection' },
             { label: 'Retry Failed Discord Updates', clickTarget: '#retryDiscordUpdates', sectionAnchor: '#discordSyncHeading', availability: '#commandDiscordSection' },
             { label: 'Refresh Status', clickTarget: '#refreshDiscordStatus', sectionAnchor: '#discordSyncHeading', availability: '#commandDiscordSection' }
-          ] }
+          ] },
+          { label: 'Role IDs', anchor: '#discordRoleIdsHeading', availability: '#commandRoleIdsSection' },
+          { label: 'Linked members', anchor: '#linkedMembersHeading', availability: '#commandLinksSection' },
+          { label: 'Discord action log', anchor: '#discordLogHeading', availability: '#commandLogSection' }
         ] },
-        { label: 'Linked members', anchor: '#linkedMembersHeading', availability: '#commandLinksSection' },
-        { label: 'Discord action log', anchor: '#discordLogHeading', availability: '#commandLogSection' }
+        { label: 'Mirror queue', anchor: '#mirrorQueueHeading', availability: '#commandMirrorSection' }
       ]
     }
   ];
