@@ -52,9 +52,22 @@ async function loadActive(db, id) {
   return row;
 }
 
+// Log action -> notification kind. Only these four categories notify.
+const ACADEMY_NOTICES = [
+  [/^Recruited$/, "academy_recruited", "Recruit added"],
+  [/^Passed Exit Exam$/, "academy_graduated", "Exit Exam passed"],
+  [/^(Removed|Terminated)/, "academy_resigned", "Recruit removed"],
+  [/^Switched/, "academy_switched", "Rank switched"],
+];
 async function academyLog(db, user, action, callsign, name, detail) {
+  const now = nowIso();
   await db.prepare("INSERT INTO academy_log(created_at,actor_name,callsign,name,action,detail) VALUES(?,?,?,?,?,?)")
-    .bind(nowIso(), String(user.name || ""), callsign || "", name || "", action, detail || "").run();
+    .bind(now, String(user.name || ""), callsign || "", name || "", action, detail || "").run();
+  const notice = ACADEMY_NOTICES.find(([pattern]) => pattern.test(action));
+  if (notice) {
+    await db.prepare("INSERT OR IGNORE INTO notifications(kind,event_key,title,message,callsign,target_rank,created_at) VALUES(?,?,?,?,?,?,?)")
+      .bind(notice[1], "academy:" + crypto.randomUUID(), notice[2], `${name || ""} (${callsign || ""}) ${detail || action}`.trim(), callsign || "", "", now).run();
+  }
 }
 
 // Probationary members already on the roster (added before the Academy page, or by hand in the Sheet)
