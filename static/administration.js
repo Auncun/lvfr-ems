@@ -394,6 +394,8 @@ const permissionGroups = [
     ['watch_command_view', 'Watch Command: view', 'Open Watch Command logs and activity.'],
     ['watch_command_edit', 'Watch Command: edit', 'Create and update Watch Command records.'],
     ['watch_command_roster', 'Watch Command: roster lookup', 'Search member names and callsigns.'],
+    ['academy_view', 'Academy: view', 'Open the Academy and view recruits and graduates.'],
+    ['academy_manage', 'Academy: manage', 'Recruit members, record trainings, patrol, Exit Exams and graduations.'],
   ] },
   { name: 'Lists and records', items: [
     ['members_view', 'Members list', 'View the roster and member list.'], ['eligible_view', 'Eligible list', 'View promotion eligibility.'], ['promotion_access', 'Access Promotion', 'Open the Promotion page and view eligible members.'],
