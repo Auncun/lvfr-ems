@@ -1810,6 +1810,19 @@ function showDiscordReport(value) {
     discordReportText.append(heading, ul);
   });
 }
+// The Action menu is positioned next to its button, so the table's scroll area cannot cut it off.
+function placeRowActionMenu(event) {
+  const row = event.target.closest?.('.row-action');
+  if (!row) return;
+  const trigger = row.querySelector('.row-action-trigger'), menu = row.querySelector('.row-action-menu');
+  if (!trigger || !menu) return;
+  const r = trigger.getBoundingClientRect();
+  const below = r.bottom + menu.offsetHeight <= window.innerHeight;
+  menu.style.top = `${below ? r.bottom : Math.max(8, r.top - menu.offsetHeight)}px`;
+  menu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8))}px`;
+}
+document.addEventListener('mouseover', placeRowActionMenu);
+document.addEventListener('focusin', placeRowActionMenu);
 const roleMapEsc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 async function loadDiscordRoleMap() {
   const card = document.querySelector('#discordRoleMapCard');
