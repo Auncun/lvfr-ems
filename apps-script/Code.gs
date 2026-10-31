@@ -2504,10 +2504,11 @@ function syncAccountsSnapshotToD1_() {
   const sheet = accountsSheet_();
   if (!sheet) throw new Error('Accounts sheet was not found; D1 account records were not changed.');
   if (sheet.getLastRow() < 2) throw new Error('Accounts sheet has no account records; D1 account records were not changed.');
+  const rolesCol = accountRolesColumn_(sheet);
   const accounts = sheet.getLastRow() > 1
     ? sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(17, sheet.getLastColumn())).getDisplayValues()
       .filter(row => String(row[0] || '').trim())
-      .map(row => ({ account_id: row[0], name: row[1], callsign: row[2], status: row[5], role: row[6] }))
+      .map(row => ({ account_id: row[0], name: row[1], callsign: row[2], status: row[5], role: row[6], roles: rolesCol >= 0 ? row[rolesCol] : '' }))
     : [];
   if (!accounts.length) throw new Error('Accounts sheet contains no account IDs; D1 account records were not changed.');
   const response = UrlFetchApp.fetch(workerUrl + '/internal/accounts/reconcile', {
@@ -2865,6 +2866,12 @@ function availableCallsigns_() {
   });
   try { cache.put(key, JSON.stringify(result), 300); } catch (ignored) {}
   return result;
+}
+
+// Column index of the Roles header (all roles of an account, comma separated), or -1 if the column is missing.
+function accountRolesColumn_(sheet) {
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0].map(h => String(h).trim().toLowerCase());
+  return headers.indexOf('roles');
 }
 
 function accountsSheet_(spreadsheet) {
@@ -3362,10 +3369,11 @@ function syncAccountsToD1OnEdit_(event) {
   const sheet = event.range.getSheet();
   const firstRow = Math.max(2, event.range.getRow());
   const lastRow = event.range.getRow() + event.range.getNumRows() - 1;
+  const rolesCol = accountRolesColumn_(sheet);
   const rows = sheet.getRange(firstRow, 1, lastRow - firstRow + 1, Math.max(17, sheet.getLastColumn())).getDisplayValues();
   rows.forEach((row, offset) => {
     if (!String(row[0] || '').trim()) return;
-    const account = { account_id: row[0], name: row[1], callsign: row[2], status: row[5], role: row[6] };
+    const account = { account_id: row[0], name: row[1], callsign: row[2], status: row[5], role: row[6], roles: rolesCol >= 0 ? row[rolesCol] : '' };
     const response = UrlFetchApp.fetch(base + '/internal/accounts/sync', {
       method: 'post', contentType: 'application/json', headers: { 'X-LVFR-Worker-Secret': secret },
       payload: JSON.stringify({ account }), muteHttpExceptions: true
