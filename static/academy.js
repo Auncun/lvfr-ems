@@ -8,7 +8,8 @@
   const termDialog = $('#academyTermDialog'), termStatus = $('#academyTermStatus');
   let termingId = 0, termingName = '', termingCallsign = '', termMode = 'terminate', nextCallsigns = {};
   const confirmDialog = $('#academyConfirmDialog');
-  const TRAININGS = [['BM', 'Basic Medical'], ['EC', 'Basic Communication'], ['BV', 'Basic Vehicle']];
+  // [server key, full name, short label shown on the page]. The server key stays EC; the page shows BC.
+  const TRAININGS = [['BM', 'Basic Medical', 'BM'], ['EC', 'Basic Communication', 'BC'], ['BV', 'Basic Vehicle', 'BV']];
   let canTerminate = false, canResign = false, canKick = false;
   let canManage = false, recruits = [], passingId = 0, busy = false;
 
@@ -28,7 +29,7 @@
 
   function missing(r) {
     const list = [];
-    for (const [key] of TRAININGS) if (!r[key.toLowerCase()]) list.push(key);
+    for (const [key, , short] of TRAININGS) if (!r[key.toLowerCase()]) list.push(short);
     if (!r.tig_ok) list.push(`TIG (${Math.max(0, 5 - r.tig_days)} more days)`);
     if (!r.patrol) list.push('7h patrol');
     return list;
@@ -45,9 +46,9 @@
   function renderGroup(list, target, empty) {
     if (!list.length) { target.innerHTML = `<tr><td colspan="7">${empty}</td></tr>`; return; }
     target.innerHTML = list.map(r => {
-      const chips = TRAININGS.map(([key, label]) => {
+      const chips = TRAININGS.map(([key, label, short]) => {
         const done = r[key.toLowerCase()];
-        return `<button type="button" class="acad-chip${done ? ' done' : ''}" title="${esc(label)}" data-act="training" data-id="${r.id}" data-training="${key}" data-done="${done ? 'false' : 'true'}"${canManage ? '' : ' disabled'}>${key}${done ? ' ✓' : ''}</button>`;
+        return `<button type="button" class="acad-chip${done ? ' done' : ''}" title="${esc(label)}" data-act="training" data-id="${r.id}" data-training="${key}" data-done="${done ? 'false' : 'true'}"${canManage ? '' : ' disabled'}>${short}${done ? ' ✓' : ''}</button>`;
       }).join('');
       const patrol = `<button type="button" class="acad-chip${r.patrol ? ' done' : ''}" data-act="patrol" data-id="${r.id}" data-done="${r.patrol ? 'false' : 'true'}"${canManage ? '' : ' disabled'}>${r.patrol ? '7h confirmed ✓' : 'Confirm 7h'}</button>`;
       const left = missing(r);
@@ -205,8 +206,19 @@
     const button = event.target.closest('button[data-act]');
     if (!button || !canManage) return;
     const id = Number(button.dataset.id), act = button.dataset.act, name = button.dataset.name || '';
-    if (act === 'training') run(() => api('/api/academy/training', { id, training: button.dataset.training, done: button.dataset.done === 'true' }), 'Saved.');
-    else if (act === 'patrol') run(() => api('/api/academy/patrol', { id, done: button.dataset.done === 'true' }), 'Saved.');
+    if (act === 'training' || act === 'patrol') {
+      // Show the change at once; the server save runs in the background. The list reloads only if the save fails.
+      const done = button.dataset.done === 'true';
+      const r = recruits.find(x => x.id === id);
+      if (r) {
+        if (act === 'training') r[button.dataset.training.toLowerCase()] = done; else r.patrol = done;
+        r.ready = !!(r.bm && r.ec && r.bv && r.tig_ok && r.patrol);
+        renderRecruits();
+      }
+      const path = act === 'training' ? '/api/academy/training' : '/api/academy/patrol';
+      const body = act === 'training' ? { id, training: button.dataset.training, done } : { id, done };
+      api(path, body).then(() => say('Saved.', 'success')).catch(error => { say(error.message, 'error'); load(); });
+    }
     else if (act === 'discord') {
       if (await askConfirm(`Retry the Discord update for ${name}?`, 'Retry')) run(() => api('/api/academy/discord-retry', { id }), result => result.discord?.ok ? 'Discord updated.' : `Discord still failed: ${result.discord?.message}`);
     }
