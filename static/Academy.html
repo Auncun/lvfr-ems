@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Academy · LVFR</title>
+  <link rel="stylesheet" href="/static/style.css?v=ops-20261029-4">
+  <style>
+    body{min-height:100vh;background:#0b1017;color:#f3f6fa}.admin-shell{width:min(1200px,100%);margin:0 auto;padding:24px}
+    .admin-header,.admin-toolbar,.admin-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .admin-brand{display:flex;align-items:center;gap:12px}
+    .admin-header{margin-bottom:20px}.admin-header h1{margin:0}.admin-header p,.muted{color:#9aa4b2}
+    .admin-card{margin:16px 0;padding:20px;border:1px solid #303945;border-radius:14px;background:#111720}
+    .admin-toolbar{justify-content:flex-start;margin:12px 0}.admin-toolbar input,.admin-toolbar select{min-width:200px}
+    .admin-table-wrap{overflow:auto}.admin-table{width:100%;border-collapse:collapse;min-width:800px}.admin-table th,.admin-table td{text-align:left;vertical-align:top;padding:11px 9px;border-bottom:1px solid #303945}.admin-table th{color:#9aa4b2;font-weight:600}
+    .admin-actions{justify-content:flex-start;gap:6px}.admin-actions button{padding:6px 9px}.admin-status{min-height:22px;color:#9aa4b2}.admin-status.error{color:#ff8178}.admin-status.success{color:#56d364}
+    .admin-tabs{display:flex;gap:8px;flex-wrap:wrap}.admin-tabs button[aria-pressed="true"]{border-color:#62a0ea;color:#8bbcff}
+    .command-tabs{display:flex;gap:8px;overflow-x:auto;margin:0 0 16px;padding:4px 0 8px;border-bottom:1px solid #27303b}.command-tab{flex:0 0 auto;padding:10px 15px;border:1px solid #303945;border-radius:10px;background:#111720;color:#aeb9c7;font-weight:650}.command-tab.active{border-color:#3984ce;background:#15283a;color:#b8d8ff;box-shadow:inset 0 -2px #58a6ff}.command-section[hidden]{display:none!important}
+    @media(max-width:650px){.admin-shell{padding:14px 14px 28px;min-width:0}.admin-card{padding:14px;min-width:0}.admin-header>*,.admin-toolbar>*{min-width:0;max-width:100%}.admin-table-wrap{width:100%;overflow-x:visible;-webkit-overflow-scrolling:touch}.admin-table{display:block;min-width:0!important;width:100%}.admin-table thead{display:none}.admin-table tbody{display:grid;gap:10px}.admin-table tbody tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px;padding:10px;border:1px solid #303945;border-radius:12px;background:#0c1219}.admin-table td{display:block;min-width:0;padding:8px 3px!important;border:0!important;border-bottom:1px solid #26313d}.admin-table td::before{content:attr(data-label);display:block;margin-bottom:4px;color:#8b9aaa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}.admin-table td:first-child,.admin-table td:last-child{grid-column:1/-1}.admin-table td:last-child{border:0!important}.admin-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.admin-actions button{min-width:0;overflow-wrap:anywhere}}
+    .permissions-card{border-color:#34485d;background:linear-gradient(145deg,#111b27,#111720 60%)}.permissions-heading{align-items:flex-start}.permissions-heading h2{margin:0}.permissions-heading p{max-width:680px;margin:7px 0 0;line-height:1.5}
+    #fullCleaningDialog{max-width:calc(100vw - 28px);max-height:calc(100dvh - 28px);padding:0;border:1px solid #394555;border-radius:14px;background:#111720;color:#f3f6fa}#fullCleaningDialog::backdrop{background:#000a}#fullCleaningDialog form{max-height:calc(100dvh - 30px);overflow:auto}.full-cleaning-footer{position:sticky;bottom:0;z-index:2;margin:12px -20px -20px;padding:12px 20px max(12px,env(safe-area-inset-bottom));border-top:1px solid #303945;background:#111720}.full-cleaning-footer .admin-status{margin:0 0 8px}.full-cleaning-footer .admin-actions{margin:0}
+    /* Phone: these three lists keep a plain table, one line per row, scrolling sideways (same as the Permission log). */
+    @media(max-width:650px){.admin-table-wrap:has(.plain-table){overflow-x:auto;width:100%;-webkit-overflow-scrolling:touch}.admin-table.plain-table{display:table;min-width:720px;width:auto}.admin-table.plain-table thead{display:table-header-group}.admin-table.plain-table tbody{display:table-row-group}.admin-table.plain-table tbody tr{display:table-row;padding:0;border:0;border-radius:0;background:transparent}.admin-table.plain-table td,.admin-table.plain-table th{display:table-cell;white-space:nowrap;padding:8px 10px!important;border:0!important;border-bottom:1px solid #303945!important}.admin-table.plain-table td::before{content:none;display:none}.admin-table.plain-table td:first-child,.admin-table.plain-table td:last-child{grid-column:auto}}
+    .discord-report-body dl { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 16px; margin:0; }
+    .discord-report-body dt { color:var(--muted, #9aa4b2); }
+    .discord-report-body dd { margin:0; font-weight:600; text-align:end; }
+    .discord-report-body h4 { margin:14px 0 6px; }
+    .discord-report-body ul { margin:0; padding-inline-start:18px; overflow-wrap:anywhere; }
+    .discord-report-body li { margin:3px 0; }
+  </style>
+  <style>
+    .acad-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end}
+    .acad-form label{display:grid;gap:6px;color:#9aa4b2;font-size:.9rem}
+    .acad-chips{display:flex;gap:6px;flex-wrap:nowrap}
+    .acad-chip{padding:5px 10px;border:1px solid #303945;border-radius:999px;background:transparent;color:#9aa4b2;cursor:pointer;font-weight:600}
+    .acad-chip.done{border-color:#2f7d4a;background:rgba(86,211,100,.12);color:#56d364}
+    .acad-chip:disabled{cursor:default;opacity:.85}
+    .acad-ready{color:#56d364;font-weight:700}.acad-wait{color:#9aa4b2}.acad-failed{color:#ff8178;font-weight:600}
+    .acad-sub{display:block;margin-top:3px;color:#9aa4b2;font-size:.85rem}
+    #academyPassDialog{max-width:min(440px,calc(100vw - 28px));padding:20px;border:1px solid #394555;border-radius:14px;background:#111720;color:#f3f6fa}
+    #academyPassDialog::backdrop{background:rgba(0,0,0,.6)}
+    #academyPassDialog h2{margin:0 0 8px}#academyPassDialog p{color:#9aa4b2;line-height:1.5}
+    .acad-pass-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  </style>
+</head>
+<body>
+  <button class="sidebar-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="appSidebar"><span></span><span></span><span></span></button>
+    <header class="topbar">
+      <div class="topbar-left">
+      <div class="brand"><a class="brand-home-link" href="/portal" aria-label="Go to application selection"><img class="brand-mark" src="/static/image0.webp" alt="Lakeside Valley Fire Rescue"></a><div><h1>Academy</h1><p>Recruit and train Probationary and Probationary Volunteer members.</p></div></div>
+      </div>
+      <div class="top-actions">
+        <div class="notification-control">
+            <button type="button" id="notificationButton" class="icon-button" aria-label="Notifications" title="Notifications" aria-expanded="false" aria-controls="notificationPanel">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+                <span id="notificationBadge" class="notification-badge" hidden>0</span>
+            </button>
+            <section id="notificationPanel" class="notification-panel" hidden aria-label="Notifications">
+                <div class="notification-panel-head">
+                    <strong>Notifications</strong>
+                    <div class="notification-panel-actions"><button type="button" id="notificationFilterToggle" aria-expanded="false" aria-controls="notificationFilter">Filter</button><button type="button" id="markNotificationsRead">Mark as read</button><button type="button" id="clearMyNotifications">Clear notifications</button></div>
+                </div>
+                <div id="notificationFilter" class="notif-filter-checks" role="group" aria-label="Filter notifications" hidden></div>
+                <div id="notificationList"><div class="empty">Loading...</div></div>
+            </section>
+        </div>
+        <div class="online-control"><button type="button" id="topOnlineCount" class="online-count-button" aria-expanded="false" aria-controls="onlineUsersPanel">Online: —</button><section id="onlineUsersPanel" class="online-users-panel" hidden aria-label="Online members"><strong>Online now</strong><div id="onlineUsersList" aria-live="polite"><div class="empty">Loading...</div></div></section></div>
+        <div class="account-control"><button type="button" id="accountMenuButton" class="icon-button" aria-label="Account menu" title="Account" aria-expanded="false" aria-controls="accountMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></button><section id="accountMenu" class="account-menu" hidden><strong id="accountName"></strong><button type="button" id="manageAccountButton"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Account</span></button>
+            <button type="button" id="accountNotificationsButton"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 21a2 2 0 0 0 4 0"/></svg><span>Notification Settings</span></button>
+            <button type="button" id="accountSettingsButton"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14 9l2 2"/></svg><span>Account Settings</span></button>
+            <form><button type="button" id="logoutButton"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg><span>Sign out</span></button></form></section></div>
+      </div>
+    </header>
+  <main class="admin-shell">
+    <p id="academyMessage" class="admin-status" role="status" aria-live="polite"></p>
+    <section id="academyRecruitSection" class="admin-card" aria-labelledby="academyRecruitHeading" hidden>
+      <h2 id="academyRecruitHeading">Recruit</h2>
+      <p class="muted">The recruit is placed in the first empty Callsign of the chosen rank, in the Sheet and on the roster. Their Discord nickname becomes [Callsign] and the first initial and last name, and they receive the rank role. The person must already be in the Discord server.</p>
+      <form id="academyRecruitForm" class="acad-form">
+        <label>Full name<input name="name" minlength="3" maxlength="48" autocomplete="off" required></label>
+        <label>Discord User ID<input name="discord_user_id" inputmode="numeric" pattern="[0-9]{17,20}" autocomplete="off" required></label>
+        <label>Recruit as<select name="recruit_type" required><option value="Probationary">Probationary</option><option value="Probationary Volunteer">Probationary Volunteer</option></select></label>
+        <button type="submit" class="primary">Recruit</button>
+      </form>
+    </section>
+    <section class="admin-card" aria-labelledby="academyListHeading">
+      <div class="admin-header"><div><h2 id="academyListHeading">Recruits in training</h2><p class="muted">To reach the Exit Exam a recruit needs Basic Medical (BM), Basic Communication (EC), Basic Vehicle (BV), 5 days TIG and 7 hours of supervised patrol. Academy staff confirm the patrol by hand; the website cannot know it.</p></div></div>
+      <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Recruit</th><th>Trainings</th><th>TIG</th><th>Supervised patrol</th><th>Status</th><th>Exit Exam</th></tr></thead><tbody id="academyRows"><tr><td colspan="6">Loading…</td></tr></tbody></table></div>
+    </section>
+    <section class="admin-card" aria-labelledby="academyGraduatesHeading">
+      <h2 id="academyGraduatesHeading">Graduates</h2>
+      <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Name</th><th>Was</th><th>Now</th><th>Date</th><th>By</th></tr></thead><tbody id="academyGraduates"><tr><td colspan="5">Loading…</td></tr></tbody></table></div>
+    </section>
+    <dialog id="academyPassDialog" aria-labelledby="academyPassTitle">
+      <h2 id="academyPassTitle">Exit Exam passed</h2>
+      <p id="academyPassText"></p>
+      <div class="acad-pass-actions">
+        <button type="button" class="primary" data-pass-rank="EMT">Promote to EMT</button>
+        <button type="button" class="primary" data-pass-rank="Volunteer">Promote to Volunteer</button>
+        <button type="button" id="academyPassCancel">Cancel</button>
+      </div>
+      <p id="academyPassStatus" class="admin-status" role="status" aria-live="polite"></p>
+    </dialog>
+  </main>
+  <script src="/static/date-format.js?v=ops-20261022-15"></script>
+  <script src="/static/session-auth.js?v=presence-20261030-1"></script>
+  <script src="/static/header-controls.js?v=ops-20261022-15"></script>
+  <script src="/static/notifications.js?v=ops-20261022-15"></script>
+  <script src="/static/rank-badges.js?v=ops-20261022-15"></script>
+  <script src="/static/account-settings.js?v=discord-code-20261030-1"></script>
+  <script src="/static/academy.js?v=academy-20261030-1"></script>
+  <script src="/static/sidebar.js?v=academy-20261030-1"></script>
+  <script src="/static/mobile-popovers.js?v=ops-20261022-15"></script>
+  <script src="/static/confirm-card.js?v=ops-20261029-3"></script>
+</body>
+</html>
