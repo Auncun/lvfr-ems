@@ -215,6 +215,8 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/change-callsign' && method === 'POST') { requireRolePermission_(user, 'callsign_manage'); return changeMemberCallsign_(data, user); }
   if (route === '/api/academy/recruit' && method === 'POST') return academyRecruit_(data, user);
   if (route === '/api/academy/graduate' && method === 'POST') return academyGraduate_(data, user);
+  if (route === '/api/academy/exam' && method === 'POST') return academyExam_(data, user);
+  if (route === '/api/academy/remove' && method === 'POST') return academyRemove_(data, user);
   if (route === '/api/terminate' && method === 'POST') { requireRolePermission_(user, 'termination_manage'); return terminateMember_(data, user); }
   const instructorRoute = route.match(/^\/api\/member\/([^/]+)\/instructor$/);
   if (instructorRoute && method === 'POST') {
@@ -1940,6 +1942,14 @@ function changeMemberCallsign_(data, user) {
   if (isAdmin_(user) && rank && rank !== old.rank && !data.force) throw new Error('The Callsign belongs to a different rank. Confirm a rank change first.');
   const target = emptyRowForCallsign_(next);
   moveMember_(old, target, isAdmin_(user) && rank ? rank : old.rank, user, 'CALLSIGN_CHANGE');
+  if (['Probationary', 'Probationary Volunteer'].includes(old.rank)) {
+    const finalRank = isAdmin_(user) && rank ? rank : old.rank;
+    let action = 'Callsign released/changed';
+    if (finalRank !== old.rank && ['Probationary', 'Probationary Volunteer'].includes(finalRank)) {
+      action = finalRank === 'Probationary Volunteer' ? 'Switched from full time to volunteer' : 'Switched from volunteer to full time';
+    }
+    appendAosHistory_({ timestamp: new Date().toISOString(), name: old.name, callsign: target.callsign, action, actor: actorName_(user), previous_callsign: old.callsign });
+  }
   return { ok: true, new_callsign: target.callsign, new_rank: isAdmin_(user) && rank ? rank : old.rank };
 }
 
@@ -1960,6 +1970,7 @@ function academyRecruit_(data, user) {
   sheet.getRange(target.row, 4).setValue(today);
   sheet.getRange(target.row, 5).setValue('=TODAY()-D' + target.row);
   sheet.getRange(target.row, 3, 1, 3).setHorizontalAlignment('center');
+  appendAosHistory_({ timestamp: new Date().toISOString(), name, callsign: target.callsign, action: 'Passed Interview', actor: actorName_(user), previous_callsign: '' });
   appendArchiveLog_({ timestamp: new Date().toISOString(), event: 'Recruited', member: name, callsign: target.callsign, old_callsign: '', new_callsign: target.callsign, old_rank: '', new_rank: rank, details: 'LVFR Academy', actor: actorName_(user), actor_callsign: user.callsign || '' });
   return { ok: true, callsign: target.callsign, new_rank: rank, row: target.row };
 }
@@ -1976,6 +1987,37 @@ function academyGraduate_(data, user) {
   if (rankFromCallsign_(target.callsign) !== rank) throw new Error('The selected destination Callsign does not match the selected rank.');
   moveMember_(old, target, rank, user, 'FORCE');
   return { ok: true, new_callsign: target.callsign, new_rank: rank };
+}
+
+// Passed EE: the same row move as a graduation, then the AOS History entry.
+function academyExam_(data, user) {
+  const old = memberByCallsign_(data.callsign);
+  const result = academyGraduate_(data, user);
+  appendAosHistory_({ timestamp: new Date().toISOString(), name: old.name, callsign: result.new_callsign, action: 'Passed EE', actor: actorName_(user), previous_callsign: old.callsign });
+  return result;
+}
+
+// Removed — Resigned: the recruit's roster row is cleared, as for a termination.
+function academyRemove_(data, user) {
+  requireRolePermission_(user, 'academy_manage');
+  const member = memberByCallsign_(data.callsign);
+  if (!['Probationary', 'Probationary Volunteer'].includes(member.rank)) throw new Error('This member is not an academy recruit.');
+  const sheet = rosterSheet_();
+  sheet.getRange(member.row, 3, 1, 1).clearContent().setBackground('#ffffff');
+  sheet.getRange(member.row, 4, 1, 6).clearContent().setBackground('#ffffff');
+  sheet.getRange(member.row, 11).clearContent().setBackground('#ffffff');
+  appendAosHistory_({ timestamp: new Date().toISOString(), name: member.name, callsign: member.callsign, action: 'Removed — Resigned', actor: actorName_(user), previous_callsign: '' });
+  return { ok: true };
+}
+
+// AOS History sheet in the roster spreadsheet. Created with its header row if missing.
+const AOS_HISTORY_HEADERS = ['Timestamp', 'Name', 'Callsign', 'Action', 'Submitted By', 'Previous Callsign'];
+function appendAosHistory_(entry) {
+  const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
+  let sheet = spreadsheet.getSheetByName('AOS History');
+  if (!sheet) sheet = spreadsheet.insertSheet('AOS History');
+  if (sheet.getLastRow() === 0) sheet.getRange(1, 1, 1, AOS_HISTORY_HEADERS.length).setValues([AOS_HISTORY_HEADERS]);
+  sheet.appendRow([entry.timestamp, entry.name, entry.callsign, entry.action, entry.actor, entry.previous_callsign || '']);
 }
 
 function emptyRowForCallsign_(callsign) {
