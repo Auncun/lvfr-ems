@@ -1,10 +1,10 @@
 (() => {
   const $ = selector => document.querySelector(selector);
-  const message = $('#academyMessage'), rows = $('#academyRows'), graduates = $('#academyGraduates');
+  const message = $('#academyMessage');
   const recruitSection = $('#academyRecruitSection'), recruitForm = $('#academyRecruitForm');
   const passDialog = $('#academyPassDialog'), passStatus = $('#academyPassStatus');
   const rowsFull = $('#academyRowsFull'), rowsVolunteer = $('#academyRowsVolunteer'), logRows = $('#academyLogRows');
-  let logEntries = [], logKindSelected = 'recruited';
+  let logEntries = [], logKindSelected = 'recruited', recruitQuery = '', logQuery = '';
   const termDialog = $('#academyTermDialog'), termStatus = $('#academyTermStatus');
   let termingId = 0, termingName = '';
   const TRAININGS = [['BM', 'Basic Medical'], ['EC', 'Basic Communication'], ['BV', 'Basic Vehicle']];
@@ -33,12 +33,15 @@
   }
 
   function renderRecruits() {
-    renderGroup(recruits.filter(r => r.recruit_type !== 'Probationary Volunteer'), rowsFull, 'No full-time recruits.');
-    renderGroup(recruits.filter(r => r.recruit_type === 'Probationary Volunteer'), rowsVolunteer, 'No volunteer recruits.');
+    const q = recruitQuery.trim().toLowerCase();
+    const hit = r => !q || `${r.callsign} ${r.name}`.toLowerCase().includes(q);
+    const byCallsign = (a, b) => String(a.callsign).localeCompare(String(b.callsign), undefined, { numeric: true, sensitivity: 'base' });
+    renderGroup(recruits.filter(r => r.recruit_type !== 'Probationary Volunteer' && hit(r)).sort(byCallsign), rowsFull, 'No full-time recruits.');
+    renderGroup(recruits.filter(r => r.recruit_type === 'Probationary Volunteer' && hit(r)).sort(byCallsign), rowsVolunteer, 'No volunteer recruits.');
   }
 
   function renderGroup(list, target, empty) {
-    if (!list.length) { target.innerHTML = `<tr><td colspan="6">${empty}</td></tr>`; return; }
+    if (!list.length) { target.innerHTML = `<tr><td colspan="7">${empty}</td></tr>`; return; }
     target.innerHTML = list.map(r => {
       const chips = TRAININGS.map(([key, label]) => {
         const done = r[key.toLowerCase()];
@@ -53,17 +56,13 @@
       const discord = r.discord_status === 'failed' && canManage
         ? `<span class="acad-sub acad-failed" title="${esc(r.discord_error)}">Discord not updated. <button type="button" data-act="discord" data-id="${r.id}">Retry Discord</button></span>` : '';
       return `<tr>
-        <td><strong>${esc(r.name)}</strong><span class="acad-sub">${esc(r.callsign)} · ${esc(r.recruit_type)} · since ${esc(dateText(r.recruited_at))}</span>${discord}${canManage ? `<div class="admin-actions"><button type="button" data-act="switch" data-id="${r.id}" data-to="${r.recruit_type === 'Probationary' ? 'Probationary Volunteer' : 'Probationary'}">${r.recruit_type === 'Probationary' ? 'Switch to Volunteer' : 'Switch to Full time'}</button><button type="button" class="danger" data-act="remove" data-id="${r.id}" data-name="${esc(r.name)}">Resigned</button>${r.overdue ? `<button type="button" class="danger" data-act="terminate" data-id="${r.id}" data-name="${esc(r.name)}">Terminate</button>` : ''}</div>` : ''}</td>
+        <td>${esc(r.callsign)}</td><td><strong>${esc(r.name)}</strong><span class="acad-sub">${esc(r.recruit_type)} · since ${esc(dateText(r.recruited_at))}</span>${discord}${canManage ? `<div class="admin-actions"><button type="button" data-act="switch" data-id="${r.id}" data-to="${r.recruit_type === 'Probationary' ? 'Probationary Volunteer' : 'Probationary'}">${r.recruit_type === 'Probationary' ? 'Switch to Volunteer' : 'Switch to Full time'}</button><button type="button" class="danger" data-act="remove" data-id="${r.id}" data-name="${esc(r.name)}">Resigned</button>${r.overdue ? `<button type="button" class="danger" data-act="terminate" data-id="${r.id}" data-name="${esc(r.name)}">Terminate</button>` : ''}</div>` : ''}</td>
         <td><div class="acad-chips">${chips}</div></td>
         <td>${r.tig_days} / 5 days${r.tig_ok ? ' ✓' : ''}</td>
         <td>${patrol}</td>
         <td>${status}${r.overdue ? '<br><span class="acad-failed">Training overdue</span>' : ''}</td>
         <td>${exam}</td></tr>`;
     }).join('');
-  }
-
-  function renderGraduates(list) {
-    graduates.innerHTML = list.length ? list.map(g => `<tr><td>${esc(g.name)}</td><td>${esc(g.callsign)} · ${esc(g.recruit_type)}</td><td>${esc(g.graduated_callsign)} · ${esc(g.graduated_to)}</td><td>${esc(dateText(g.graduated_at))}</td><td>${esc(g.graduated_by)}</td></tr>`).join('') : '<tr><td colspan="5">No graduates yet.</td></tr>';
   }
 
   async function load() {
@@ -73,22 +72,22 @@
       recruits = data.recruits || [];
       recruitSection.hidden = !canManage;
       renderRecruits();
-      renderGraduates(data.graduates || []);
       await loadLog();
-    } catch (error) { rowsFull.innerHTML = `<tr><td colspan="6">${esc(error.message)}</td></tr>`; }
+    } catch (error) { rowsFull.innerHTML = `<tr><td colspan="7">${esc(error.message)}</td></tr>`; }
   }
 
 
   // Log: one request, filtered on the page by the chosen category.
   async function loadLog() {
     try { logEntries = (await api('/api/academy/log')).entries || []; }
-    catch (error) { logEntries = []; logRows.innerHTML = `<tr><td colspan="6">${esc(error.message)}</td></tr>`; return; }
+    catch (error) { logEntries = []; logRows.innerHTML = `<tr><td colspan="7">${esc(error.message)}</td></tr>`; return; }
     renderLog();
   }
 
   function renderLog() {
-    const list = logEntries.filter(e => e.kind === logKindSelected);
-    logRows.innerHTML = list.length ? list.map(e => `<tr><td>${esc(new Date(e.created_at).toLocaleString())}</td><td>${esc(e.name)}</td><td>${esc(e.callsign)}</td><td>${esc(e.action)}</td><td>${esc(e.actor_name)}</td><td>${esc(e.detail)}</td></tr>`).join('') : '<tr><td colspan="6">No entries.</td></tr>';
+    const q = logQuery.trim().toLowerCase();
+    const list = logEntries.filter(e => e.kind === logKindSelected && (!q || `${e.name} ${e.callsign} ${e.action} ${e.actor_name} ${e.detail}`.toLowerCase().includes(q)));
+    logRows.innerHTML = list.length ? list.map(e => `<tr><td>${esc(new Date(e.created_at).toLocaleString())}</td><td>${esc(e.name)}</td><td>${esc(e.callsign)}</td><td>${esc(e.action)}</td><td>${esc(e.actor_name)}</td><td>${esc(e.detail)}</td><td>${canManage ? `<button type="button" class="danger" data-log-delete="${e.id}">Delete</button>` : ''}</td></tr>`).join('') : '<tr><td colspan="7">No entries.</td></tr>';
     document.querySelectorAll('[data-log]').forEach(b => {
       const on = b.dataset.log === logKindSelected;
       b.classList.toggle('primary', on);
@@ -96,6 +95,15 @@
     });
   }
 
+  $('#academyRecruitSearch').addEventListener('input', event => { recruitQuery = event.target.value; renderRecruits(); });
+  $('#academyLogSearch').addEventListener('input', event => { logQuery = event.target.value; renderLog(); });
+  logRows.addEventListener('click', async event => {
+    const button = event.target.closest('button[data-log-delete]');
+    if (!button) return;
+    if (!confirm('Delete this log entry from D1? The Sheet and AOS History are not changed.')) return;
+    try { await api('/api/academy/log/delete', { id: Number(button.dataset.logDelete) }); await loadLog(); say('Log entry deleted.', 'success'); }
+    catch (error) { say(error.message, 'error'); }
+  });
   document.querySelector('nav[aria-label="Log categories"]')?.addEventListener('click', event => {
     const button = event.target.closest('button[data-log]');
     if (!button) return;
