@@ -131,11 +131,22 @@
     const button = event.target.closest('button[data-log]');
     if (!button) return;
     logKindSelected = button.dataset.log;
+    rememberView();
     renderLog();
   });
 
+  // The open tab, recruit list and log category are kept for this browser session, so a reload stays where the user was.
+  const VIEW_KEY = 'academyView';
+  let currentTab = 'academyRecruit', currentSub = 'academyFull';
+  const savedView = (() => { try { return JSON.parse(sessionStorage.getItem(VIEW_KEY) || '{}') || {}; } catch { return {}; } })();
+  function rememberView() {
+    try { sessionStorage.setItem(VIEW_KEY, JSON.stringify({ tab: currentTab, sub: currentSub, log: logKindSelected })); } catch {}
+  }
+
   // Tabs work like the EMS page: one panel is shown, and the sidebar selects a tab by its data-tab.
   function showTab(name) {
+    currentTab = name;
+    rememberView();
     document.querySelectorAll('nav.tabs [data-tab]').forEach(b => {
       const on = b.dataset.tab === name;
       b.classList.toggle('active', on);
@@ -150,6 +161,8 @@
     showTab(button.dataset.tab);
   });
   function showSub(name) {
+    currentSub = name;
+    rememberView();
     document.querySelectorAll('nav[aria-label="Recruit lists"] [data-tab]').forEach(b => {
       const on = b.dataset.tab === name;
       b.classList.toggle('active', on);
@@ -163,8 +176,10 @@
     showTab('academyRecruits');
     showSub(button.dataset.tab);
   });
-  showTab('academyRecruit');
-  showSub('academyFull');
+  const tabNames = Array.from(document.querySelectorAll('nav.tabs [data-tab]')).map(b => b.dataset.tab);
+  if (['recruited', 'graduated', 'resigned', 'switched'].includes(savedView.log)) logKindSelected = savedView.log;
+  showTab(tabNames.includes(savedView.tab) ? savedView.tab : 'academyRecruit');
+  showSub(savedView.sub === 'academyVolunteer' ? 'academyVolunteer' : 'academyFull');
 
   async function run(action, success) {
     if (busy) return;
@@ -244,6 +259,11 @@
   function openTermDialog() {
     $('#academyTermCallsign').textContent = termingCallsign;
     $('#academyKickNote').hidden = canKick;
+    // Discord choices are only asked when the recruit has a linked Discord account (the server checks the same link).
+    const linked = recruits.find(r => r.id === termingId)?.discord_linked === true;
+    $('#academyTermDiscordNote').hidden = !linked;
+    $('#academyTermDiscordChoices').hidden = !linked;
+    $('#academyTermConfirmPlain').hidden = linked;
     termInput.value = '';
     syncTermButtons();
     termDialog.showModal();
@@ -265,6 +285,22 @@
     } catch (error) { termStatus.textContent = error.message; termStatus.className = 'admin-status error'; }
     finally { buttons.forEach(b => { b.disabled = false; }); syncTermButtons(); }
   });
+
+  // Like the roster: a small fingerprint is checked every few seconds, and the page reloads only when it changed
+  // (a Sheet edit synced to D1, or another user's change). Skipped while a dialog is open, a recruit is being typed, or an action is running.
+  let academyVersionSeen = '';
+  const checkVersion = async () => {
+    if (document.hidden || busy || termDialog.open || passDialog.open || confirmDialog.open || recruitForm.contains(document.activeElement)) return;
+    try {
+      const { version } = await api('/api/academy/version');
+      if (!version || version === academyVersionSeen) return;
+      academyVersionSeen = version;
+      await load();
+    } catch {}
+  };
+  setInterval(checkVersion, 5000);
+  document.addEventListener('visibilitychange', checkVersion);
+  window.addEventListener('focus', checkVersion);
 
   load();
 })();
