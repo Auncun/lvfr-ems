@@ -23,6 +23,8 @@ const isManager = user => ["admin", "commander"].includes(String(user.role || ""
 const isViewer = user => isManager(user) || user.permissions?.academy_view === true;
 const requireView = user => { if (!isViewer(user)) throw fail("Academy access is required.", 403); };
 const requireManage = user => { if (!isManager(user)) throw fail("Academy management access is required.", 403); };
+const hasPerm = (user, key) => user.role === "admin" || user.permissions?.[key] === true;
+const requirePerm = (user, key) => { if (!hasPerm(user, key)) throw fail(`You need the "${key}" permission for this action.`, 403); };
 
 const NEXT_SLOT_SQL = "SELECT rank,callsign,sheet_row FROM callsign_slots WHERE lower(trim(rank))=lower(trim(?)) ORDER BY CASE WHEN sheet_row IS NULL THEN 1 ELSE 0 END, sheet_row, callsign LIMIT 1";
 const MEMBER_INSERT_SQL = "INSERT INTO members(callsign,name,rank,date,rank_assigned_date,days_in_rank,discord_id,notes,has_basic_firefighting,has_advanced_firefighting,has_supervisor_exam,has_hert,activity,instructor_type,do_not_promote,do_not_terminate,sheet_row,synced_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
@@ -129,6 +131,9 @@ async function listAcademy(db, user) {
   }
   return {
     can_manage: isManager(user),
+    can_terminate: hasPerm(user, "academy_terminate"),
+    can_resign: hasPerm(user, "academy_resign"),
+    can_kick: hasPerm(user, "discord_kick"),
     next_callsigns,
     recruits,
     graduates: done.map(g => ({
@@ -257,6 +262,7 @@ async function removeRecruit(db, user, data, mirror, discordTerminate) {
   const link = await db.prepare("SELECT 1 AS found FROM discord_member_links WHERE upper(callsign)=upper(?)").bind(member.callsign).first();
   const discordAction = String(data.discord_action || "");
   if (link && !["kick", "remove_roles", "none"].includes(discordAction)) throw fail("Choose what to do in Discord: kick, remove roles only, or clear the nickname only.", 409);
+  if (link && discordAction === "kick") requirePerm(user, "discord_kick");
   const now = nowIso();
   await db.batch([
     db.prepare("INSERT OR REPLACE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(member.rank, member.callsign, member.sheet_row ?? null, now),
@@ -284,6 +290,7 @@ async function terminateRecruit(db, user, data, mirror, discordTerminate) {
   const link = await db.prepare("SELECT 1 AS found FROM discord_member_links WHERE upper(callsign)=upper(?)").bind(member.callsign).first();
   const discordAction = String(data.discord_action || "");
   if (link && !["kick", "remove_roles", "none"].includes(discordAction)) throw fail("Choose what to do in Discord: kick, remove roles only, or clear the nickname only.", 409);
+  if (link && discordAction === "kick") requirePerm(user, "discord_kick");
   const now = nowIso();
   await db.batch([
     db.prepare("INSERT OR REPLACE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(member.rank, member.callsign, member.sheet_row ?? null, now),
@@ -291,7 +298,7 @@ async function terminateRecruit(db, user, data, mirror, discordTerminate) {
     db.prepare("DELETE FROM academy_recruits WHERE id=?").bind(r.id)
   ]);
   await academyLog(db, user, "Terminated (training overdue)", r.callsign, r.name, "");
-  await mirror("Academy terminate", "/api/academy/terminate", { callsign: member.callsign, name: member.name, note: `Training overdue (${OVERDUE_DAYS} days)` });
+  await mirror("Academy terminate", "/api/academy/terminate", { callsign: member.callsign, name: member.name, note: `Exit Exam overdue (${OVERDUE_DAYS} days)` });
   let discord = { ok: true, message: "No Discord account is linked." };
   if (link && discordTerminate) {
     discord = await discordTerminate(member.callsign, member.name, discordAction).then(() => ({ ok: true, message: discordAction === "kick" ? "Kicked from the Discord server." : "Discord updated." })).catch(error => ({ ok: false, message: String(error?.message || error).slice(0, 200) }));
@@ -312,10 +319,10 @@ export async function handleAcademy({ db, user, route, method, data, mirror, dis
   if (route === "/api/academy/training" && method === "POST") { requireManage(user); return json(await setTraining(db, user, data)); }
   if (route === "/api/academy/patrol" && method === "POST") { requireManage(user); return json(await setPatrol(db, user, data)); }
   if (route === "/api/academy/exam" && method === "POST") { requireManage(user); return json(await exam(db, user, data, mirror, discordRoster)); }
-  if (route === "/api/academy/remove" && method === "POST") { requireManage(user); return json(await removeRecruit(db, user, data, mirror, discordTerminate)); }
+  if (route === "/api/academy/remove" && method === "POST") { requireManage(user); requirePerm(user, "academy_resign"); return json(await removeRecruit(db, user, data, mirror, discordTerminate)); }
   if (route === "/api/academy/switch" && method === "POST") { requireManage(user); return json(await switchRecruit(db, user, data, mirror, discordRoster)); }
   if (route === "/api/academy/log" && method === "GET") { requireView(user); return json(await academyLogList(db)); }
   if (route === "/api/academy/log/clear" && method === "POST") { requireManage(user); await db.prepare("DELETE FROM academy_log").run(); return json({ ok: true }); }
-  if (route === "/api/academy/terminate" && method === "POST") { requireManage(user); return json(await terminateRecruit(db, user, data, mirror, discordTerminate)); }
+  if (route === "/api/academy/terminate" && method === "POST") { requireManage(user); requirePerm(user, "academy_terminate"); return json(await terminateRecruit(db, user, data, mirror, discordTerminate)); }
   return json({ detail: "Academy route was not found." }, 404);
 }
