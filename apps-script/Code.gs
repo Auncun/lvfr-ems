@@ -219,6 +219,7 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/academy/remove' && method === 'POST') return academyRemove_(data, user);
   if (route === '/api/academy/terminate' && method === 'POST') return academyTerminate_(data, user);
   if (route === '/api/academy/switch' && method === 'POST') return academySwitch_(data, user);
+  if (route === '/api/leaders/roles' && method === 'POST') return setAccountRoles_(data, user);
   if (route === '/api/terminate' && method === 'POST') { requireRolePermission_(user, 'termination_manage'); return terminateMember_(data, user); }
   const instructorRoute = route.match(/^\/api\/member\/([^/]+)\/instructor$/);
   if (instructorRoute && method === 'POST') {
@@ -2866,6 +2867,20 @@ function availableCallsigns_() {
   });
   try { cache.put(key, JSON.stringify(result), 300); } catch (ignored) {}
   return result;
+}
+
+// Writes the main role and the Roles list of an account into the Accounts sheet.
+function setAccountRoles_(data, user) {
+  const sheet = accountsSheet_();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) throw new Error('The Accounts sheet is empty.');
+  const ids = sheet.getRange(1, 1, lastRow, 1).getDisplayValues();
+  const index = ids.findIndex((row, i) => i > 0 && String(row[0]).trim() === String(data.account_id || '').trim());
+  if (index < 0) throw new Error('Account was not found in the Accounts sheet.');
+  sheet.getRange(index + 1, 7).setValue(String(data.role || 'member'));
+  const rolesCol = accountRolesColumn_(sheet);
+  if (rolesCol >= 0) sheet.getRange(index + 1, rolesCol + 1).setValue(String(data.roles || ''));
+  return { ok: true };
 }
 
 // Column index of the Roles header (all roles of an account, comma separated), or -1 if the column is missing.
