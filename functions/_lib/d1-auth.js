@@ -1286,7 +1286,7 @@ async function discordRequest(env, path, options = {}) {
   }
   throw new Error("Discord rate limit retries were exhausted. Try again shortly.");
 }
-async function updateDiscordMemberFromMapping(db, env, discordUserId) {
+async function updateDiscordMemberFromMapping(db, env, discordUserId, options = {}) {
   const row = await db.prepare("SELECT * FROM discord_member_links WHERE discord_user_id=?").bind(String(discordUserId)).first();
   if (!row) throw new Error("Discord mapping was not found.");
   const newCallsign = normalizeDiscordCallsign(row.pending_callsign || row.callsign);
@@ -1304,9 +1304,12 @@ async function updateDiscordMemberFromMapping(db, env, discordUserId) {
   // Only the server nickname carries the callsign; display names and usernames are never parsed.
   const currentNickname = String(member.nick || "").trim();
   const parsed = parseDiscordNickname(currentNickname);
-  if (!parsed) throw new Error("The member's current nickname does not start with a valid [Callsign] prefix; refusing to guess the name.");
+  // Only an Academy recruit being added may get a new prefix; any other member without one is refused.
+  if (!parsed && !options.allowPrefix) throw new Error("The member's current nickname does not start with a valid [Callsign] prefix; refusing to guess the name.");
   // Only the [CALLSIGN] prefix changes; the rest of the nickname stays exactly as it is in Discord.
-  const desiredNickname = currentNickname.replace(/^\s*\[[^\]]*\]/, `[${newCallsign}]`);
+  const desiredNickname = parsed
+    ? currentNickname.replace(/^\s*\[[^\]]*\]/, `[${newCallsign}]`)
+    : `[${newCallsign}] ${currentNickname || String(options.fallbackName || "")}`.trim();
   if (desiredNickname.length > 32) throw new Error("The resulting Discord nickname exceeds Discord's 32-character limit.");
   if (currentNickname !== desiredNickname) {
     await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(discordUserId))}`, {
@@ -1531,7 +1534,7 @@ async function runRankChanges(db, env, changes) {
 }
 async function queueDiscordRosterChange(db, context, env, oldMember, result) {
   const route = String(new URL(context.request.url).pathname);
-  if (!oldMember || !["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign"].includes(route)) return "not_applicable";
+  if (!oldMember || !["/api/promote","/api/force-promote","/api/demote","/api/change-rank","/api/change-callsign","/api/academy/exam"].includes(route)) return "not_applicable";
   const oldCallsign = normalizeDiscordCallsign(oldMember.callsign);
   const newCallsign = normalizeDiscordCallsign(result?.new_callsign || oldCallsign);
   const newRank = String(result?.new_rank || oldMember.rank || "").trim();
@@ -1939,6 +1942,33 @@ export async function handleD1(context) {
         return json({removed:Number(removed.meta?.changes||0)});
       }
       return json({detail:"Mirror queue route was not found."},404);
+    }
+    if (route.startsWith("/api/academy")) {
+      const { handleAcademy } = await import("./academy-d1.js");
+      const academyMirror = async (label, mirrorRoute, mirrorData) => {
+        const assertion = await signedClaims(user, env.LVFR_D1_AUTH_BRIDGE_SECRET);
+        context.waitUntil(mirrorToSheetInBackground(context, label, mirrorRoute, url, assertion, mirrorData, user.account_id));
+      };
+      const discordRoster = (oldMember, result) => queueDiscordRosterChange(db, context, env, oldMember, result);
+      const recruitDiscord = (discordId, name) => updateDiscordMemberFromMapping(db, env, discordId, { allowPrefix: true, fallbackName: name });
+      const discordRecruit = {
+        queue: (discordId, name) => {
+          context.waitUntil((async () => {
+            try { await recruitDiscord(discordId, name); }
+            catch (error) { await db.prepare("UPDATE discord_member_links SET status='failed',last_error=?,updated_at=? WHERE discord_user_id=?").bind(String(error?.message || error).slice(0, 400), new Date().toISOString(), discordId).run(); }
+          })());
+          return "pending";
+        },
+        run: async (discordId, name) => {
+          try { await recruitDiscord(discordId, name); return { ok: true, message: "Discord updated." }; }
+          catch (error) {
+            const message = String(error?.message || error).slice(0, 400);
+            await db.prepare("UPDATE discord_member_links SET status='failed',last_error=?,updated_at=? WHERE discord_user_id=?").bind(message, new Date().toISOString(), discordId).run();
+            return { ok: false, message };
+          }
+        }
+      };
+      return handleAcademy({ db, user, route, method, data, mirror: academyMirror, discordRoster, discordRecruit });
     }
     if (route === "/api/discord/sync" && method === "POST") {
       const actor = await requireDiscordPermission(db, token, "discord_sync_manage");
