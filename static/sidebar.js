@@ -60,10 +60,15 @@
     },
     {
       href: '/academy', title: 'Academy', permission: 'academy_view', items: [
-        { label: 'Recruit', anchor: '#academyRecruitHeading' },
-        { label: 'Full time recruits', anchor: '#academyFullHeading' },
-        { label: 'Volunteer recruits', anchor: '#academyVolunteerHeading' },
-        { label: 'Log', anchor: '#academyLogHeading' }
+        { label: 'Recruit', tab: 'academyRecruit' },
+        { label: 'Full time recruits', tab: 'academyFull' },
+        { label: 'Volunteer recruits', tab: 'academyVolunteer' },
+        { label: 'Log', tab: 'academyLog', children: [
+          { label: 'Recruited', tab: 'academyLog', log: 'recruited' },
+          { label: 'Graduated', tab: 'academyLog', log: 'graduated' },
+          { label: 'Resigned / terminated', tab: 'academyLog', log: 'resigned' },
+          { label: 'Switch to Volunteer / Full time', tab: 'academyLog', log: 'switched' }
+        ] }
       ]
     },
     {
