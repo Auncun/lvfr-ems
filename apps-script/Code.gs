@@ -217,6 +217,7 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/academy/graduate' && method === 'POST') return academyGraduate_(data, user);
   if (route === '/api/academy/exam' && method === 'POST') return academyExam_(data, user);
   if (route === '/api/academy/remove' && method === 'POST') return academyRemove_(data, user);
+  if (route === '/api/academy/terminate' && method === 'POST') return academyTerminate_(data, user);
   if (route === '/api/terminate' && method === 'POST') { requireRolePermission_(user, 'termination_manage'); return terminateMember_(data, user); }
   const instructorRoute = route.match(/^\/api\/member\/([^/]+)\/instructor$/);
   if (instructorRoute && method === 'POST') {
@@ -2010,6 +2011,14 @@ function academyRemove_(data, user) {
   return { ok: true };
 }
 
+// Training overdue: the Academy terminates a probie through the same routine as any termination.
+function academyTerminate_(data, user) {
+  requireRolePermission_(user, 'academy_manage');
+  const member = memberByCallsign_(data.callsign);
+  if (!['Probationary', 'Probationary Volunteer'].includes(member.rank)) throw new Error('This member is not an academy recruit.');
+  return terminateMember_({ callsign: member.callsign, note: String(data.note || 'Training overdue') }, user);
+}
+
 // AOS History sheet in the roster spreadsheet. Created with its header row if missing.
 const AOS_HISTORY_HEADERS = ['Timestamp', 'Name', 'Callsign', 'Action', 'Submitted By', 'Previous Callsign'];
 function appendAosHistory_(entry) {
@@ -3390,4 +3399,3 @@ function mirrorAccountFromD1_(account) {
   CacheService.getScriptCache().removeAll(['leader-overview:v1', 'leader-overview:v2']);
   return { ok: true, action: index < 0 ? 'inserted' : 'updated' };
 }
-
