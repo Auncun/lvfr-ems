@@ -8,6 +8,10 @@ const NOTIFICATION_PREFERENCE_KINDS=[
   {kind:"inactive",label:"Due to Activity",key:"notif_inactive",bases:["inactive_view"]},
   {kind:"overdue",label:"Training Overdue",key:"notif_overdue",bases:["inactive_view"]},
   {kind:"exit_exam_overdue",label:"Exit Exam Overdue",key:"notif_exit_exam_overdue",bases:["notif_exit_exam_overdue"]},
+  {kind:"academy_recruited",label:"Recruited",key:"notif_academy_recruited",bases:["notif_academy_recruited"]},
+  {kind:"academy_graduated",label:"Graduated",key:"notif_academy_graduated",bases:["notif_academy_graduated"]},
+  {kind:"academy_resigned",label:"Resigned / terminated",key:"notif_academy_resigned",bases:["notif_academy_resigned"]},
+  {kind:"academy_switched",label:"Switched rank",key:"notif_academy_switched",bases:["notif_academy_switched"]},
   {kind:"promotion",label:"Promotion",key:"notif_promotion",bases:["promotion_manage","rank_manage"]},
   {kind:"eligible",label:"Can be promoted",key:"notif_eligible",bases:["eligible_view","promotion_access"]},
   {kind:"callsign",label:"Callsign",key:"notif_callsign",bases:["callsign_manage"]},
@@ -51,7 +55,7 @@ function clampNotificationKeys(result){
 const DEFAULT_ON_NOTIFICATION_KINDS=["eligible","inactive","overdue","exit_exam_overdue","request"];
 const LOG_VIEW_PERMISSIONS = ["promotion_log_view","callsign_log_view","termination_log_view","training_log_view","training_hours_log_view","loi_log_view","exam_log_view","note_log_view","activity_log_view","instructor_log_view"];
 const TRAINING_VIEW_PERMISSIONS = ["hert_certified_view","hert_instructor_view","hert_loi_view","fort_training_view","fort_instructor_view","fort_loi_view"];
-const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","academy_view","academy_manage","academy_terminate","academy_resign","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","do_not_terminate_log_view","notif_termination","notif_inactive","notif_overdue","notif_promotion","notif_eligible","notif_callsign","notif_training","notif_training_time","notif_loi","notif_exam","notif_note","notif_activity","notif_instructor","notif_do_not_promote","notif_do_not_terminate","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage","discord_view","discord_manage","discord_sync_manage","discord_log_clear","discord_kick","discord_settings_manage","notif_exit_exam_overdue"];
+const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","academy_view","academy_manage","academy_terminate","academy_resign","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","do_not_terminate_log_view","notif_termination","notif_inactive","notif_overdue","notif_promotion","notif_eligible","notif_callsign","notif_training","notif_training_time","notif_loi","notif_exam","notif_note","notif_activity","notif_instructor","notif_do_not_promote","notif_do_not_terminate","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage","discord_view","discord_manage","discord_sync_manage","discord_log_clear","discord_kick","discord_settings_manage","notif_exit_exam_overdue","notif_academy_recruited","notif_academy_graduated","notif_academy_resigned","notif_academy_switched"];
 const DEFAULT_ROLE_PERMISSIONS = {
   member: { portal_access:false,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:false,eligible_view:false,promotion_access:false,profile_view:false,inactive_view:false,logs_view:false,training_view:false,training_fort_manage:false,training_hert_manage:false,training_hours_view:false,training_hours_manage:false,loi_manage:false,statistics_view:false,notes_manage:false,promotion_manage:false,callsign_manage:false,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:false,sync_manage:false },
   leader: { portal_access:true,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,promotion_access:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,loi_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true },
@@ -1038,12 +1042,41 @@ function requireRankPermission(actor,key) {
   if(actor.role!=="admin"&&actor.permissions?.[key]!==true&&actor.permissions?.role_manage!==true) throw Object.assign(new Error("Rank management permission is required."),{status:403});
 }
 async function leaders(db, actor) {
-  const rows = await db.prepare("SELECT account_id,name,callsign,status,role,permissions_override_json,created_at,activated_at,approved_by,admin_changed_at,admin_changed_by FROM accounts WHERE status NOT IN ('removed','denied') ORDER BY created_at DESC").all();
+  const rows = await db.prepare("SELECT account_id,name,callsign,status,role,(SELECT group_concat(role,',') FROM account_roles WHERE account_id=accounts.account_id) AS roles,permissions_override_json,created_at,activated_at,approved_by,admin_changed_at,admin_changed_by FROM accounts WHERE status NOT IN ('removed','denied') ORDER BY created_at DESC").all();
   const audit = await db.prepare("SELECT id,created_at,account_id,name,callsign,action,actor_name,actor_name AS by FROM account_audit ORDER BY id DESC LIMIT 200").all();
   const online = await db.prepare("SELECT account_id,last_seen FROM account_presence WHERE last_seen>?").bind(nowSeconds() - PRESENCE_ONLINE_SECONDS).all();
   const on = new Set((online.results || []).map(x => x.account_id));
   const accounts = (rows.results || []).map(({ permissions_override_json, ...row }) => ({ ...row, permission_overrides: actor.role === "admin" ? parsePermissionOverrides(permissions_override_json) : undefined, id: row.account_id, display_name: row.name, requested_at: row.created_at, linked_at: row.created_at, approved_at: row.activated_at, is_admin: row.role === "admin", is_commander: row.role === "commander", is_elevated: ["admin","commander"].includes(row.role), online: row.status === "approved" && on.has(row.account_id) }));
   return { approved: accounts.filter(x => x.status === "approved"), pending: accounts.filter(x => x.status === "pending"), deactivated: accounts.filter(x => x.status === "deactivated"), audit: audit.results || [], online_count: accounts.filter(x => x.online).length };
+}
+// Several roles at once. The highest role becomes the main role (Role column). Rank rules apply to every role changed.
+async function setAccountRoles(db,actor,targetId,rolesInput){
+  const target=await db.prepare("SELECT account_id,name,callsign,role,status FROM accounts WHERE account_id=?").bind(String(targetId||"")).first();
+  if(!target) throw Object.assign(new Error("Account not found."),{status:404});
+  if(target.account_id===actor.account_id) throw Object.assign(new Error("You cannot change your own roles."),{status:403});
+  if(target.status!=="approved") throw Object.assign(new Error("Only approved accounts can have roles."),{status:400});
+  if(actor.role==="commander"&&["admin","commander"].includes(String(target.role))) throw Object.assign(new Error("Only Operation can manage Operation or Commander accounts."),{status:403});
+  const builtIn=["admin","commander","leader","member"];
+  const roles=[...new Set((Array.isArray(rolesInput)?rolesInput:[]).map(role=>String(role||"").trim().toLowerCase()).filter(Boolean))];
+  if(!roles.length) throw Object.assign(new Error("Choose at least one role."),{status:400});
+  for(const role of roles){
+    if(role==="admin"&&actor.role!=="admin") throw Object.assign(new Error("Only Operation can grant the Operation role."),{status:403});
+    if(!builtIn.includes(role)&&!await db.prepare("SELECT role FROM role_permissions WHERE role=?").bind(role).first()) throw Object.assign(new Error(`Unknown role "${role}".`),{status:400});
+  }
+  const current=await accountRoles(db,target);
+  const changed=[...new Set([...roles.filter(role=>!current.includes(role)),...current.filter(role=>!roles.includes(role))])];
+  for(const role of changed) await assertOutranks(db,actor,role);
+  await assertOutranks(db,actor,target.role);
+  const orders=await Promise.all(roles.map(role=>roleOrderOf(db,role)));
+  const primary=roles[orders.indexOf(Math.min(...orders))];
+  const now=new Date().toISOString(), who=String(actor.name||"");
+  await db.batch([
+    db.prepare("DELETE FROM account_roles WHERE account_id=?").bind(target.account_id),
+    ...roles.map(role=>db.prepare("INSERT INTO account_roles(account_id,role,assigned_at,assigned_by) VALUES(?,?,?,?)").bind(target.account_id,role,now,who)),
+    db.prepare("UPDATE accounts SET role=?,admin_changed_at=?,admin_changed_by=?,updated_at=? WHERE account_id=?").bind(primary,now,who,now,target.account_id),
+    db.prepare("INSERT INTO account_audit(created_at,account_id,name,callsign,action,actor_name) VALUES(?,?,?,?,?,?)").bind(now,target.account_id,target.name,target.callsign,"Roles: "+roles.join(", "),who)
+  ]);
+  return {roles,role:primary};
 }
 async function accountAction(db, id, action, actor) {
   const target = await db.prepare("SELECT * FROM accounts WHERE account_id=?").bind(id).first();
@@ -2984,6 +3017,14 @@ export async function handleD1(context) {
       }
       // The temporary password is shown once here and is stored only as a salted hash.
       return json({ok:true,account_id:target.account_id,name:target.name,callsign:target.callsign,temporary_password:temporary});
+    }
+    if(route==="/api/leaders/roles" && method==="POST") {
+      if(!env.LVFR_D1_AUTH_BRIDGE_SECRET) return json({detail:"Account Sheet mirroring is not configured: set LVFR_D1_AUTH_BRIDGE_SECRET in the Worker and Apps Script."},503);
+      const actor=await requireOperation(db,token);
+      const result=await setAccountRoles(db,actor,data.account_id,data.roles);
+      const assertion=await signedClaims(actor,env.LVFR_D1_AUTH_BRIDGE_SECRET);
+      context.waitUntil(mirrorToSheetInBackground(context,"Account roles",route,url,assertion,{account_id:String(data.account_id),role:result.role,roles:result.roles.join(",")},actor.account_id));
+      return json({ok:true,...result});
     }
     const action=route.match(/^\/api\/leaders\/([^/]+)\/(allow|deny|admin|commander|demote|member|leader|deactivate|reactivate)$/);
     if(action && method==="POST") {
