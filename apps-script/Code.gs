@@ -218,6 +218,7 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/academy/exam' && method === 'POST') return academyExam_(data, user);
   if (route === '/api/academy/remove' && method === 'POST') return academyRemove_(data, user);
   if (route === '/api/academy/terminate' && method === 'POST') return academyTerminate_(data, user);
+  if (route === '/api/academy/switch' && method === 'POST') return academySwitch_(data, user);
   if (route === '/api/terminate' && method === 'POST') { requireRolePermission_(user, 'termination_manage'); return terminateMember_(data, user); }
   const instructorRoute = route.match(/^\/api\/member\/([^/]+)\/instructor$/);
   if (instructorRoute && method === 'POST') {
@@ -2009,6 +2010,20 @@ function academyRemove_(data, user) {
   sheet.getRange(member.row, 11).clearContent().setBackground('#ffffff');
   appendAosHistory_({ timestamp: new Date().toISOString(), name: member.name, callsign: member.callsign, action: 'Removed — Resigned', actor: actorName_(user), previous_callsign: '' });
   return { ok: true };
+}
+
+// Full time <-> Volunteer: the row moves to a slot of the other probie rank, and the AOS History records the switch.
+function academySwitch_(data, user) {
+  requireRolePermission_(user, 'academy_manage');
+  const old = memberByCallsign_(data.callsign);
+  const probie = ['Probationary', 'Probationary Volunteer'];
+  const rank = String(data.new_rank || '').trim();
+  if (!probie.includes(old.rank) || !probie.includes(rank) || rank === old.rank) throw new Error('Choose the other academy rank.');
+  const target = data.d1_target_callsign ? emptyRowForCallsign_(String(data.d1_target_callsign).trim().toUpperCase()) : nextEmptyCallsign_(rank);
+  if (rankFromCallsign_(target.callsign) !== rank) throw new Error('The selected destination Callsign does not match the selected rank.');
+  moveMember_(old, target, rank, user, 'ACADEMY_SWITCH');
+  appendAosHistory_({ timestamp: new Date().toISOString(), name: old.name, callsign: target.callsign, action: rank === 'Probationary Volunteer' ? 'Switched from full time to volunteer' : 'Switched from volunteer to full time', actor: actorName_(user), previous_callsign: old.callsign });
+  return { ok: true, new_callsign: target.callsign, new_rank: rank };
 }
 
 // Training overdue: the Academy terminates a probie through the same routine as any termination.
