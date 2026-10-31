@@ -1575,6 +1575,7 @@ const commandSections = {
   permissions: document.querySelector('#commandPermissionsSection'),
   history: document.querySelector('#commandHistorySection'),
   discord: document.querySelector('#commandDiscordSection'),
+  roles: document.querySelector('#commandRoleIdsSection'),
   links: document.querySelector('#commandLinksSection'),
   log: document.querySelector('#commandLogSection'),
   mirror: document.querySelector('#commandMirrorSection'),
@@ -1585,17 +1586,17 @@ function showCommandSection(name, updateHash = false) {
     if (!canManageCommandAccounts()) return;
     name = 'accounts';
   }
-  if (name !== 'permissions' && !canManageCommandAccounts() && !(['discord', 'links', 'log'].includes(name) && canUseDiscord())) name = 'permissions';
+  if (name !== 'permissions' && !canManageCommandAccounts() && !(['discord', 'links', 'log', 'roles'].includes(name) && canUseDiscord())) name = 'permissions';
   if (!commandSections[name]) return;
   Object.entries(commandSections).forEach(([key, section]) => { section.hidden = key !== name; });
   document.querySelectorAll('[data-command-section]').forEach(button => {
-    const active = button.dataset.commandSection === name || (button.dataset.commandSection === 'discord' && ['links', 'log'].includes(name));
+    const active = button.dataset.commandSection === name || (button.dataset.commandSection === 'discord' && ['links', 'log', 'roles'].includes(name));
     button.classList.toggle('active', active);
     if (active) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   });
   if (updateHash) {
-    const anchors = { accounts: 'accountsHeading', permissions: 'permissionsHeading', history: 'auditHeading', discord: 'discordSyncHeading', links: 'linkedMembersHeading', log: 'discordLogHeading', mirror: 'mirrorQueueHeading' };
+    const anchors = { accounts: 'accountsHeading', permissions: 'permissionsHeading', history: 'auditHeading', discord: 'discordSyncHeading', roles: 'discordRoleIdsHeading', links: 'linkedMembersHeading', log: 'discordLogHeading', mirror: 'mirrorQueueHeading' };
     history.replaceState(null, '', `#${anchors[name]}`);
   }
   // replaceState does not fire hashchange, so load the list here and tell the sidebar which item is current.
@@ -1906,10 +1907,10 @@ document.querySelector('#refreshDiscordStatus')?.addEventListener('click', () =>
 
 // Discord sub-navigation shown inside the Discord tab: Sync, Linked members, Discord action log.
 (() => {
-  const views = [['discord', 'Sync'], ['links', 'Linked members'], ['log', 'Discord action log']];
+  const views = [['discord', 'Sync'], ['roles', 'Role IDs'], ['links', 'Linked members'], ['log', 'Discord action log']];
   const nav = `<nav class="role-tab-bar discord-subtabs" aria-label="Discord sections">${views.map(([key, label]) =>
     `<button type="button" class="role-tab" data-discord-view="${key}">${label}</button>`).join('')}</nav>`;
-  ['#commandDiscordSection', '#commandLinksSection', '#commandLogSection'].forEach(selector => {
+  ['#commandDiscordSection', '#commandRoleIdsSection', '#commandLinksSection', '#commandLogSection'].forEach(selector => {
     const section = document.querySelector(selector);
     section?.querySelector('.admin-header')?.insertAdjacentHTML('beforebegin', nav);
   });
@@ -1918,12 +1919,14 @@ document.querySelector('#refreshDiscordStatus')?.addEventListener('click', () =>
   document.querySelectorAll('[data-discord-view]').forEach(button => button.addEventListener('click', () => {
     showCommandSection(button.dataset.discordView, true);
     markActive(button.dataset.discordView);
+    if (button.dataset.discordView === 'roles') loadDiscordRoleMap().catch(() => {});
   }));
   window.addEventListener('hashchange', () => {
-    const view = { '#discordSyncHeading': 'discord', '#linkedMembersHeading': 'links', '#discordLogHeading': 'log' }[location.hash];
+    const view = { '#discordSyncHeading': 'discord', '#discordRoleIdsHeading': 'roles', '#linkedMembersHeading': 'links', '#discordLogHeading': 'log' }[location.hash];
     if (view) markActive(view);
   });
   const visibleView = () => {
+    if (!document.querySelector('#commandRoleIdsSection')?.hidden) return 'roles';
     if (!document.querySelector('#commandLinksSection')?.hidden) return 'links';
     if (!document.querySelector('#commandLogSection')?.hidden) return 'log';
     return 'discord';
