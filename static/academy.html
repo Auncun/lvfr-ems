@@ -44,6 +44,7 @@
     #academyPassDialog h2{margin:0 0 8px}#academyPassDialog p{color:#9aa4b2;line-height:1.5}
     .acad-pass-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
   [hidden]{display:none!important}
+.acad-sidebyside{display:grid;grid-template-columns:minmax(160px,220px) minmax(0,1fr);gap:16px;align-items:start}.acad-side{display:flex;flex-direction:column;gap:8px}.acad-side .tab{text-align:left;width:100%}.subpanel{display:none}.subpanel.active{display:block}@media (max-width:800px){.acad-sidebyside{grid-template-columns:1fr}.acad-side{flex-direction:row;flex-wrap:wrap}}
 </style>
 </head>
 <body>
@@ -78,12 +79,11 @@
     <p id="academyMessage" class="admin-status" role="status" aria-live="polite"></p>
     <nav class="tabs" aria-label="Academy sections">
       <button type="button" class="tab" data-tab="academyRecruit" hidden>Recruit</button>
-      <button type="button" class="tab" data-tab="academyFull">Full time</button>
-      <button type="button" class="tab" data-tab="academyVolunteer">Volunteer</button>
+      <button type="button" class="tab" data-tab="academyRecruits">Recruits in training</button>
       <button type="button" class="tab" data-tab="academyLog">Log</button>
     </nav>
     <section id="academyRecruit" class="panel">
-          <section id="academyRecruitSection" class="admin-card" aria-labelledby="academyRecruitHeading" hidden>
+      <section id="academyRecruitSection" class="admin-card" aria-labelledby="academyRecruitHeading" hidden>
       <h2 id="academyRecruitHeading">Recruit</h2>
       <p class="muted">The recruit is placed in the first empty Callsign of the chosen rank, in the Sheet and on the roster. Their Discord nickname becomes [Callsign] and the first initial and last name, and they receive the rank role. The person must already be in the Discord server.</p>
       <form id="academyRecruitForm" class="acad-form">
@@ -94,28 +94,39 @@
       </form>
     </section>
     </section>
-    <div id="academyRows">
-      <section id="academyFull" class="panel admin-card" aria-labelledby="academyFullHeading">
-        <div class="admin-header"><div><h2 id="academyFullHeading">Full time recruits</h2><p class="muted">Probationary recruits. To reach the Exit Exam a recruit needs Basic Medical (BM), Basic Communication (EC), Basic Vehicle (BV), 5 days TIG and 7 hours of supervised patrol. Academy staff confirm the patrol by hand; the website cannot know it.</p></div></div>
-        <div class="acad-search"><input type="search" class="academy-recruit-search" placeholder="Search callsign or name" aria-label="Search full time recruits"></div>
-        <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Callsign</th><th>Name</th><th>Trainings</th><th>TIG</th><th>Supervised patrol</th><th>Status</th><th>Exit Exam</th></tr></thead><tbody id="academyRowsFull"><tr><td colspan="7">Loading…</td></tr></tbody></table></div>
-      </section>
-      <section id="academyVolunteer" class="panel admin-card" aria-labelledby="academyVolunteerHeading">
-        <div class="admin-header"><div><h2 id="academyVolunteerHeading">Volunteer recruits</h2><p class="muted">Probationary Volunteer recruits. To reach the Exit Exam a recruit needs Basic Medical (BM), Basic Communication (EC), Basic Vehicle (BV), 5 days TIG and 7 hours of supervised patrol. Academy staff confirm the patrol by hand; the website cannot know it.</p></div></div>
-        <div class="acad-search"><input type="search" class="academy-recruit-search" placeholder="Search callsign or name" aria-label="Search volunteer recruits"></div>
-        <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Callsign</th><th>Name</th><th>Trainings</th><th>TIG</th><th>Supervised patrol</th><th>Status</th><th>Exit Exam</th></tr></thead><tbody id="academyRowsVolunteer"><tr><td colspan="7">Loading…</td></tr></tbody></table></div>
-      </section>
-    </div>
+    <section id="academyRecruits" class="panel admin-card" aria-labelledby="academyListHeading">
+      <div class="admin-header"><div><h2 id="academyListHeading">Recruits in training</h2><p class="muted">To reach the Exit Exam a recruit needs Basic Medical (BM), Basic Communication (EC), Basic Vehicle (BV), 5 days TIG and 7 hours of supervised patrol. Academy staff confirm the patrol by hand; the website cannot know it.</p></div></div>
+      <div class="acad-sidebyside">
+        <nav class="acad-side" aria-label="Recruit lists">
+          <button type="button" class="tab active" data-tab="academyFull" aria-pressed="true">Full time</button>
+          <button type="button" class="tab" data-tab="academyVolunteer" aria-pressed="false">Volunteer</button>
+        </nav>
+        <div id="academyRows">
+          <section id="academyFull" class="subpanel" aria-labelledby="academyFullHeading">
+            <h3 id="academyFullHeading">Full time recruits</h3>
+            <div class="acad-search"><input type="search" class="academy-recruit-search" placeholder="Search callsign or name" aria-label="Search full time recruits"></div>
+            <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Callsign</th><th>Name</th><th>Trainings</th><th>TIG</th><th>Supervised patrol</th><th>Status</th><th>Exit Exam</th></tr></thead><tbody id="academyRowsFull"><tr><td colspan="7">Loading…</td></tr></tbody></table></div>
+          </section>
+          <section id="academyVolunteer" class="subpanel" aria-labelledby="academyVolunteerHeading">
+            <h3 id="academyVolunteerHeading">Volunteer recruits</h3>
+            <div class="acad-search"><input type="search" class="academy-recruit-search" placeholder="Search callsign or name" aria-label="Search volunteer recruits"></div>
+            <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Callsign</th><th>Name</th><th>Trainings</th><th>TIG</th><th>Supervised patrol</th><th>Status</th><th>Exit Exam</th></tr></thead><tbody id="academyRowsVolunteer"><tr><td colspan="7">Loading…</td></tr></tbody></table></div>
+          </section>
+        </div>
+      </div>
+    </section>
     <section id="academyLog" class="panel admin-card" aria-labelledby="academyLogHeading">
       <h2 id="academyLogHeading">Log</h2>
       <div class="acad-search"><input type="search" id="academyLogSearch" placeholder="Search name, callsign or action" aria-label="Search log"></div>
-      <nav class="acad-log-nav" aria-label="Log categories">
-        <button type="button" class="tab active" data-log="recruited" aria-pressed="true">Recruited</button>
-        <button type="button" class="tab" data-log="graduated" aria-pressed="false">Graduated</button>
-        <button type="button" class="tab" data-log="resigned" aria-pressed="false">Resigned / terminated</button>
-        <button type="button" class="tab" data-log="switched" aria-pressed="false">Switch to Volunteer / Full time</button>
-      </nav>
-      <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>When</th><th>Name</th><th>Callsign</th><th>Action</th><th>By</th><th>Details</th><th></th></tr></thead><tbody id="academyLogRows"><tr><td colspan="7">Loading…</td></tr></tbody></table></div>
+      <div class="acad-sidebyside">
+        <nav class="acad-side" aria-label="Log categories">
+          <button type="button" class="tab active" data-log="recruited" aria-pressed="true">Recruited</button>
+          <button type="button" class="tab" data-log="graduated" aria-pressed="false">Graduated</button>
+          <button type="button" class="tab" data-log="resigned" aria-pressed="false">Resigned / terminated</button>
+          <button type="button" class="tab" data-log="switched" aria-pressed="false">Switch to Volunteer / Full time</button>
+        </nav>
+        <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>When</th><th>Name</th><th>Callsign</th><th>Action</th><th>By</th><th>Details</th><th></th></tr></thead><tbody id="academyLogRows"><tr><td colspan="7">Loading…</td></tr></tbody></table></div>
+      </div>
     </section>
     <dialog id="academyPassDialog" aria-labelledby="academyPassTitle">
       <h2 id="academyPassTitle">Exit Exam passed</h2>
