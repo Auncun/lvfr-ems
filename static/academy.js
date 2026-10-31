@@ -82,6 +82,7 @@
       $('#academyLogClear').hidden = !canManage;
       renderRecruits();
       await loadLog();
+      await loadConfirms();
     } catch (error) { rowsFull.innerHTML = `<tr><td colspan="7">${esc(error.message)}</td></tr>`; }
   }
 
@@ -284,6 +285,94 @@
       say(`${termingName} was ${label}.` + (result.discord?.ok ? ' Discord updated.' : ` Discord was not updated: ${result.discord?.message || 'unknown error'}.`), result.discord?.ok ? 'success' : 'error');
     } catch (error) { termStatus.textContent = error.message; termStatus.className = 'admin-status error'; }
     finally { buttons.forEach(b => { b.disabled = false; }); syncTermButtons(); }
+  });
+
+  // Portal and Discord confirmation: the same queue and card as the EMS page. Academy changes wait here until both boxes are ticked.
+  let pendingConfirms = [];
+  const flow = (from, to) => {
+    const before = String(from || '').trim(), after = String(to || '').trim();
+    if (!before) return esc(after);
+    if (!after || after === before) return esc(before);
+    return `${esc(before)} → ${esc(after)}`;
+  };
+  function confirmRows(item) {
+    const action = item.action || '';
+    let rows;
+    if (action === 'Academy: Recruited') rows = [['Callsign', esc(item.new_callsign)], ['Rank', esc(item.new_rank)]];
+    else if (action === 'Academy: Graduated' || action === 'Academy: Switched') rows = [['Rank', flow(item.old_rank, item.new_rank)], ['Callsign', flow(item.old_callsign, item.new_callsign)]];
+    else if (action === 'Academy: Resigned' || action === 'Academy: Terminated') rows = [['Rank', esc(item.old_rank)], ['Callsign', esc(item.old_callsign || item.callsign)], ['Reason', esc(item.detail)]];
+    else rows = [['Rank', flow(item.old_rank, item.new_rank)], ['Callsign', flow(item.old_callsign, item.new_callsign)]];
+    rows.push(['Done by', esc(item.created_by)]);
+    return `<table class="promotion-table">${rows.map(([label, value]) => `<tr><th>${esc(label)}</th><td>${value}</td></tr>`).join('')}</table>`;
+  }
+  function renderConfirmBanner() {
+    let banner = document.querySelector('#academyConfirmBanner');
+    if (!pendingConfirms.length) { banner?.remove(); return; }
+    if (!banner) {
+      banner = document.createElement('button');
+      banner.type = 'button';
+      banner.id = 'academyConfirmBanner';
+      banner.className = 'promotion-banner';
+      document.body.prepend(banner);
+    }
+    const needsDiscord = pendingConfirms.some(item => Number(item.needs_discord) === 1);
+    banner.textContent = `${needsDiscord ? 'Portal and Discord' : 'Portal'} Confirmation Needed (${pendingConfirms.length})`;
+  }
+  async function loadConfirms() {
+    try { pendingConfirms = (await api(`/api/promotion-confirmations?t=${Date.now()}`)).items || []; }
+    catch { pendingConfirms = []; }
+    renderConfirmBanner();
+  }
+  function openConfirmDialog() {
+    let dialog = document.querySelector('#academyPortalDialog');
+    if (!dialog) {
+      dialog = document.createElement('div');
+      dialog.id = 'academyPortalDialog';
+      dialog.className = 'promotion-overlay';
+      document.body.append(dialog);
+      dialog.addEventListener('click', async event => {
+        if (event.target.closest('[data-promotion-close]') || event.target === dialog) { dialog.hidden = true; return; }
+        const save = event.target.closest('[data-promotion-save]');
+        if (!save) return;
+        const section = save.closest('[data-promotion-id]');
+        const portal = section.querySelector('[data-promotion-check="portal"]').checked;
+        const discordBox = section.querySelector('[data-promotion-check="discord"]');
+        const discord = discordBox ? discordBox.checked : true;
+        if (!portal || !discord) { say('Tick both boxes before saving.', 'error'); return; }
+        save.disabled = true;
+        try {
+          await api('/api/promotion-confirmations/confirm', { id: Number(save.dataset.promotionSave), portal, discord });
+          pendingConfirms = pendingConfirms.filter(item => String(item.id) !== save.dataset.promotionSave);
+          renderConfirmBanner();
+          if (pendingConfirms.length) openConfirmDialog(); else dialog.hidden = true;
+          say('Saved.', 'success');
+        } catch (error) { say(`Could not save: ${error.message}`, 'error'); save.disabled = false; }
+      });
+    }
+    dialog.innerHTML = `<div class="promotion-box" role="dialog" aria-modal="true" aria-labelledby="academyPortalTitle">
+        <div class="promotion-head">
+            <h2 id="academyPortalTitle">Portal and Discord Confirmation</h2>
+            <button type="button" class="promotion-close" data-promotion-close aria-label="Close">×</button>
+        </div>
+        <div class="promotion-body">
+            ${pendingConfirms.length ? '' : '<p class="promotion-empty">Nothing is waiting for confirmation.</p>'}
+            ${pendingConfirms.map(item => `
+                <section class="promotion-item" data-promotion-id="${esc(item.id)}">
+                    <h3>${esc(item.name || item.new_callsign)}</h3>
+                    ${confirmRows(item)}
+                    <p class="promotion-note">Make these changes in the NARCOS Portal and in Discord. Then tick both boxes and press Save.</p>
+                    <div class="promotion-checks">
+                        <label class="promotion-check"><input type="checkbox" data-promotion-check="portal"> Done in PORTAL</label>
+                        ${Number(item.needs_discord) === 1 ? '<label class="promotion-check"><input type="checkbox" data-promotion-check="discord"> Done in Discord</label>' : ''}
+                    </div>
+                    <button type="button" class="promotion-save" data-promotion-save="${esc(item.id)}">Save</button>
+                </section>`).join('')}
+        </div>
+    </div>`;
+    dialog.hidden = false;
+  }
+  document.addEventListener('click', event => {
+    if (event.target.closest('#academyConfirmBanner')) { loadConfirms().then(openConfirmDialog); }
   });
 
   // Like the roster: a small fingerprint is checked every few seconds, and the page reloads only when it changed
