@@ -2361,7 +2361,7 @@ export async function handleD1(context) {
       if(!session.account) throw Object.assign(new Error("Sign in again."),{status:401});
       // Each person sees only the confirmations for permissions they hold.
       const viewer=session.account, viewerAdmin=viewer.role==="admin";
-      const rows=(await db.prepare("SELECT p.id,p.callsign,COALESCE(NULLIF(p.name,''),(SELECT m.name FROM members m WHERE upper(m.callsign)=upper(p.new_callsign) LIMIT 1),'') AS name,p.old_rank,p.new_rank,p.old_callsign,p.new_callsign,p.created_at,p.created_by,p.action,p.needs_discord,p.required_permissions,p.portal_done,p.discord_done FROM promotion_confirmations p WHERE p.confirmed_at IS NULL ORDER BY p.id DESC LIMIT 50").all()).results||[];
+      const rows=(await db.prepare("SELECT p.id,p.callsign,COALESCE(NULLIF(p.name,''),(SELECT m.name FROM members m WHERE upper(m.callsign)=upper(p.new_callsign) LIMIT 1),'') AS name,p.old_rank,p.new_rank,p.old_callsign,p.new_callsign,p.created_at,p.created_by,p.action,p.needs_discord,p.required_permissions,p.portal_done,p.discord_done,COALESCE(p.detail,'') AS detail FROM promotion_confirmations p WHERE p.confirmed_at IS NULL ORDER BY p.id DESC LIMIT 50").all()).results||[];
       const visible=rows.filter(row=>viewerAdmin||String(row.required_permissions||"").split(",").some(key=>viewer.permissions?.[key.trim()]===true));
       return json({items:visible});
     }
