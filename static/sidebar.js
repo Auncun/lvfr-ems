@@ -61,8 +61,10 @@
     {
       href: '/academy', title: 'Academy', permission: 'academy_view', items: [
         { label: 'Recruit', anchor: '#academyRecruitHeading' },
-        { label: 'Recruits in training', anchor: '#academyListHeading' },
-        { label: 'Graduates', anchor: '#academyGraduatesHeading' }
+        { label: 'Full time recruits', anchor: '#academyFullHeading' },
+        { label: 'Volunteer recruits', anchor: '#academyVolunteerHeading' },
+        { label: 'Graduates', anchor: '#academyGraduatesHeading' },
+        { label: 'Log', anchor: '#academyLogHeading' }
       ]
     },
     {
