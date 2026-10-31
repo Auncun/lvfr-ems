@@ -1751,6 +1751,7 @@ disabledReasonObserver.observe(document.body, { subtree: true, childList: true, 
 
   document.querySelector('#refreshLinkedMembers')?.addEventListener('click', () => refreshAll().catch(error => note(error.message, 'error')));
   document.querySelector('[data-command-section="discord"]')?.addEventListener('click', () => refreshAll().catch(() => {}));
+document.querySelector('[data-command-section="discord"]')?.addEventListener('click', () => loadDiscordRoleMap().catch(() => {}));
 })();
 
 // Discord page wiring: the Sync / Retry / Refresh buttons and the sync report.
