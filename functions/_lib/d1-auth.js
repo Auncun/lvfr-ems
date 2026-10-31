@@ -7,6 +7,7 @@ const NOTIFICATION_PREFERENCE_KINDS=[
   {kind:"termination",label:"Termination",key:"notif_termination",bases:["termination_manage"]},
   {kind:"inactive",label:"Due to Activity",key:"notif_inactive",bases:["inactive_view"]},
   {kind:"overdue",label:"Training Overdue",key:"notif_overdue",bases:["inactive_view"]},
+  {kind:"exit_exam_overdue",label:"Exit Exam Overdue",key:"notif_exit_exam_overdue",bases:["notif_exit_exam_overdue"]},
   {kind:"promotion",label:"Promotion",key:"notif_promotion",bases:["promotion_manage","rank_manage"]},
   {kind:"eligible",label:"Can be promoted",key:"notif_eligible",bases:["eligible_view","promotion_access"]},
   {kind:"callsign",label:"Callsign",key:"notif_callsign",bases:["callsign_manage"]},
@@ -47,10 +48,10 @@ function clampNotificationKeys(result){
   }
   return result;
 }
-const DEFAULT_ON_NOTIFICATION_KINDS=["eligible","inactive","overdue","request"];
+const DEFAULT_ON_NOTIFICATION_KINDS=["eligible","inactive","overdue","exit_exam_overdue","request"];
 const LOG_VIEW_PERMISSIONS = ["promotion_log_view","callsign_log_view","termination_log_view","training_log_view","training_hours_log_view","loi_log_view","exam_log_view","note_log_view","activity_log_view","instructor_log_view"];
 const TRAINING_VIEW_PERMISSIONS = ["hert_certified_view","hert_instructor_view","hert_loi_view","fort_training_view","fort_instructor_view","fort_loi_view"];
-const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","academy_view","academy_manage","academy_terminate","academy_resign","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","do_not_terminate_log_view","notif_termination","notif_inactive","notif_overdue","notif_promotion","notif_eligible","notif_callsign","notif_training","notif_training_time","notif_loi","notif_exam","notif_note","notif_activity","notif_instructor","notif_do_not_promote","notif_do_not_terminate","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage","discord_view","discord_manage","discord_sync_manage","discord_log_clear","discord_kick","discord_settings_manage"];
+const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","academy_view","academy_manage","academy_terminate","academy_resign","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","do_not_terminate_log_view","notif_termination","notif_inactive","notif_overdue","notif_promotion","notif_eligible","notif_callsign","notif_training","notif_training_time","notif_loi","notif_exam","notif_note","notif_activity","notif_instructor","notif_do_not_promote","notif_do_not_terminate","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage","discord_view","discord_manage","discord_sync_manage","discord_log_clear","discord_kick","discord_settings_manage","notif_exit_exam_overdue"];
 const DEFAULT_ROLE_PERMISSIONS = {
   member: { portal_access:false,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:false,eligible_view:false,promotion_access:false,profile_view:false,inactive_view:false,logs_view:false,training_view:false,training_fort_manage:false,training_hert_manage:false,training_hours_view:false,training_hours_manage:false,loi_manage:false,statistics_view:false,notes_manage:false,promotion_manage:false,callsign_manage:false,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:false,sync_manage:false },
   leader: { portal_access:true,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,promotion_access:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,loi_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true },
@@ -1101,12 +1102,18 @@ async function refreshD1Notifications(db,user) {
     const pending=(await db.prepare("SELECT account_id,name,callsign,created_at FROM accounts WHERE status='pending'").all()).results||[];
     for(const account of pending) additions.push({kind:"request",eventKey:"request:"+account.account_id,title:"New account request",message:(account.name||"New account")+" requested an account.",callsign:account.callsign||"",targetRank:"",stateKey:"request:"+account.account_id,stateValue:"1",createdAt:account.created_at});
   }
+  // Probationary and Probationary Volunteer members in rank 21 days or more: not yet through the Exit Exam.
+  for(const member of rows) {
+    const m=memberFromRow(member);
+    if(["Probationary","Probationary Volunteer"].includes(m.rank)&&Number(m.days_in_rank||0)>=21) additions.push({kind:"exit_exam_overdue",eventKey:"exitexam:"+member.callsign,title:"Exit Exam Overdue",message:member.name+" ("+member.callsign+") has been in probie rank for 21 days without passing the Exit Exam.",callsign:member.callsign,targetRank:"",stateKey:"exitexam:"+member.callsign,stateValue:"1"});
+  }
   const statements=[];
   for(const item of additions) {
     const seeded=state.has(item.stateKey);
     const isEligible=item.kind==="eligible";
     const shouldNotify=isEligible ? state.get(item.stateKey)!==item.stateValue
       : item.kind==="request" ? !state.has(item.stateKey)
+      : item.kind==="exit_exam_overdue" ? !state.has(item.stateKey)
       : (item.kind==="inactive"||item.kind==="overdue") && state.has("inactive_seeded") && !state.has(item.stateKey);
     if(shouldNotify) {
       statements.push(db.prepare("INSERT OR IGNORE INTO notifications(kind,event_key,title,message,callsign,target_rank,created_at) VALUES(?,?,?,?,?,?,?)")
@@ -1118,6 +1125,7 @@ async function refreshD1Notifications(db,user) {
     if(key.startsWith("eligible:")&&!additions.some(item=>item.stateKey===key)) state.delete(key);
     if(command&&key.startsWith("inactive:")&&!additions.some(item=>item.stateKey===key)) state.delete(key);
     if(command&&key.startsWith("overdue:")&&!additions.some(item=>item.stateKey===key)) state.delete(key);
+    if(key.startsWith("exitexam:")&&!additions.some(item=>item.stateKey===key)) state.delete(key);
   }
   if(!state.has("eligibility_seeded")) state.set("eligibility_seeded","1");
   if(command&&!state.has("inactive_seeded")) state.set("inactive_seeded","1");
@@ -2048,7 +2056,12 @@ export async function handleD1(context) {
     if (route === "/api/discord/role-map" && method === "GET") {
       if (!(user.role === "admin" || user.permissions?.discord_view === true)) throw Object.assign(new Error("Discord access is required."), { status: 403 });
       const saved = new Map(((await db.prepare("SELECT rank, role_id FROM discord_role_map").all()).results || []).map(row => [row.rank, row.role_id]));
-      return json({ ok: true, guild_id: env.DISCORD_GUILD_ID || "", ops_role_id: env.DISCORD_OPS_ROLE_ID || "", ranks: Object.keys(RANK_LEVEL).map(rank => ({ rank, role_id: saved.get(rank) || "" })) });
+      let fromSecret = new Map();
+      try { fromSecret = discordRoleMap(env); } catch { fromSecret = new Map(); }
+      return json({ ok: true, guild_id: env.DISCORD_GUILD_ID || "", ops_role_id: env.DISCORD_OPS_ROLE_ID || "", ranks: Object.keys(RANK_LEVEL).map(rank => {
+        const website = saved.get(rank) || "", secret = fromSecret.get(rank.toLowerCase()) || "";
+        return { rank, role_id: website || secret, source: website ? "website" : (secret ? "secret" : "") };
+      }) });
     }
     if (route === "/api/discord/role-map" && method === "POST") {
       if (!(user.role === "admin" || user.permissions?.discord_settings_manage === true)) throw Object.assign(new Error("Discord settings access is required."), { status: 403 });
