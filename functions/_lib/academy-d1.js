@@ -72,6 +72,13 @@ async function academyLog(db, user, action, callsign, name, detail) {
 
 // Probationary members already on the roster (added before the Academy page, or by hand in the Sheet)
 // get an Academy row. Their trainings start empty; academy staff confirm them. Idempotent.
+// Every Academy change waits in the shared Portal and Discord confirmation queue (the same one the EMS page uses),
+// until someone with the matching permission ticks Portal and Discord and presses Save.
+async function queueAcademyConfirmation(db, user, { action, callsign, name, oldRank = "", newRank = "", oldCallsign = "", newCallsign = "", detail = "", perms }) {
+  await db.prepare("INSERT INTO promotion_confirmations(callsign,name,old_rank,new_rank,old_callsign,new_callsign,created_at,created_by,action,needs_discord,required_permissions,detail) VALUES(?,?,?,?,?,?,?,?,?,1,?,?)")
+    .bind(callsign, name, oldRank, newRank, oldCallsign, newCallsign, nowIso(), String(user.name || ""), action, perms, detail).run();
+}
+
 async function adoptRosterRecruits(db) {
   await db.prepare(`INSERT INTO academy_recruits(callsign,name,discord_user_id,recruit_type,status,recruited_at,recruited_by)
     SELECT m.callsign, m.name,
@@ -100,6 +107,7 @@ async function switchRecruit(db, user, data, mirror, discordRoster) {
   ]);
   const label = newRank === "Probationary Volunteer" ? "Switched to Volunteer" : "Switched to Full time";
   await academyLog(db, user, label, newCs, r.name, `was ${member.callsign}`);
+  await queueAcademyConfirmation(db, user, { action: "Academy: Switched", callsign: newCs, name: r.name, oldRank: member.rank, newRank, oldCallsign: member.callsign, newCallsign: newCs, perms: "academy_manage" });
   await mirror("Academy switch", "/api/academy/switch", { callsign: member.callsign, new_rank: newRank, d1_target_callsign: newCs, name: member.name });
   const sync = discordRoster ? await discordRoster(member, { new_callsign: newCs, new_rank: newRank }).catch(() => "unavailable") : "unavailable";
   const messages = {
@@ -192,6 +200,7 @@ async function recruit(db, user, data, mirror, discordRecruit, discordCheck) {
   await db.prepare("INSERT INTO discord_member_links(callsign,discord_user_id,member_name,rank,status,pending_callsign,pending_rank,pending_update_roles,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?,1,?,?)")
     .bind(callsign, discordId, name, rank, callsign, rank, now, now).run();
   await academyLog(db, user, "Recruited", callsign, name, rank);
+  await queueAcademyConfirmation(db, user, { action: "Academy: Recruited", callsign, name, newRank: rank, newCallsign: callsign, perms: "academy_manage" });
   await mirror("Academy recruit", "/api/academy/recruit", { callsign, name, rank });
   const sync = discordRecruit ? discordRecruit.queue(discordId, academyNickname(name)) : "unavailable";
   return { ok: true, callsign, name, new_rank: rank, discord: { ok: sync === "pending", message: sync === "pending" ? "Discord nickname and role are being updated in the background." : "Discord synchronization could not be started." } };
@@ -259,6 +268,7 @@ async function exam(db, user, data, mirror, discordRoster) {
       .bind(now, who, newRank, newCs, now, who, r.id)
   ]);
   await academyLog(db, user, "Passed Exit Exam", r.callsign, r.name, `${newCs} ${newRank}`);
+  await queueAcademyConfirmation(db, user, { action: "Academy: Graduated", callsign: newCs, name: r.name, oldRank: member.rank, newRank, oldCallsign: member.callsign, newCallsign: newCs, perms: "academy_manage" });
   await mirror("Academy exam", "/api/academy/exam", { callsign: member.callsign, new_rank: newRank, d1_target_callsign: newCs, name: member.name });
   // Same Discord update as a promotion: the link moves to the new callsign and the nickname and role follow in the background.
   const sync = discordRoster ? await discordRoster(member, { new_callsign: newCs, new_rank: newRank }).catch(() => "unavailable") : "unavailable";
@@ -288,6 +298,7 @@ async function removeRecruit(db, user, data, mirror, discordTerminate) {
     db.prepare("DELETE FROM academy_recruits WHERE id=?").bind(r.id)
   ]);
   await academyLog(db, user, "Removed — Resigned", r.callsign, r.name, "");
+  await queueAcademyConfirmation(db, user, { action: "Academy: Resigned", callsign: member.callsign, name: member.name, oldRank: member.rank, oldCallsign: member.callsign, detail: "Resigned", perms: "academy_resign" });
   await mirror("Academy remove", "/api/academy/remove", { callsign: member.callsign, name: member.name });
   let discord = { ok: true, message: "No Discord account is linked." };
   if (link && discordTerminate) {
@@ -316,6 +327,7 @@ async function terminateRecruit(db, user, data, mirror, discordTerminate) {
     db.prepare("DELETE FROM academy_recruits WHERE id=?").bind(r.id)
   ]);
   await academyLog(db, user, "Terminated (Exit Exam overdue)", r.callsign, r.name, "");
+  await queueAcademyConfirmation(db, user, { action: "Academy: Terminated", callsign: member.callsign, name: member.name, oldRank: member.rank, oldCallsign: member.callsign, detail: `Exit Exam overdue (${OVERDUE_DAYS} days without passing)`, perms: "academy_terminate" });
   await mirror("Academy terminate", "/api/academy/terminate", { callsign: member.callsign, name: member.name, note: `Exit Exam overdue (${OVERDUE_DAYS} days)` });
   let discord = { ok: true, message: "No Discord account is linked." };
   if (link && discordTerminate) {
@@ -332,12 +344,14 @@ async function academyVersion(db) {
   const links = (await db.prepare("SELECT l.callsign,l.discord_user_id,l.status,l.last_error FROM discord_member_links l WHERE upper(l.callsign) IN (SELECT upper(callsign) FROM academy_recruits WHERE status='active')").all()).results || [];
   const slots = (await db.prepare("SELECT rank,callsign,sheet_row FROM callsign_slots WHERE lower(trim(rank)) IN ('probationary','probationary volunteer')").all()).results || [];
   const log = await db.prepare("SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS m FROM academy_log").first();
+  const pending = await db.prepare("SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS m FROM promotion_confirmations WHERE confirmed_at IS NULL").first();
   const lines = [
     ...probies.map(r => "m" + JSON.stringify(Object.values(r))),
     ...recruits.map(r => "r" + JSON.stringify(Object.values(r))),
     ...links.map(r => "l" + JSON.stringify(Object.values(r))),
     ...slots.map(r => "s" + JSON.stringify(Object.values(r))),
-    "g" + String(log?.n ?? 0) + "|" + String(log?.m ?? 0)
+    "g" + String(log?.n ?? 0) + "|" + String(log?.m ?? 0),
+    "p" + String(pending?.n ?? 0) + "|" + String(pending?.m ?? 0)
   ].sort();
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(lines.join("\n")));
   return [...new Uint8Array(digest)].slice(0, 12).map(b => b.toString(16).padStart(2, "0")).join("");
