@@ -46,7 +46,20 @@ async function academyLog(db, user, action, callsign, name, detail) {
     .bind(nowIso(), String(user.name || ""), callsign || "", name || "", action, detail || "").run();
 }
 
+// Probationary members already on the roster (added before the Academy page, or by hand in the Sheet)
+// get an Academy row. Their trainings start empty; academy staff confirm them. Idempotent.
+async function adoptRosterRecruits(db) {
+  await db.prepare(`INSERT INTO academy_recruits(callsign,name,discord_user_id,recruit_type,status,recruited_at,recruited_by)
+    SELECT m.callsign, m.name,
+      COALESCE((SELECT l.discord_user_id FROM discord_member_links l WHERE upper(l.callsign)=upper(m.callsign)), ''),
+      m.rank, 'active', COALESCE(NULLIF(m.date, ''), ''), 'Roster'
+    FROM members m
+    WHERE m.rank IN ('Probationary', 'Probationary Volunteer')
+      AND NOT EXISTS (SELECT 1 FROM academy_recruits a WHERE upper(a.callsign)=upper(m.callsign) AND a.status='active')`).run();
+}
+
 async function listAcademy(db, user) {
+  await adoptRosterRecruits(db);
   const active = (await db.prepare("SELECT * FROM academy_recruits WHERE status='active' ORDER BY recruited_at, id").all()).results || [];
   const recruits = [];
   for (const r of active) {
