@@ -6,6 +6,14 @@ const PROBIE_RANKS = ["Probationary", "Probationary Volunteer"];
 const GRADUATE_RANKS = ["EMT", "Volunteer"];
 const TIG_DAYS_REQUIRED = 5;
 const TRAINING_COLUMNS = { BM: "bm", EC: "ec", BV: "bv" };
+const OVERDUE_DAYS = 21;
+
+// Discord nickname for a recruit: first letter of the first name, a dot, then the rest of the name.
+function academyNickname(name) {
+  const parts = String(name || "").trim().split(/\s+/);
+  if (parts.length < 2) return parts[0] || "";
+  return `${parts[0][0].toUpperCase()}.${parts.slice(1).join(" ")}`;
+}
 
 const json = (body, status = 200) => Response.json(body, { status });
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -31,6 +39,7 @@ function recruitView(r, tig) {
     id: r.id, callsign: r.callsign, name: r.name, recruit_type: r.recruit_type, recruited_at: r.recruited_at,
     bm, ec, bv, tig_days: tig, tig_ok: tigOk, patrol,
     ready: bm && ec && bv && tigOk && patrol,
+    overdue: tig >= OVERDUE_DAYS && r.exam_result !== "passed",
     exam_result: r.exam_result || "", discord_status: "", discord_error: ""
   };
 }
@@ -110,7 +119,7 @@ async function recruit(db, user, data, mirror, discordRecruit) {
     .bind(callsign, discordId, name, rank, callsign, rank, now, now).run();
   await academyLog(db, user, "Recruited", callsign, name, rank);
   await mirror("Academy recruit", "/api/academy/recruit", { callsign, name, rank });
-  const sync = discordRecruit ? discordRecruit.queue(discordId, name) : "unavailable";
+  const sync = discordRecruit ? discordRecruit.queue(discordId, academyNickname(name)) : "unavailable";
   return { ok: true, callsign, name, new_rank: rank, discord: { ok: sync === "pending", message: sync === "pending" ? "Discord nickname and role are being updated in the background." : "Discord synchronization could not be started." } };
 }
 
@@ -197,20 +206,47 @@ async function removeRecruit(db, user, data, mirror) {
   return { ok: true };
 }
 
+// Training overdue: the Academy terminates a recruit who has been in probie rank OVERDUE_DAYS days without passing the Exit Exam.
+async function terminateRecruit(db, user, data, mirror, discordTerminate) {
+  const r = await loadActive(db, Number(data.id) || 0);
+  const member = await db.prepare("SELECT * FROM members WHERE upper(callsign)=upper(?)").bind(r.callsign).first();
+  if (!member) throw fail("Member not found on the roster.", 404);
+  if (!PROBIE_RANKS.includes(member.rank)) throw fail("This member is not an academy recruit.");
+  if (!recruitView(r, Number(member.days_in_rank) || 0).overdue) throw fail(`Terminate is only allowed after ${OVERDUE_DAYS} days without passing the Exit Exam.`);
+  if (member.do_not_terminate) throw fail("This member is on the Do Not Terminate list.");
+  // A linked Discord account needs an explicit choice before anything is changed (same rule as the roster termination).
+  const link = await db.prepare("SELECT 1 AS found FROM discord_member_links WHERE upper(callsign)=upper(?)").bind(member.callsign).first();
+  const discordAction = String(data.discord_action || "");
+  if (link && !["kick", "remove_roles", "none"].includes(discordAction)) throw fail("Choose what to do in Discord: kick, remove roles only, or clear the nickname only.", 409);
+  const now = nowIso();
+  await db.batch([
+    db.prepare("INSERT OR REPLACE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(member.rank, member.callsign, member.sheet_row ?? null, now),
+    db.prepare("DELETE FROM members WHERE callsign=?").bind(member.callsign),
+    db.prepare("DELETE FROM academy_recruits WHERE id=?").bind(r.id)
+  ]);
+  await academyLog(db, user, "Terminated (training overdue)", r.callsign, r.name, "");
+  await mirror("Academy terminate", "/api/academy/terminate", { callsign: member.callsign, name: member.name, note: `Training overdue (${OVERDUE_DAYS} days)` });
+  let discord = { ok: true, message: "No Discord account is linked." };
+  if (link && discordTerminate) {
+    discord = await discordTerminate(member.callsign, member.name, discordAction).then(() => ({ ok: true, message: discordAction === "kick" ? "Kicked from the Discord server." : "Discord updated." })).catch(error => ({ ok: false, message: String(error?.message || error).slice(0, 200) }));
+  }
+  return { ok: true, discord };
+}
+
 // Called from handleD1 for every /api/academy route. Returns a Response, or null for a non-academy route.
-export async function handleAcademy({ db, user, route, method, data, mirror, discordRoster, discordRecruit }) {
+export async function handleAcademy({ db, user, route, method, data, mirror, discordRoster, discordRecruit, discordTerminate }) {
   if (route === "/api/academy" && method === "GET") { requireView(user); return json(await listAcademy(db, user)); }
   if (route === "/api/academy/recruit" && method === "POST") { requireManage(user); return json(await recruit(db, user, data, mirror, discordRecruit)); }
   if (route === "/api/academy/discord-retry" && method === "POST") {
     requireManage(user);
     const r = await db.prepare("SELECT * FROM academy_recruits WHERE id=?").bind(Number(data.id) || 0).first();
     if (!r) throw fail("Recruit was not found.", 404);
-    return json({ ok: true, discord: await discordRecruit.run(r.discord_user_id, r.name) });
+    return json({ ok: true, discord: await discordRecruit.run(r.discord_user_id, academyNickname(r.name)) });
   }
   if (route === "/api/academy/training" && method === "POST") { requireManage(user); return json(await setTraining(db, user, data)); }
   if (route === "/api/academy/patrol" && method === "POST") { requireManage(user); return json(await setPatrol(db, user, data)); }
   if (route === "/api/academy/exam" && method === "POST") { requireManage(user); return json(await exam(db, user, data, mirror, discordRoster)); }
   if (route === "/api/academy/remove" && method === "POST") { requireManage(user); return json(await removeRecruit(db, user, data, mirror)); }
+  if (route === "/api/academy/terminate" && method === "POST") { requireManage(user); return json(await terminateRecruit(db, user, data, mirror, discordTerminate)); }
   return json({ detail: "Academy route was not found." }, 404);
 }
-
