@@ -135,7 +135,8 @@ async function academyLogList(db) {
 
 async function listAcademy(db, user) {
   await adoptRosterRecruits(db);
-  const active = (await db.prepare("SELECT * FROM academy_recruits WHERE status='active' ORDER BY recruited_at, id").all()).results || [];
+  // Only recruits still on the roster. A recruit deleted from the Sheet disappears from the page (the record is kept).
+  const active = (await db.prepare("SELECT * FROM academy_recruits WHERE status='active' AND upper(callsign) IN (SELECT upper(callsign) FROM members) ORDER BY recruited_at, id").all()).results || [];
   const recruits = [];
   for (const r of active) {
     const view = recruitView(r, await tigDays(db, r.callsign));
@@ -171,7 +172,7 @@ async function recruit(db, user, data, mirror, discordRecruit, discordCheck) {
   const name = String(data.name || "").replace(/\s+/g, " ").trim();
   if (name.length < 3) throw fail("Enter the recruit's full name.");
   // Same name (ignoring capitals and extra spaces) as someone already on the roster or in the Academy: no second record.
-  const sameName = await db.prepare("SELECT callsign FROM members WHERE lower(trim(name))=lower(?) UNION SELECT callsign FROM academy_recruits WHERE status='active' AND lower(trim(name))=lower(?) LIMIT 1").bind(name, name).first();
+  const sameName = await db.prepare("SELECT callsign FROM members WHERE lower(trim(name))=lower(?) UNION SELECT callsign FROM academy_recruits WHERE status='active' AND upper(callsign) IN (SELECT upper(callsign) FROM members) AND lower(trim(name))=lower(?) LIMIT 1").bind(name, name).first();
   if (sameName) throw fail(`Already exist: a member named ${name} is already on the roster (${String(sameName.callsign || "").toUpperCase()}).`, 409);
   const rank = String(data.recruit_type || "").trim();
   if (!PROBIE_RANKS.includes(rank)) throw fail("Academy recruits start as Probationary or Probationary Volunteer.");
@@ -340,7 +341,7 @@ async function terminateRecruit(db, user, data, mirror, discordTerminate) {
 // only when it changes, so a Sheet edit (synced to D1 by the Apps Script triggers) appears without a manual refresh.
 async function academyVersion(db) {
   const probies = (await db.prepare("SELECT callsign,name,rank,days_in_rank,do_not_terminate,date FROM members WHERE rank IN ('Probationary','Probationary Volunteer')").all()).results || [];
-  const recruits = (await db.prepare("SELECT id,callsign,name,discord_user_id,recruit_type,recruited_at,bm_at,ec_at,bv_at,patrol_at,exam_result FROM academy_recruits WHERE status='active'").all()).results || [];
+  const recruits = (await db.prepare("SELECT id,callsign,name,discord_user_id,recruit_type,recruited_at,bm_at,ec_at,bv_at,patrol_at,exam_result FROM academy_recruits WHERE status='active' AND upper(callsign) IN (SELECT upper(callsign) FROM members)").all()).results || [];
   const links = (await db.prepare("SELECT l.callsign,l.discord_user_id,l.status,l.last_error FROM discord_member_links l WHERE upper(l.callsign) IN (SELECT upper(callsign) FROM academy_recruits WHERE status='active')").all()).results || [];
   const slots = (await db.prepare("SELECT rank,callsign,sheet_row FROM callsign_slots WHERE lower(trim(rank)) IN ('probationary','probationary volunteer')").all()).results || [];
   const log = await db.prepare("SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS m FROM academy_log").first();
