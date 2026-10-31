@@ -147,14 +147,17 @@
     <dialog id="academyTermDialog" aria-labelledby="academyTermTitle">
       <h2 id="academyTermTitle">Terminate recruit</h2>
       <p id="academyTermText"></p>
-      <p class="muted">Choose what happens to the Discord account.</p>
+      <p id="academyTermDiscordNote" class="muted">Choose what happens to the Discord account.</p>
       <p class="muted">Type the callsign <strong id="academyTermCallsign"></strong> to confirm.</p>
       <input id="academyTermConfirmInput" autocomplete="off" aria-label="Retype the callsign to confirm" style="width:100%;margin-bottom:12px">
       <div class="admin-actions" style="flex-direction:column;align-items:stretch">
-        <button type="button" class="danger" data-discord-action="kick">Kick from the Discord server</button>
-        <small id="academyKickNote" class="acad-note" hidden>Needs the Discord: kick permission.</small>
-        <button type="button" data-discord-action="remove_roles">Remove managed roles and clear nickname</button>
-        <button type="button" data-discord-action="none">Clear nickname only</button>
+        <div id="academyTermDiscordChoices" style="display:flex;flex-direction:column;gap:8px">
+          <button type="button" class="danger" data-discord-action="kick">Kick from the Discord server</button>
+          <small id="academyKickNote" class="acad-note" hidden>Needs the Discord: kick permission.</small>
+          <button type="button" data-discord-action="remove_roles">Remove managed roles and clear nickname</button>
+          <button type="button" data-discord-action="none">Clear nickname only</button>
+        </div>
+        <button type="button" class="danger" id="academyTermConfirmPlain" data-discord-action="none" hidden>Confirm</button>
         <button type="button" id="academyTermCancel">Cancel</button>
       </div>
       <p id="academyTermStatus" class="admin-status" role="status" aria-live="polite"></p>
