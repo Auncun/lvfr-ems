@@ -133,6 +133,8 @@ async function listAcademy(db, user) {
     const view = recruitView(r, await tigDays(db, r.callsign));
     const link = await db.prepare("SELECT status,last_error FROM discord_member_links WHERE discord_user_id=?").bind(r.discord_user_id).first();
     if (link?.status === "failed") { view.discord_status = "failed"; view.discord_error = link.last_error || ""; }
+    // Same link the removal and termination check (matched by callsign), so the dialog asks only when it matters.
+    view.discord_linked = !!(await db.prepare("SELECT 1 AS found FROM discord_member_links WHERE upper(callsign)=upper(?)").bind(r.callsign).first());
     recruits.push(view);
   }
   const done = (await db.prepare("SELECT * FROM academy_recruits WHERE status='graduated' ORDER BY graduated_at DESC, id DESC LIMIT 200").all()).results || [];
@@ -160,6 +162,9 @@ async function listAcademy(db, user) {
 async function recruit(db, user, data, mirror, discordRecruit, discordCheck) {
   const name = String(data.name || "").replace(/\s+/g, " ").trim();
   if (name.length < 3) throw fail("Enter the recruit's full name.");
+  // Same name (ignoring capitals and extra spaces) as someone already on the roster or in the Academy: no second record.
+  const sameName = await db.prepare("SELECT callsign FROM members WHERE lower(trim(name))=lower(?) UNION SELECT callsign FROM academy_recruits WHERE status='active' AND lower(trim(name))=lower(?) LIMIT 1").bind(name, name).first();
+  if (sameName) throw fail(`Already exist: a member named ${name} is already on the roster (${String(sameName.callsign || "").toUpperCase()}).`, 409);
   const rank = String(data.recruit_type || "").trim();
   if (!PROBIE_RANKS.includes(rank)) throw fail("Academy recruits start as Probationary or Probationary Volunteer.");
   const discordId = String(data.discord_user_id || "").trim();
@@ -310,7 +315,7 @@ async function terminateRecruit(db, user, data, mirror, discordTerminate) {
     db.prepare("DELETE FROM members WHERE callsign=?").bind(member.callsign),
     db.prepare("DELETE FROM academy_recruits WHERE id=?").bind(r.id)
   ]);
-  await academyLog(db, user, "Terminated (training overdue)", r.callsign, r.name, "");
+  await academyLog(db, user, "Terminated (Exit Exam overdue)", r.callsign, r.name, "");
   await mirror("Academy terminate", "/api/academy/terminate", { callsign: member.callsign, name: member.name, note: `Exit Exam overdue (${OVERDUE_DAYS} days)` });
   let discord = { ok: true, message: "No Discord account is linked." };
   if (link && discordTerminate) {
@@ -319,9 +324,29 @@ async function terminateRecruit(db, user, data, mirror, discordTerminate) {
   return { ok: true, discord };
 }
 
+// Small fingerprint of everything the Academy page shows. The browser compares it every few seconds and reloads
+// only when it changes, so a Sheet edit (synced to D1 by the Apps Script triggers) appears without a manual refresh.
+async function academyVersion(db) {
+  const probies = (await db.prepare("SELECT callsign,name,rank,days_in_rank,do_not_terminate,date FROM members WHERE rank IN ('Probationary','Probationary Volunteer')").all()).results || [];
+  const recruits = (await db.prepare("SELECT id,callsign,name,discord_user_id,recruit_type,recruited_at,bm_at,ec_at,bv_at,patrol_at,exam_result FROM academy_recruits WHERE status='active'").all()).results || [];
+  const links = (await db.prepare("SELECT l.callsign,l.discord_user_id,l.status,l.last_error FROM discord_member_links l WHERE upper(l.callsign) IN (SELECT upper(callsign) FROM academy_recruits WHERE status='active')").all()).results || [];
+  const slots = (await db.prepare("SELECT rank,callsign,sheet_row FROM callsign_slots WHERE lower(trim(rank)) IN ('probationary','probationary volunteer')").all()).results || [];
+  const log = await db.prepare("SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS m FROM academy_log").first();
+  const lines = [
+    ...probies.map(r => "m" + JSON.stringify(Object.values(r))),
+    ...recruits.map(r => "r" + JSON.stringify(Object.values(r))),
+    ...links.map(r => "l" + JSON.stringify(Object.values(r))),
+    ...slots.map(r => "s" + JSON.stringify(Object.values(r))),
+    "g" + String(log?.n ?? 0) + "|" + String(log?.m ?? 0)
+  ].sort();
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(lines.join("\n")));
+  return [...new Uint8Array(digest)].slice(0, 12).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
 // Called from handleD1 for every /api/academy route. Returns a Response, or null for a non-academy route.
 export async function handleAcademy({ db, user, route, method, data, mirror, discordRoster, discordRecruit, discordTerminate, discordCheck }) {
   if (route === "/api/academy" && method === "GET") { requireView(user); return json(await listAcademy(db, user)); }
+  if (route === "/api/academy/version" && method === "GET") { requireView(user); return json({ version: await academyVersion(db) }); }
   if (route === "/api/academy/recruit" && method === "POST") { requireManage(user); return json(await recruit(db, user, data, mirror, discordRecruit, discordCheck)); }
   if (route === "/api/academy/discord-retry" && method === "POST") {
     requireManage(user);
