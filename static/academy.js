@@ -3,6 +3,8 @@
   const message = $('#academyMessage'), rows = $('#academyRows'), graduates = $('#academyGraduates');
   const recruitSection = $('#academyRecruitSection'), recruitForm = $('#academyRecruitForm');
   const passDialog = $('#academyPassDialog'), passStatus = $('#academyPassStatus');
+  const rowsFull = $('#academyRowsFull'), rowsVolunteer = $('#academyRowsVolunteer'), logRows = $('#academyLogRows');
+  let logEntries = [], logKindSelected = 'recruited';
   const termDialog = $('#academyTermDialog'), termStatus = $('#academyTermStatus');
   let termingId = 0, termingName = '';
   const TRAININGS = [['BM', 'Basic Medical'], ['EC', 'Basic Communication'], ['BV', 'Basic Vehicle']];
@@ -31,8 +33,13 @@
   }
 
   function renderRecruits() {
-    if (!recruits.length) { rows.innerHTML = '<tr><td colspan="6">No recruits are in the academy.</td></tr>'; return; }
-    rows.innerHTML = recruits.map(r => {
+    renderGroup(recruits.filter(r => r.recruit_type !== 'Probationary Volunteer'), rowsFull, 'No full-time recruits.');
+    renderGroup(recruits.filter(r => r.recruit_type === 'Probationary Volunteer'), rowsVolunteer, 'No volunteer recruits.');
+  }
+
+  function renderGroup(list, target, empty) {
+    if (!list.length) { target.innerHTML = `<tr><td colspan="6">${empty}</td></tr>`; return; }
+    target.innerHTML = list.map(r => {
       const chips = TRAININGS.map(([key, label]) => {
         const done = r[key.toLowerCase()];
         return `<button type="button" class="acad-chip${done ? ' done' : ''}" title="${esc(label)}" data-act="training" data-id="${r.id}" data-training="${key}" data-done="${done ? 'false' : 'true'}"${canManage ? '' : ' disabled'}>${key}${done ? ' ✓' : ''}</button>`;
@@ -46,7 +53,7 @@
       const discord = r.discord_status === 'failed' && canManage
         ? `<span class="acad-sub acad-failed" title="${esc(r.discord_error)}">Discord not updated. <button type="button" data-act="discord" data-id="${r.id}">Retry Discord</button></span>` : '';
       return `<tr>
-        <td><strong>${esc(r.name)}</strong><span class="acad-sub">${esc(r.callsign)} · ${esc(r.recruit_type)} · since ${esc(dateText(r.recruited_at))}</span>${discord}${canManage ? `<div class="admin-actions"><button type="button" class="danger" data-act="remove" data-id="${r.id}" data-name="${esc(r.name)}">Resigned</button>${r.overdue ? `<button type="button" class="danger" data-act="terminate" data-id="${r.id}" data-name="${esc(r.name)}">Terminate</button>` : ''}</div>` : ''}</td>
+        <td><strong>${esc(r.name)}</strong><span class="acad-sub">${esc(r.callsign)} · ${esc(r.recruit_type)} · since ${esc(dateText(r.recruited_at))}</span>${discord}${canManage ? `<div class="admin-actions"><button type="button" data-act="switch" data-id="${r.id}" data-to="${r.recruit_type === 'Probationary' ? 'Probationary Volunteer' : 'Probationary'}">${r.recruit_type === 'Probationary' ? 'Switch to Volunteer' : 'Switch to Full time'}</button><button type="button" class="danger" data-act="remove" data-id="${r.id}" data-name="${esc(r.name)}">Resigned</button>${r.overdue ? `<button type="button" class="danger" data-act="terminate" data-id="${r.id}" data-name="${esc(r.name)}">Terminate</button>` : ''}</div>` : ''}</td>
         <td><div class="acad-chips">${chips}</div></td>
         <td>${r.tig_days} / 5 days${r.tig_ok ? ' ✓' : ''}</td>
         <td>${patrol}</td>
@@ -67,8 +74,34 @@
       recruitSection.hidden = !canManage;
       renderRecruits();
       renderGraduates(data.graduates || []);
-    } catch (error) { rows.innerHTML = `<tr><td colspan="6">${esc(error.message)}</td></tr>`; }
+      await loadLog();
+    } catch (error) { rowsFull.innerHTML = `<tr><td colspan="6">${esc(error.message)}</td></tr>`; }
   }
+
+
+  // Log: one request, filtered on the page by the chosen category.
+  async function loadLog() {
+    try { logEntries = (await api('/api/academy/log')).entries || []; }
+    catch (error) { logEntries = []; logRows.innerHTML = `<tr><td colspan="6">${esc(error.message)}</td></tr>`; return; }
+    renderLog();
+  }
+
+  function renderLog() {
+    const list = logEntries.filter(e => e.kind === logKindSelected);
+    logRows.innerHTML = list.length ? list.map(e => `<tr><td>${esc(new Date(e.created_at).toLocaleString())}</td><td>${esc(e.name)}</td><td>${esc(e.callsign)}</td><td>${esc(e.action)}</td><td>${esc(e.actor_name)}</td><td>${esc(e.detail)}</td></tr>`).join('') : '<tr><td colspan="6">No entries.</td></tr>';
+    document.querySelectorAll('[data-log]').forEach(b => {
+      const on = b.dataset.log === logKindSelected;
+      b.classList.toggle('primary', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+  }
+
+  document.querySelector('nav[aria-label="Log categories"]')?.addEventListener('click', event => {
+    const button = event.target.closest('button[data-log]');
+    if (!button) return;
+    logKindSelected = button.dataset.log;
+    renderLog();
+  });
 
   async function run(action, success) {
     if (busy) return;
@@ -87,13 +120,14 @@
     });
   });
 
-  rows.addEventListener('click', event => {
+  $('#academyRows').addEventListener('click', event => {
     const button = event.target.closest('button[data-act]');
     if (!button || !canManage) return;
     const id = Number(button.dataset.id), act = button.dataset.act;
     if (act === 'training') run(() => api('/api/academy/training', { id, training: button.dataset.training, done: button.dataset.done === 'true' }), 'Saved.');
     else if (act === 'patrol') run(() => api('/api/academy/patrol', { id, done: button.dataset.done === 'true' }), 'Saved.');
     else if (act === 'discord') run(() => api('/api/academy/discord-retry', { id }), result => result.discord?.ok ? 'Discord updated.' : `Discord still failed: ${result.discord?.message}`);
+    else if (act === 'switch') run(() => api('/api/academy/switch', { id: Number(button.dataset.id), new_rank: button.dataset.to }), 'Recruit switched.');
     else if (act === 'remove') { if (confirm(`Remove ${button.dataset.name} from the Academy as resigned?`)) run(() => api('/api/academy/remove', { id: Number(button.dataset.id) }), 'Recruit removed from the Academy.'); }
     else if (act === 'terminate') { termingId = Number(button.dataset.id); termingName = button.dataset.name; termStatus.textContent = ''; $('#academyTermText').textContent = `${termingName} has been in probie rank for 21 days without passing the Exit Exam.`; termDialog.showModal(); }
     else if (act === 'failed') { if (confirm(`Record the Exit Exam of ${button.dataset.name} as failed?`)) run(() => api('/api/academy/exam', { id, result: 'failed' }), 'Exit Exam recorded as failed.'); }
