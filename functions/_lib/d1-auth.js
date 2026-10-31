@@ -1307,9 +1307,12 @@ async function updateDiscordMemberFromMapping(db, env, discordUserId, options = 
   // Only an Academy recruit being added may get a new prefix; any other member without one is refused.
   if (!parsed && !options.allowPrefix) throw new Error("The member's current nickname does not start with a valid [Callsign] prefix; refusing to guess the name.");
   // Only the [CALLSIGN] prefix changes; the rest of the nickname stays exactly as it is in Discord.
-  const desiredNickname = parsed
-    ? currentNickname.replace(/^\s*\[[^\]]*\]/, `[${newCallsign}]`)
-    : `[${newCallsign}] ${currentNickname || String(options.fallbackName || "")}`.trim();
+  // An Academy recruit gets the academy nickname format in full; other members keep their text after the prefix.
+  const desiredNickname = options.allowPrefix && options.fallbackName
+    ? `[${newCallsign}] ${options.fallbackName}`
+    : parsed
+      ? currentNickname.replace(/^\s*\[[^\]]*\]/, `[${newCallsign}]`)
+      : `[${newCallsign}] ${currentNickname}`.trim();
   if (desiredNickname.length > 32) throw new Error("The resulting Discord nickname exceeds Discord's 32-character limit.");
   if (currentNickname !== desiredNickname) {
     await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(discordUserId))}`, {
@@ -1968,7 +1971,8 @@ export async function handleD1(context) {
           }
         }
       };
-      return handleAcademy({ db, user, route, method, data, mirror: academyMirror, discordRoster, discordRecruit });
+      const discordTerminate = (callsign, name, action) => discordTerminationAction(db, env, user, callsign, action, name);
+      return handleAcademy({ db, user, route, method, data, mirror: academyMirror, discordRoster, discordRecruit, discordTerminate });
     }
     if (route === "/api/discord/sync" && method === "POST") {
       const actor = await requireDiscordPermission(db, token, "discord_sync_manage");
