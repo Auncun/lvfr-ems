@@ -4,7 +4,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
-  const LABELS = { inactive: "Due to Activity", overdue: "Training Overdue", termination: "Termination", promotion: "Promotion", eligible: "Can be promoted", callsign: "Callsign", training: "Training", training_time: "Training Hours", loi: "LOI", exam: "Exam", note: "Note", activity: "Activity", instructor: "Instructor", do_not_promote: "Do Not Promote", do_not_terminate: "Do Not Terminate", request: "New account request" };
+  const LABELS = { inactive: "Due to Activity", overdue: "Training Overdue", exit_exam_overdue: "Exit Exam Overdue", termination: "Termination", promotion: "Promotion", eligible: "Can be promoted", callsign: "Callsign", training: "Training", training_time: "Training Hours", loi: "LOI", exam: "Exam", note: "Note", activity: "Activity", instructor: "Instructor", do_not_promote: "Do Not Promote", do_not_terminate: "Do Not Terminate", request: "New account request" };
   const state = { items: [], loadPromise: null, hydrated: false, prefs: null, prefsAt: 0, selected: new Set() };
 
   const accountId = () => String(window.lvfrCachedUser?.()?.account_id || window.lvfrCachedUser?.()?.id || '');
