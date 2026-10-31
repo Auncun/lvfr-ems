@@ -6,7 +6,7 @@
   const rowsFull = $('#academyRowsFull'), rowsVolunteer = $('#academyRowsVolunteer'), logRows = $('#academyLogRows');
   let logEntries = [], logKindSelected = 'recruited', recruitQuery = '', logQuery = '';
   const termDialog = $('#academyTermDialog'), termStatus = $('#academyTermStatus');
-  let termingId = 0, termingName = '', termMode = 'terminate';
+  let termingId = 0, termingName = '', termingCallsign = '', termMode = 'terminate', nextCallsigns = {};
   const confirmDialog = $('#academyConfirmDialog');
   const TRAININGS = [['BM', 'Basic Medical'], ['EC', 'Basic Communication'], ['BV', 'Basic Vehicle']];
   let canManage = false, recruits = [], passingId = 0, busy = false;
@@ -72,6 +72,7 @@
       canManage = data.can_manage === true;
       recruits = data.recruits || [];
       recruitSection.hidden = !canManage;
+      nextCallsigns = data.next_callsigns || {};
       document.querySelector('[data-tab="academyRecruit"]').hidden = !canManage;
       $('#academyLogClear').hidden = !canManage;
       renderRecruits();
@@ -171,7 +172,7 @@
   recruitForm.addEventListener('submit', async event => {
     event.preventDefault();
     const form = Object.fromEntries(new FormData(recruitForm));
-    const ok = await askConfirm(`Recruit ${form.name} as ${form.recruit_type}? The next free callsign of that rank will be assigned and Discord will be updated.`, 'Recruit');
+    const ok = await askConfirm(`Recruit ${form.name} as ${form.recruit_type}. The callsign will be ${nextCallsigns[form.recruit_type] || '(no empty slot)'}. Discord will be updated.`, 'Recruit');
     if (!ok) return;
     run(() => api('/api/academy/recruit', form), result => {
       recruitForm.reset();
@@ -189,19 +190,19 @@
       if (await askConfirm(`Retry the Discord update for ${name}?`, 'Retry')) run(() => api('/api/academy/discord-retry', { id }), result => result.discord?.ok ? 'Discord updated.' : `Discord still failed: ${result.discord?.message}`);
     }
     else if (act === 'switch') {
-      if (await askConfirm(`Switch ${name} to ${button.dataset.to}? The callsign changes to an empty slot of that rank.`, 'Switch')) run(() => api('/api/academy/switch', { id, new_rank: button.dataset.to }), 'Recruit switched.');
+      if (await askConfirm(`Switch ${name} to ${button.dataset.to}. The callsign will be ${nextCallsigns[button.dataset.to] || '(no empty slot)'}. Discord will be updated.`, 'Switch')) run(() => api('/api/academy/switch', { id, new_rank: button.dataset.to }), 'Recruit switched.');
     }
     else if (act === 'remove') {
-      termMode = 'resign'; termingId = id; termingName = name; termStatus.textContent = '';
+      termMode = 'resign'; termingId = id; termingName = name; termingCallsign = recruits.find(r => r.id === id)?.callsign || ''; termStatus.textContent = '';
       $('#academyTermTitle').textContent = 'Resign recruit';
       $('#academyTermText').textContent = `${name} will be removed from the Academy and the roster as resigned.`;
-      termDialog.showModal();
+      openTermDialog();
     }
     else if (act === 'terminate') {
-      termMode = 'terminate'; termingId = id; termingName = name; termStatus.textContent = '';
+      termMode = 'terminate'; termingId = id; termingName = name; termingCallsign = recruits.find(r => r.id === id)?.callsign || ''; termStatus.textContent = '';
       $('#academyTermTitle').textContent = 'Terminate recruit';
       $('#academyTermText').textContent = `${name} has been in probie rank for 21 days without passing the Exit Exam.`;
-      termDialog.showModal();
+      openTermDialog();
     }
     else if (act === 'failed') {
       if (await askConfirm(`Record the Exit Exam of ${name} as failed?`, 'Record failed')) run(() => api('/api/academy/exam', { id, result: 'failed' }), 'Exit Exam recorded as failed.');
@@ -229,6 +230,19 @@
   });
   $('#academyPassCancel').addEventListener('click', () => passDialog.close());
   $('#academyTermCancel').addEventListener('click', () => termDialog.close());
+  const termInput = $('#academyTermConfirmInput');
+  function syncTermButtons() {
+    const typed = termInput.value.trim().toUpperCase();
+    const ok = !!termingCallsign && typed === termingCallsign.toUpperCase();
+    termDialog.querySelectorAll('button[data-discord-action]').forEach(b => { b.disabled = !ok; });
+  }
+  function openTermDialog() {
+    $('#academyTermCallsign').textContent = termingCallsign;
+    termInput.value = '';
+    syncTermButtons();
+    termDialog.showModal();
+  }
+  termInput.addEventListener('input', syncTermButtons);
   termDialog.addEventListener('click', async event => {
     const choice = event.target.closest('button[data-discord-action]');
     if (!choice) return;
@@ -243,7 +257,7 @@
       const label = termMode === 'resign' ? 'removed as resigned' : 'terminated';
       say(`${termingName} was ${label}.` + (result.discord?.ok ? ' Discord updated.' : ` Discord was not updated: ${result.discord?.message || 'unknown error'}.`), result.discord?.ok ? 'success' : 'error');
     } catch (error) { termStatus.textContent = error.message; termStatus.className = 'admin-status error'; }
-    finally { buttons.forEach(b => { b.disabled = false; }); }
+    finally { buttons.forEach(b => { b.disabled = false; }); syncTermButtons(); }
   });
 
   load();
