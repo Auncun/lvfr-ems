@@ -2585,7 +2585,7 @@ export async function handleD1(context) {
       return json({ok:true,kind});
     }
     if(route==="/api/logs/clean" && method==="POST") {
-      const allowed=["promotion","callsign","termination","training","training_time","loi","exam","note","activity","instructor","account_audit","notifications","do_not_promote","do_not_terminate","discord_action"];
+      const allowed=["promotion","callsign","termination","training","training_time","loi","exam","note","activity","instructor","account_audit","notifications","do_not_promote","do_not_terminate","discord_action","academy"];
       // "d1": removes from D1 only. "full": removes from D1 and the Google Sheet.
       const scope=String(data.scope||"full").toLowerCase()==="d1"?"d1":"full";
       const selected=[...new Set((Array.isArray(data.items)?data.items:[]).map(value=>String(value||"").trim().toLowerCase()))];
@@ -2606,6 +2606,7 @@ export async function handleD1(context) {
         else if(kind==="account_audit") statements.push(db.prepare("DELETE FROM account_audit"));
         else if(kind==="training_time") statements.push(db.prepare("DELETE FROM training_hours_log"));
         else if(kind==="discord_action") statements.push(db.prepare("DELETE FROM discord_action_log"));
+        else if(kind==="academy") statements.push(db.prepare("DELETE FROM academy_log"));
         else statements.push(db.prepare("DELETE FROM operational_logs WHERE kind=?").bind(kind));
       }
       if(statements.length) await db.batch(statements);
