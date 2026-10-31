@@ -65,38 +65,15 @@
     }).join('');
   }
 
-  // A sidebar choice shows only its own list. With no choice, the whole page is shown.
-  function applyView() {
-    const hash = location.hash;
-    const views = {
-      '#academyRecruitHeading': { recruit: true },
-      '#academyListHeading': { list: true, full: true, volunteer: true },
-      '#academyFullHeading': { list: true, full: true },
-      '#academyVolunteerHeading': { list: true, volunteer: true },
-      '#academyLogHeading': { log: true }
-    };
-    const all = !views[hash];
-    const show = all ? { recruit: true, list: true, full: true, volunteer: true, log: true } : views[hash];
-    const listCard = document.querySelector('[aria-labelledby="academyListHeading"]');
-    const logCard = document.querySelector('[aria-labelledby="academyLogHeading"]');
-    recruitSection.hidden = !canManage || !show.recruit;
-    if (listCard) listCard.hidden = !show.list;
-    $('#academyFullHeading').parentElement.hidden = !show.full;
-    $('#academyVolunteerHeading').parentElement.hidden = !show.volunteer;
-    if (logCard) logCard.hidden = !show.log;
-    if (!all) document.querySelector(hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-  window.addEventListener('hashchange', applyView);
-
   async function load() {
     try {
       const data = await api('/api/academy');
       canManage = data.can_manage === true;
       recruits = data.recruits || [];
       recruitSection.hidden = !canManage;
+      document.querySelector('[data-tab="academyRecruit"]').hidden = !canManage;
       renderRecruits();
       await loadLog();
-      applyView();
     } catch (error) { rowsFull.innerHTML = `<tr><td colspan="7">${esc(error.message)}</td></tr>`; }
   }
 
@@ -114,12 +91,16 @@
     logRows.innerHTML = list.length ? list.map(e => `<tr><td>${esc(new Date(e.created_at).toLocaleString())}</td><td>${esc(e.name)}</td><td>${esc(e.callsign)}</td><td>${esc(e.action)}</td><td>${esc(e.actor_name)}</td><td>${esc(e.detail)}</td><td>${canManage ? `<button type="button" class="danger" data-log-delete="${e.id}">Delete</button>` : ''}</td></tr>`).join('') : '<tr><td colspan="7">No entries.</td></tr>';
     document.querySelectorAll('[data-log]').forEach(b => {
       const on = b.dataset.log === logKindSelected;
-      b.classList.toggle('primary', on);
+      b.classList.toggle('active', on);
       b.setAttribute('aria-pressed', String(on));
     });
   }
 
-  $('#academyRecruitSearch').addEventListener('input', event => { recruitQuery = event.target.value; renderRecruits(); });
+  document.querySelectorAll('.academy-recruit-search').forEach(input => input.addEventListener('input', event => {
+    recruitQuery = event.target.value;
+    document.querySelectorAll('.academy-recruit-search').forEach(other => { if (other !== event.target) other.value = recruitQuery; });
+    renderRecruits();
+  }));
   $('#academyLogSearch').addEventListener('input', event => { logQuery = event.target.value; renderLog(); });
   logRows.addEventListener('click', async event => {
     const button = event.target.closest('button[data-log-delete]');
@@ -134,6 +115,23 @@
     logKindSelected = button.dataset.log;
     renderLog();
   });
+
+  // Tabs work like the EMS page: one panel is shown, and the sidebar selects a tab by its data-tab.
+  function showTab(name) {
+    document.querySelectorAll('nav.tabs [data-tab]').forEach(b => {
+      const on = b.dataset.tab === name;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-current', on ? 'page' : 'false');
+    });
+    document.querySelectorAll('.panel[id]').forEach(panel => panel.classList.toggle('active', panel.id === name));
+  }
+  document.querySelector('nav.tabs').addEventListener('click', event => {
+    const button = event.target.closest('[data-tab]');
+    if (!button || button.hidden) return;
+    if (button.dataset.tab === 'academyRecruit' && !canManage) return;
+    showTab(button.dataset.tab);
+  });
+  showTab('academyFull');
 
   async function run(action, success) {
     if (busy) return;
