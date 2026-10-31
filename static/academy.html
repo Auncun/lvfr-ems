@@ -28,7 +28,8 @@
     .discord-report-body h4 { margin:14px 0 6px; }
     .discord-report-body ul { margin:0; padding-inline-start:18px; overflow-wrap:anywhere; }
     .discord-report-body li { margin:3px 0; }
-  </style>
+  .acad-columns{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px;align-items:start}.acad-split{display:grid;grid-template-columns:1fr 1fr;gap:16px}.acad-search{margin:10px 0}.acad-search input{width:100%;max-width:420px}.acad-log-nav{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px}.acad-split>div,.acad-columns>section{min-width:0}@media (max-width:1100px){.acad-columns,.acad-split{grid-template-columns:1fr}}
+</style>
   <style>
     .acad-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:end}
     .acad-form label{display:grid;gap:6px;color:#9aa4b2;font-size:.9rem}
@@ -84,32 +85,34 @@
         <button type="submit" class="primary">Recruit</button>
       </form>
     </section>
-    <section class="admin-card" aria-labelledby="academyListHeading">
-      <div class="admin-header"><div><h2 id="academyListHeading">Recruits in training</h2><p class="muted">To reach the Exit Exam a recruit needs Basic Medical (BM), Basic Communication (EC), Basic Vehicle (BV), 5 days TIG and 7 hours of supervised patrol. Academy staff confirm the patrol by hand; the website cannot know it.</p></div></div>
-      <div id="academyRows">
-        <h3 id="academyFullHeading">Full time</h3>
-        <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Recruit</th><th>Trainings</th><th>TIG</th><th>Supervised patrol</th><th>Status</th><th>Exit Exam</th></tr></thead><tbody id="academyRowsFull"><tr><td colspan="6">Loading…</td></tr></tbody></table></div>
-        <h3 id="academyVolunteerHeading">Volunteer</h3>
-        <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Recruit</th><th>Trainings</th><th>TIG</th><th>Supervised patrol</th><th>Status</th><th>Exit Exam</th></tr></thead><tbody id="academyRowsVolunteer"><tr><td colspan="6">Loading…</td></tr></tbody></table></div>
-      </div>
-    </section>
-    <section class="admin-card" aria-labelledby="academyGraduatesHeading">
-      <h2 id="academyGraduatesHeading">Graduates</h2>
-      <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Name</th><th>Was</th><th>Now</th><th>Date</th><th>By</th></tr></thead><tbody id="academyGraduates"><tr><td colspan="5">Loading…</td></tr></tbody></table></div>
-    </section>
-<section class="admin-card" aria-labelledby="academyLogHeading">
-      <h2 id="academyLogHeading">Log</h2>
-      <div style="display:grid;grid-template-columns:minmax(160px,220px) 1fr;gap:16px;align-items:start">
-        <nav aria-label="Log categories" style="display:flex;flex-direction:column;gap:8px">
+        <div class="acad-columns">
+      <section class="admin-card" aria-labelledby="academyListHeading">
+        <div class="admin-header"><div><h2 id="academyListHeading">Recruits in training</h2><p class="muted">To reach the Exit Exam a recruit needs Basic Medical (BM), Basic Communication (EC), Basic Vehicle (BV), 5 days TIG and 7 hours of supervised patrol. Academy staff confirm the patrol by hand; the website cannot know it.</p></div></div>
+        <div class="acad-search"><input type="search" id="academyRecruitSearch" placeholder="Search callsign or name" aria-label="Search recruits in training"></div>
+        <div id="academyRows" class="acad-split">
+          <div>
+            <h3 id="academyFullHeading">Full time</h3>
+            <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Callsign</th><th>Name</th><th>Trainings</th><th>TIG</th><th>Supervised patrol</th><th>Status</th><th>Exit Exam</th></tr></thead><tbody id="academyRowsFull"><tr><td colspan="7">Loading…</td></tr></tbody></table></div>
+          </div>
+          <div>
+            <h3 id="academyVolunteerHeading">Volunteer</h3>
+            <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Callsign</th><th>Name</th><th>Trainings</th><th>TIG</th><th>Supervised patrol</th><th>Status</th><th>Exit Exam</th></tr></thead><tbody id="academyRowsVolunteer"><tr><td colspan="7">Loading…</td></tr></tbody></table></div>
+          </div>
+        </div>
+      </section>
+      <section class="admin-card" aria-labelledby="academyLogHeading">
+        <h2 id="academyLogHeading">Log</h2>
+        <div class="acad-search"><input type="search" id="academyLogSearch" placeholder="Search name, callsign or action" aria-label="Search log"></div>
+        <nav class="acad-log-nav" aria-label="Log categories">
           <button type="button" class="primary" data-log="recruited" aria-pressed="true">Recruited</button>
           <button type="button" data-log="graduated" aria-pressed="false">Graduated</button>
           <button type="button" data-log="resigned" aria-pressed="false">Resigned / terminated</button>
           <button type="button" data-log="switched" aria-pressed="false">Switch to Volunteer / Full time</button>
         </nav>
-        <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>When</th><th>Name</th><th>Callsign</th><th>Action</th><th>By</th><th>Details</th></tr></thead><tbody id="academyLogRows"><tr><td colspan="6">Loading…</td></tr></tbody></table></div>
-      </div>
-    </section>
-        <dialog id="academyPassDialog" aria-labelledby="academyPassTitle">
+        <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>When</th><th>Name</th><th>Callsign</th><th>Action</th><th>By</th><th>Details</th><th></th></tr></thead><tbody id="academyLogRows"><tr><td colspan="7">Loading…</td></tr></tbody></table></div>
+      </section>
+    </div>
+    <dialog id="academyPassDialog" aria-labelledby="academyPassTitle">
       <h2 id="academyPassTitle">Exit Exam passed</h2>
       <p id="academyPassText"></p>
       <div class="acad-pass-actions">
