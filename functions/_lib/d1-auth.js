@@ -1972,7 +1972,11 @@ export async function handleD1(context) {
         }
       };
       const discordTerminate = (callsign, name, action) => discordTerminationAction(db, env, user, callsign, action, name);
-      return handleAcademy({ db, user, route, method, data, mirror: academyMirror, discordRoster, discordRecruit, discordTerminate });
+      const discordCheck = async (discordId) => {
+        try { const { guildId } = discordConfig(env); await discordRequest(env, `/guilds/${guildId}/members/${encodeURIComponent(String(discordId))}`); return { ok: true }; }
+        catch { return { ok: false, message: "This Discord User ID is not a member of the LVFR Discord server. Add the member to the server first." }; }
+      };
+      return handleAcademy({ db, user, route, method, data, mirror: academyMirror, discordRoster, discordRecruit, discordTerminate, discordCheck });
     }
     if (route === "/api/discord/sync" && method === "POST") {
       const actor = await requireDiscordPermission(db, token, "discord_sync_manage");
