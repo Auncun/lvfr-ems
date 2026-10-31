@@ -67,6 +67,49 @@ async function adoptRosterRecruits(db) {
       AND NOT EXISTS (SELECT 1 FROM academy_recruits a WHERE upper(a.callsign)=upper(m.callsign) AND a.status='active')`).run();
 }
 
+// Switch between Full time (Probationary) and Volunteer (Probationary Volunteer) recruits. The callsign changes to a slot of the new rank.
+async function switchRecruit(db, user, data, mirror, discordRoster) {
+  const r = await loadActive(db, Number(data.id) || 0);
+  const newRank = String(data.new_rank || "").trim();
+  if (!PROBIE_RANKS.includes(newRank) || newRank === r.recruit_type) throw fail("Choose the other academy rank.");
+  const member = await db.prepare("SELECT * FROM members WHERE upper(callsign)=upper(?)").bind(r.callsign).first();
+  if (!member) throw fail("Member not found on the roster.", 404);
+  if (member.do_not_promote) throw fail("This member is on the Do not Promote list.");
+  const slot = await db.prepare(NEXT_SLOT_SQL).bind(newRank).first();
+  const newCs = String(slot?.callsign || "").trim().toUpperCase();
+  if (!newCs) throw fail(`No empty Callsign slot is recorded for ${newRank}. Run Sync now first.`);
+  const now = nowIso();
+  await db.batch([
+    ...moveStatements(db, member, newRank, newCs, slot, now),
+    db.prepare("UPDATE academy_recruits SET callsign=?, recruit_type=? WHERE id=?").bind(newCs, newRank, r.id)
+  ]);
+  const label = newRank === "Probationary Volunteer" ? "Switched to Volunteer" : "Switched to Full time";
+  await academyLog(db, user, label, newCs, r.name, `was ${member.callsign}`);
+  await mirror("Academy switch", "/api/academy/switch", { callsign: member.callsign, new_rank: newRank, d1_target_callsign: newCs, name: member.name });
+  const sync = discordRoster ? await discordRoster(member, { new_callsign: newCs, new_rank: newRank }).catch(() => "unavailable") : "unavailable";
+  const messages = {
+    pending: "Discord nickname is being updated in the background.",
+    not_linked: "No Discord link exists for this member, so Discord was not changed.",
+    left_server: "This member is no longer in the Discord server, so Discord was not changed.",
+    unavailable: "Discord synchronization could not be started."
+  };
+  return { ok: true, new_callsign: newCs, new_rank: newRank, discord: { ok: sync === "pending", message: messages[sync] || messages.unavailable } };
+}
+
+// Log categories shown on the Academy page. Derived from the action text, so no schema change is needed.
+function logKind(action) {
+  if (action === "Recruited") return "recruited";
+  if (action === "Passed Exit Exam") return "graduated";
+  if (/^(Removed|Terminated)/.test(action)) return "resigned";
+  if (/^Switched/.test(action)) return "switched";
+  return "other";
+}
+
+async function academyLogList(db) {
+  const rows = (await db.prepare("SELECT id,created_at,actor_name,callsign,name,action,detail FROM academy_log ORDER BY id DESC LIMIT 500").all()).results || [];
+  return { entries: rows.map(row => ({ ...row, kind: logKind(row.action) })) };
+}
+
 async function listAcademy(db, user) {
   await adoptRosterRecruits(db);
   const active = (await db.prepare("SELECT * FROM academy_recruits WHERE status='active' ORDER BY recruited_at, id").all()).results || [];
@@ -143,6 +186,20 @@ async function setPatrol(db, user, data) {
   return { ok: true };
 }
 
+// Statements that move a probie's roster row to a new callsign and rank, as a promotion does.
+function moveStatements(db, member, newRank, newCs, slot, now) {
+  const today = now.slice(0, 10);
+  return [
+    db.prepare("DELETE FROM callsign_slots WHERE callsign=?").bind(newCs),
+    db.prepare("DELETE FROM members WHERE callsign=?").bind(member.callsign),
+    db.prepare("INSERT OR REPLACE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(member.rank, member.callsign, member.sheet_row ?? null, now),
+    db.prepare("UPDATE accounts SET callsign=?,updated_at=? WHERE upper(callsign)=upper(?)").bind(newCs, now, member.callsign),
+    db.prepare(MEMBER_INSERT_SQL).bind(newCs, member.name, newRank, today, today, 0, member.discord_id || "", member.notes || "",
+      member.has_basic_firefighting || 0, member.has_advanced_firefighting || 0, member.has_supervisor_exam || 0, member.has_hert || 0,
+      member.activity || "Active", member.instructor_type || "", member.do_not_promote || 0, member.do_not_terminate || 0, slot.sheet_row ?? null, now)
+  ];
+}
+
 async function exam(db, user, data, mirror, discordRoster) {
   const r = await loadActive(db, Number(data.id) || 0);
   const now = nowIso(), who = String(user.name || "");
@@ -165,15 +222,8 @@ async function exam(db, user, data, mirror, discordRoster) {
   const newCs = String(slot?.callsign || "").trim().toUpperCase();
   if (!newCs) throw fail(`No empty Callsign slot is recorded for ${newRank}. Run Sync now first.`);
 
-  const today = now.slice(0, 10);
   await db.batch([
-    db.prepare("DELETE FROM callsign_slots WHERE callsign=?").bind(newCs),
-    db.prepare("DELETE FROM members WHERE callsign=?").bind(member.callsign),
-    db.prepare("INSERT OR REPLACE INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?)").bind(member.rank, member.callsign, member.sheet_row ?? null, now),
-    db.prepare("UPDATE accounts SET callsign=?,updated_at=? WHERE upper(callsign)=upper(?)").bind(newCs, now, member.callsign),
-    db.prepare(MEMBER_INSERT_SQL).bind(newCs, member.name, newRank, today, today, 0, member.discord_id || "", member.notes || "",
-      member.has_basic_firefighting || 0, member.has_advanced_firefighting || 0, member.has_supervisor_exam || 0, member.has_hert || 0,
-      member.activity || "Active", member.instructor_type || "", member.do_not_promote || 0, member.do_not_terminate || 0, slot.sheet_row ?? null, now),
+    ...moveStatements(db, member, newRank, newCs, slot, now),
     db.prepare("UPDATE academy_recruits SET status='graduated', exam_result='passed', exam_at=?, exam_by=?, graduated_to=?, graduated_callsign=?, graduated_at=?, graduated_by=? WHERE id=?")
       .bind(now, who, newRank, newCs, now, who, r.id)
   ]);
@@ -247,6 +297,8 @@ export async function handleAcademy({ db, user, route, method, data, mirror, dis
   if (route === "/api/academy/patrol" && method === "POST") { requireManage(user); return json(await setPatrol(db, user, data)); }
   if (route === "/api/academy/exam" && method === "POST") { requireManage(user); return json(await exam(db, user, data, mirror, discordRoster)); }
   if (route === "/api/academy/remove" && method === "POST") { requireManage(user); return json(await removeRecruit(db, user, data, mirror)); }
+  if (route === "/api/academy/switch" && method === "POST") { requireManage(user); return json(await switchRecruit(db, user, data, mirror, discordRoster)); }
+  if (route === "/api/academy/log" && method === "GET") { requireView(user); return json(await academyLogList(db)); }
   if (route === "/api/academy/terminate" && method === "POST") { requireManage(user); return json(await terminateRecruit(db, user, data, mirror, discordTerminate)); }
   return json({ detail: "Academy route was not found." }, 404);
 }
