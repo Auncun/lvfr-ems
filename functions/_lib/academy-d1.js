@@ -299,6 +299,7 @@ export async function handleAcademy({ db, user, route, method, data, mirror, dis
   if (route === "/api/academy/remove" && method === "POST") { requireManage(user); return json(await removeRecruit(db, user, data, mirror)); }
   if (route === "/api/academy/switch" && method === "POST") { requireManage(user); return json(await switchRecruit(db, user, data, mirror, discordRoster)); }
   if (route === "/api/academy/log" && method === "GET") { requireView(user); return json(await academyLogList(db)); }
+  if (route === "/api/academy/log/delete" && method === "POST") { requireManage(user); await db.prepare("DELETE FROM academy_log WHERE id=?").bind(Number(data.id) || 0).run(); return json({ ok: true }); }
   if (route === "/api/academy/terminate" && method === "POST") { requireManage(user); return json(await terminateRecruit(db, user, data, mirror, discordTerminate)); }
   return json({ detail: "Academy route was not found." }, 404);
 }
