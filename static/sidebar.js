@@ -59,6 +59,13 @@
       ]
     },
     {
+      href: '/academy', title: 'Academy', permission: 'academy_view', items: [
+        { label: 'Recruit', anchor: '#academyRecruitHeading' },
+        { label: 'Recruits in training', anchor: '#academyListHeading' },
+        { label: 'Graduates', anchor: '#academyGraduatesHeading' }
+      ]
+    },
+    {
       href: '/administration', title: 'Operation Command', admin: true, items: [
         { label: 'Accounts', anchor: '#accountsHeading', availability: '#commandAccountsSection', children: [
           { label: 'All accounts', status: 'all' },
