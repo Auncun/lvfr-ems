@@ -1753,6 +1753,14 @@ export async function handleD1(context) {
       const trainingBefore=new Map(((await db.prepare("SELECT callsign,name,rank,has_hert,has_basic_firefighting,has_advanced_firefighting FROM members").all()).results||[]).map(row=>[normalizeDiscordCallsign(row.callsign),row]));
       const fullSync=data.full_sync!==false;
       const result=await replaceMembers(db,data.members,undefined,fullSync);
+      // Full Sync: Academy recruits who are no longer on the Sheet are removed from D1 too (the removal is written to the Academy log).
+      if(fullSync) {
+        const gone=(await db.prepare("SELECT id,callsign,name FROM academy_recruits WHERE status='active' AND upper(callsign) NOT IN (SELECT upper(callsign) FROM members)").all()).results||[];
+        if(gone.length) await db.batch([
+          ...gone.map(r=>db.prepare("INSERT INTO academy_log(created_at,actor_name,callsign,name,action,detail) VALUES(?,?,?,?,?,?)").bind(new Date().toISOString(),"Full Sync",r.callsign,r.name,"Removed (not on the Sheet)","")),
+          ...gone.map(r=>db.prepare("DELETE FROM academy_recruits WHERE id=?").bind(r.id))
+        ]);
+      }
       if(callsignMoves.length) {
         await moveDiscordLinks(db,callsignMoves);
         context.waitUntil(runDiscordCallsignMoves(db,env,callsignMoves));
