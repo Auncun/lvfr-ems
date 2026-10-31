@@ -131,7 +131,22 @@
     if (button.dataset.tab === 'academyRecruit' && !canManage) return;
     showTab(button.dataset.tab);
   });
-  showTab('academyFull');
+  function showSub(name) {
+    document.querySelectorAll('.acad-side [data-tab]').forEach(b => {
+      const on = b.dataset.tab === name;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    document.querySelectorAll('.subpanel').forEach(panel => panel.classList.toggle('active', panel.id === name));
+  }
+  document.querySelector('.acad-side[aria-label="Recruit lists"]').addEventListener('click', event => {
+    const button = event.target.closest('[data-tab]');
+    if (!button) return;
+    showTab('academyRecruits');
+    showSub(button.dataset.tab);
+  });
+  showTab('academyRecruits');
+  showSub('academyFull');
 
   async function run(action, success) {
     if (busy) return;
