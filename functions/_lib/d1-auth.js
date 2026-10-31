@@ -50,7 +50,7 @@ function clampNotificationKeys(result){
 const DEFAULT_ON_NOTIFICATION_KINDS=["eligible","inactive","overdue","request"];
 const LOG_VIEW_PERMISSIONS = ["promotion_log_view","callsign_log_view","termination_log_view","training_log_view","training_hours_log_view","loi_log_view","exam_log_view","note_log_view","activity_log_view","instructor_log_view"];
 const TRAINING_VIEW_PERMISSIONS = ["hert_certified_view","hert_instructor_view","hert_loi_view","fort_training_view","fort_instructor_view","fort_loi_view"];
-const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","academy_view","academy_manage","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","do_not_terminate_log_view","notif_termination","notif_inactive","notif_overdue","notif_promotion","notif_eligible","notif_callsign","notif_training","notif_training_time","notif_loi","notif_exam","notif_note","notif_activity","notif_instructor","notif_do_not_promote","notif_do_not_terminate","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage","discord_view","discord_manage","discord_sync_manage","discord_log_clear"];
+const ROLE_PERMISSION_KEYS = ["portal_access","operation_command_access","role_manage","rank_add","rank_rename","rank_delete","rank_reorder","watch_command_view","watch_command_edit","watch_command_roster","academy_view","academy_manage","academy_terminate","academy_resign","members_view","eligible_view","promotion_access","profile_view","inactive_view","logs_view",...LOG_VIEW_PERMISSIONS,"logs_delete_d1","logs_clean_full","notifications_clear_all","do_not_promote_log_view","do_not_terminate_log_view","notif_termination","notif_inactive","notif_overdue","notif_promotion","notif_eligible","notif_callsign","notif_training","notif_training_time","notif_loi","notif_exam","notif_note","notif_activity","notif_instructor","notif_do_not_promote","notif_do_not_terminate","training_view",...TRAINING_VIEW_PERMISSIONS,"training_fort_manage","training_hert_manage","training_hours_view","training_hours_manage","loi_manage","statistics_view","notes_manage","promotion_manage","callsign_manage","activity_manage","exam_manage","rank_date_manage","rank_manage","termination_manage","do_not_promote_view","do_not_promote_manage","instructor_manage","sync_view","sync_manage","full_sync_manage","discord_view","discord_manage","discord_sync_manage","discord_log_clear","discord_kick","discord_settings_manage"];
 const DEFAULT_ROLE_PERMISSIONS = {
   member: { portal_access:false,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:false,eligible_view:false,promotion_access:false,profile_view:false,inactive_view:false,logs_view:false,training_view:false,training_fort_manage:false,training_hert_manage:false,training_hours_view:false,training_hours_manage:false,loi_manage:false,statistics_view:false,notes_manage:false,promotion_manage:false,callsign_manage:false,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:false,sync_manage:false },
   leader: { portal_access:true,operation_command_access:false,watch_command_view:true,watch_command_edit:true,watch_command_roster:true,members_view:true,eligible_view:true,promotion_access:true,profile_view:true,inactive_view:false,logs_view:true,training_view:true,training_fort_manage:true,training_hert_manage:true,training_hours_view:true,training_hours_manage:true,loi_manage:true,statistics_view:true,notes_manage:true,promotion_manage:true,callsign_manage:true,activity_manage:false,exam_manage:false,rank_date_manage:false,rank_manage:false,termination_manage:false,do_not_promote_view:false,do_not_promote_manage:false,instructor_manage:false,sync_view:true,sync_manage:true },
@@ -1281,6 +1281,16 @@ function discordRoleMap(env) {
   }
   return map;
 }
+// Role IDs saved on the website. Until a rank is saved there, the DISCORD_ROLE_MAP secret is still used.
+async function discordRoleMapD1(db, env) {
+  const rows = (await db.prepare("SELECT rank, role_id FROM discord_role_map").all()).results || [];
+  if (!rows.length) return discordRoleMap(env);
+  return new Map(rows.map(row => [String(row.rank).trim().toLowerCase(), String(row.role_id)]));
+}
+async function savedDiscordSetting(db, key) {
+  const row = await db.prepare("SELECT value FROM discord_settings WHERE key=?").bind(key).first().catch(() => null);
+  return String(row?.value || "").trim();
+}
 function discordConfig(env) {
   const token = String(env.DISCORD_BOT_TOKEN || "").trim();
   const guildId = String(env.DISCORD_GUILD_ID || "").trim();
@@ -1330,7 +1340,7 @@ async function updateDiscordMemberFromMapping(db, env, discordUserId, options = 
   const { guildId } = discordConfig(env);
   const conflicting = await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE callsign=? AND discord_user_id<>?").bind(newCallsign, String(discordUserId)).first();
   if (conflicting) throw new Error("The new callsign is already mapped to another Discord member; mapping was not overwritten.");
-  const roleMap = shouldUpdateRoles ? discordRoleMap(env) : new Map();
+  const roleMap = shouldUpdateRoles ? await discordRoleMapD1(db, env) : new Map();
   const desiredRoleId = shouldUpdateRoles ? roleMap.get(newRank.toLowerCase()) : "";
   if (shouldUpdateRoles && !desiredRoleId) throw new Error(`No Discord role is configured for website rank "${newRank}". Set DISCORD_ROLE_MAP before retrying.`);
 
@@ -1407,7 +1417,7 @@ async function discordTerminationAction(db, env, actor, callsign, action, member
       detail = "Removed from the Discord server.";
     } else {
       if (action === "remove_roles") {
-        const managed = [...new Set(discordRoleMap(env).values())];
+        const managed = [...new Set([...(await discordRoleMapD1(db, env)).values(), ...(discordOpsRoleId(env) ? [discordOpsRoleId(env)] : [])])];
         const current = new Set(Array.isArray(member.roles) ? member.roles.map(String) : []);
         for (const roleId of managed) {
           if (current.has(roleId)) await discordRequest(env, `${base}/roles/${roleId}`, { method: "DELETE", headers: auditHeaders });
@@ -1683,8 +1693,10 @@ async function runInitialDiscordLinkSync(db, env, user) {
 }
 
 export async function handleD1(context) {
-  const { request, env } = context, url = new URL(request.url), route = url.pathname, method=request.method;
+  const { request } = context, url = new URL(request.url), route = url.pathname, method=request.method;
+  let env = context.env;
   const db=env.LVFR_DB;
+  env = { ...env, DISCORD_GUILD_ID: (await savedDiscordSetting(db, "guild_id")) || env.DISCORD_GUILD_ID, DISCORD_OPS_ROLE_ID: (await savedDiscordSetting(db, "ops_role_id")) || env.DISCORD_OPS_ROLE_ID };
   try {
     if (!db) return json({ detail:"LVFR_DB D1 binding is missing." },503);
     let data={}; if(!["GET","HEAD"].includes(method)) data=await request.json().catch(()=>({}));
@@ -2023,6 +2035,44 @@ export async function handleD1(context) {
         catch { return { ok: false, message: "This Discord User ID is not a member of the LVFR Discord server. Add the member to the server first." }; }
       };
       return handleAcademy({ db, user, route, method, data, mirror: academyMirror, discordRoster, discordRecruit, discordTerminate, discordCheck });
+    }
+    if (route === "/api/discord/settings" && method === "POST") {
+      if (!(user.role === "admin" || user.permissions?.discord_settings_manage === true)) throw Object.assign(new Error("Discord settings access is required."), { status: 403 });
+      const guildId = String(data.guild_id ?? "").trim();
+      if (!guildId) { await db.prepare("DELETE FROM discord_settings WHERE key='guild_id'").run(); return json({ ok: true, guild_id: "" }); }
+      if (!/^\d{17,20}$/.test(guildId)) throw Object.assign(new Error("The Discord server ID must be 17 to 20 digits."), { status: 400 });
+      await db.prepare("INSERT INTO discord_settings(key,value,updated_at,updated_by) VALUES('guild_id',?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at, updated_by=excluded.updated_by")
+        .bind(guildId, new Date().toISOString(), String(user.name || "")).run();
+      return json({ ok: true, guild_id: guildId });
+    }
+    if (route === "/api/discord/role-map" && method === "GET") {
+      if (!(user.role === "admin" || user.permissions?.discord_view === true)) throw Object.assign(new Error("Discord access is required."), { status: 403 });
+      const saved = new Map(((await db.prepare("SELECT rank, role_id FROM discord_role_map").all()).results || []).map(row => [row.rank, row.role_id]));
+      return json({ ok: true, guild_id: env.DISCORD_GUILD_ID || "", ops_role_id: env.DISCORD_OPS_ROLE_ID || "", ranks: Object.keys(RANK_LEVEL).map(rank => ({ rank, role_id: saved.get(rank) || "" })) });
+    }
+    if (route === "/api/discord/role-map" && method === "POST") {
+      if (!(user.role === "admin" || user.permissions?.discord_settings_manage === true)) throw Object.assign(new Error("Discord settings access is required."), { status: 403 });
+      const body = data.ranks && typeof data.ranks === "object" ? data.ranks : {};
+      const statements = [];
+      for (const rank of Object.keys(RANK_LEVEL)) {
+        if (!Object.prototype.hasOwnProperty.call(body, rank)) continue;
+        const roleId = String(body[rank] ?? "").trim();
+        if (!roleId) { statements.push(db.prepare("DELETE FROM discord_role_map WHERE rank=?").bind(rank)); continue; }
+        if (!/^\d{17,20}$/.test(roleId)) throw Object.assign(new Error(`The Discord role ID for ${rank} must be 17 to 20 digits.`), { status: 400 });
+        statements.push(db.prepare("INSERT INTO discord_role_map(rank,role_id,updated_at,updated_by) VALUES(?,?,?,?) ON CONFLICT(rank) DO UPDATE SET role_id=excluded.role_id, updated_at=excluded.updated_at, updated_by=excluded.updated_by")
+          .bind(rank, roleId, new Date().toISOString(), String(user.name || "")));
+      }
+      if (Object.prototype.hasOwnProperty.call(data, "ops_role_id")) {
+        const opsId = String(data.ops_role_id ?? "").trim();
+        if (!opsId) statements.push(db.prepare("DELETE FROM discord_settings WHERE key='ops_role_id'"));
+        else {
+          if (!/^\d{17,20}$/.test(opsId)) throw Object.assign(new Error("The Ops role ID must be 17 to 20 digits."), { status: 400 });
+          statements.push(db.prepare("INSERT INTO discord_settings(key,value,updated_at,updated_by) VALUES('ops_role_id',?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at, updated_by=excluded.updated_by")
+            .bind(opsId, new Date().toISOString(), String(user.name || "")));
+        }
+      }
+      if (statements.length) await db.batch(statements);
+      return json({ ok: true });
     }
     if (route === "/api/discord/sync" && method === "POST") {
       const actor = await requireDiscordPermission(db, token, "discord_sync_manage");
@@ -2816,6 +2866,7 @@ export async function handleD1(context) {
       if(route==="/api/terminate") {
         // A linked member needs an explicit Discord choice before anything is changed.
         const choice=String(mutationData.discord_action||"");
+        if(choice==="kick"&&user.role!=="admin"&&user.permissions?.discord_kick!==true) throw Object.assign(new Error("You do not have permission to kick members from Discord."),{status:403});
         const linked=await db.prepare("SELECT 1 AS found FROM discord_member_links WHERE callsign=?").bind(String(mutationData.callsign||"").toUpperCase()).first();
         if(linked&&!["kick","remove_roles","none"].includes(choice)) return json({detail:{message:"Choose what to do in Discord: kick, remove roles only, or clear the nickname only.",discord_choice_required:true}},409);
       }
