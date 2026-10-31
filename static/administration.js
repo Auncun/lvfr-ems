@@ -145,7 +145,8 @@ function accountActions(account) {
     ? '<button type="button" disabled title="Remove elevated role first">Delete</button>'
     : `<button type="button" class="danger" data-action="delete" data-id="${id}">Delete</button>`;
   const resetButton = `<button type="button" data-action="reset-password" data-id="${id}">Reset password</button>`;
-  const items = `${memberButton}${roleButton}${permissionButton}${resetButton}${deactivateButton}${deleteButton}`;
+  const rolesButton = operation ? `<button type="button" data-action="roles" data-id="${id}">Manage roles</button>` : '';
+  const items = `${rolesButton}${permissionButton}${resetButton}${deactivateButton}${deleteButton}`;
   return items ? `<div class="row-action"><button type="button" class="role-tab row-action-trigger" aria-haspopup="true">Action</button><div class="row-action-menu" role="menu">${items}</div></div>` : '';
 }
 // Shows how many accounts are in each status tab.
@@ -316,6 +317,7 @@ async function resetAccountPassword(button, account) {
   }
 }
 async function performAction(button) {
+  if (button.dataset.action === 'roles') { openAccountRolesDialog(button.dataset.id); return; }
   const { action, id } = button.dataset;
   const account = allAccounts().find(row => row.account_id === id);
   if (!account) return;
@@ -383,6 +385,26 @@ const permissionGroups = [
         "notif_exit_exam_overdue",
         "Exit Exam Overdue notifications",
         "Receive notifications for Probationary and Probationary Volunteer members who have been in rank 21 days without passing the Exit Exam."
+      ],
+      [
+        "notif_academy_recruited",
+        "Recruited notifications",
+        "Receive recruited notifications and see them in the Academy log."
+      ],
+      [
+        "notif_academy_graduated",
+        "Graduated notifications",
+        "Receive graduated notifications and see them in the Academy log."
+      ],
+      [
+        "notif_academy_resigned",
+        "Resigned / terminated notifications",
+        "Receive resigned / terminated notifications and see them in the Academy log."
+      ],
+      [
+        "notif_academy_switched",
+        "Switched rank notifications",
+        "Receive switched rank notifications and see them in the Academy log."
       ],
       [
         "notif_termination",
@@ -1999,4 +2021,38 @@ mirrorRows?.addEventListener('click', event => {
   const retry = event.target.closest('[data-mirror-retry]'), discard = event.target.closest('[data-mirror-discard]');
   if (retry) void mirrorAction('/internal/mirror-queue/retry', { id: Number(retry.dataset.mirrorRetry) }, result => result.failed ? 'The retry failed again.' : 'Sent to Google Sheets.');
   if (discard && confirm('Discard this change? Google Sheets will not receive it.')) void mirrorAction('/internal/mirror-queue/discard', { id: Number(discard.dataset.mirrorDiscard) }, () => 'Discarded.');
+});
+
+// Manage roles: tick every role the account should hold. Permissions are combined; the highest role is the main one.
+let accountRolesTarget = '';
+async function openAccountRolesDialog(id) {
+  const account = allAccounts().find(row => String(row.account_id) === String(id));
+  if (!account) return;
+  accountRolesTarget = String(id);
+  const current = new Set(String(account.roles || account.role || '').split(',').map(value => value.trim().toLowerCase()).filter(Boolean));
+  document.querySelector('#accountRolesSubject').textContent = `${account.name || ''}${account.callsign ? ' · ' + account.callsign : ''}`;
+  document.querySelector('#accountRolesStatus').textContent = '';
+  const list = document.querySelector('#accountRolesList');
+  list.innerHTML = 'Loading…';
+  document.querySelector('#accountRolesDialog').showModal();
+  try {
+    const result = await api('/api/role-permissions');
+    const roles = (result.order || []).filter(item => item.role !== 'admin' || currentUser?.role === 'admin');
+    list.innerHTML = roles.map(item => `<label class="permission-item"><input type="checkbox" value="${roleMapEsc(item.role)}" ${current.has(String(item.role).toLowerCase()) ? 'checked' : ''}><span><strong>${roleMapEsc(item.display_name || item.role)}</strong></span></label>`).join('');
+  } catch (error) {
+    list.innerHTML = `<p class="muted">${roleMapEsc(error.message)}</p>`;
+  }
+}
+document.querySelector('#cancelAccountRoles')?.addEventListener('click', () => document.querySelector('#accountRolesDialog').close());
+document.querySelector('#saveAccountRoles')?.addEventListener('click', async () => {
+  const status = document.querySelector('#accountRolesStatus');
+  const roles = [...document.querySelectorAll('#accountRolesList input:checked')].map(input => input.value);
+  if (!roles.length) { status.textContent = 'Choose at least one role.'; return; }
+  try {
+    await api('/api/leaders/roles', { method: 'POST', body: JSON.stringify({ account_id: accountRolesTarget, roles }) });
+    document.querySelector('#accountRolesDialog').close();
+    window.location.reload();
+  } catch (error) {
+    status.textContent = error.message;
+  }
 });
