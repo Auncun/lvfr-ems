@@ -65,6 +65,29 @@
     }).join('');
   }
 
+  // A sidebar choice shows only its own list. With no choice, the whole page is shown.
+  function applyView() {
+    const hash = location.hash;
+    const views = {
+      '#academyRecruitHeading': { recruit: true },
+      '#academyListHeading': { list: true, full: true, volunteer: true },
+      '#academyFullHeading': { list: true, full: true },
+      '#academyVolunteerHeading': { list: true, volunteer: true },
+      '#academyLogHeading': { log: true }
+    };
+    const all = !views[hash];
+    const show = all ? { recruit: true, list: true, full: true, volunteer: true, log: true } : views[hash];
+    const listCard = document.querySelector('[aria-labelledby="academyListHeading"]');
+    const logCard = document.querySelector('[aria-labelledby="academyLogHeading"]');
+    recruitSection.hidden = !canManage || !show.recruit;
+    if (listCard) listCard.hidden = !show.list;
+    $('#academyFullHeading').parentElement.hidden = !show.full;
+    $('#academyVolunteerHeading').parentElement.hidden = !show.volunteer;
+    if (logCard) logCard.hidden = !show.log;
+    if (!all) document.querySelector(hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  window.addEventListener('hashchange', applyView);
+
   async function load() {
     try {
       const data = await api('/api/academy');
@@ -73,6 +96,7 @@
       recruitSection.hidden = !canManage;
       renderRecruits();
       await loadLog();
+      applyView();
     } catch (error) { rowsFull.innerHTML = `<tr><td colspan="7">${esc(error.message)}</td></tr>`; }
   }
 
