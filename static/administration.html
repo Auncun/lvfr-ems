@@ -188,6 +188,14 @@
   <script src="/static/header-controls.js?v=ops-20261022-15"></script>
   <script src="/static/notifications.js?v=ops-20261022-15"></script>
 <script src="/static/rank-badges.js?v=ops-20261022-15"></script>
+<dialog id="accountRolesDialog" aria-labelledby="accountRolesTitle">
+    <h2 id="accountRolesTitle">Manage roles</h2>
+    <p id="accountRolesSubject" class="muted"></p>
+    <div id="accountRolesList" class="admin-actions" style="flex-direction:column;align-items:stretch"></div>
+    <p class="muted">A member can hold several roles at once. Their permissions are combined. The highest role is the main role shown in the Role column.</p>
+    <div class="admin-actions"><button type="button" class="primary" id="saveAccountRoles">Save roles</button><button type="button" id="cancelAccountRoles">Cancel</button></div>
+    <p id="accountRolesStatus" class="admin-status" role="status" aria-live="polite"></p>
+  </dialog>
 <script src="/static/account-settings.js?v=discord-code-20261030-1"></script>
   <script src="/static/administration.js?v=password-reset-20261030-1"></script>
   <script src="/static/sidebar.js?v=ops-20261029-3"></script>
