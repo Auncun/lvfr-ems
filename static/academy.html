@@ -86,13 +86,30 @@
     </section>
     <section class="admin-card" aria-labelledby="academyListHeading">
       <div class="admin-header"><div><h2 id="academyListHeading">Recruits in training</h2><p class="muted">To reach the Exit Exam a recruit needs Basic Medical (BM), Basic Communication (EC), Basic Vehicle (BV), 5 days TIG and 7 hours of supervised patrol. Academy staff confirm the patrol by hand; the website cannot know it.</p></div></div>
-      <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Recruit</th><th>Trainings</th><th>TIG</th><th>Supervised patrol</th><th>Status</th><th>Exit Exam</th></tr></thead><tbody id="academyRows"><tr><td colspan="6">Loading…</td></tr></tbody></table></div>
+      <div id="academyRows">
+        <h3 id="academyFullHeading">Full time</h3>
+        <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Recruit</th><th>Trainings</th><th>TIG</th><th>Supervised patrol</th><th>Status</th><th>Exit Exam</th></tr></thead><tbody id="academyRowsFull"><tr><td colspan="6">Loading…</td></tr></tbody></table></div>
+        <h3 id="academyVolunteerHeading">Volunteer</h3>
+        <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Recruit</th><th>Trainings</th><th>TIG</th><th>Supervised patrol</th><th>Status</th><th>Exit Exam</th></tr></thead><tbody id="academyRowsVolunteer"><tr><td colspan="6">Loading…</td></tr></tbody></table></div>
+      </div>
     </section>
     <section class="admin-card" aria-labelledby="academyGraduatesHeading">
       <h2 id="academyGraduatesHeading">Graduates</h2>
       <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>Name</th><th>Was</th><th>Now</th><th>Date</th><th>By</th></tr></thead><tbody id="academyGraduates"><tr><td colspan="5">Loading…</td></tr></tbody></table></div>
     </section>
-    <dialog id="academyPassDialog" aria-labelledby="academyPassTitle">
+<section class="admin-card" aria-labelledby="academyLogHeading">
+      <h2 id="academyLogHeading">Log</h2>
+      <div style="display:grid;grid-template-columns:minmax(160px,220px) 1fr;gap:16px;align-items:start">
+        <nav aria-label="Log categories" style="display:flex;flex-direction:column;gap:8px">
+          <button type="button" class="primary" data-log="recruited" aria-pressed="true">Recruited</button>
+          <button type="button" data-log="graduated" aria-pressed="false">Graduated</button>
+          <button type="button" data-log="resigned" aria-pressed="false">Resigned / terminated</button>
+          <button type="button" data-log="switched" aria-pressed="false">Switch to Volunteer / Full time</button>
+        </nav>
+        <div class="admin-table-wrap"><table class="admin-table plain-table"><thead><tr><th>When</th><th>Name</th><th>Callsign</th><th>Action</th><th>By</th><th>Details</th></tr></thead><tbody id="academyLogRows"><tr><td colspan="6">Loading…</td></tr></tbody></table></div>
+      </div>
+    </section>
+        <dialog id="academyPassDialog" aria-labelledby="academyPassTitle">
       <h2 id="academyPassTitle">Exit Exam passed</h2>
       <p id="academyPassText"></p>
       <div class="acad-pass-actions">
