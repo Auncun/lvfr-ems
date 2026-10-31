@@ -3290,13 +3290,23 @@ function output_(value) {
 }
 
 function clearLogsFromSheets_(input) {
-  const allowed = ['promotion', 'callsign', 'termination', 'training', 'training_time', 'loi', 'exam', 'note', 'activity', 'instructor', 'account_audit', 'do_not_promote', 'do_not_terminate'];
+  const allowed = ['promotion', 'callsign', 'termination', 'training', 'training_time', 'loi', 'exam', 'note', 'activity', 'instructor', 'account_audit', 'do_not_promote', 'do_not_terminate', 'academy'];
   const requested = Array.isArray(input.items) ? input.items.map(value => String(value || '').trim().toLowerCase()) : [];
   if (!requested.length || requested.some(kind => kind !== 'notifications' && !allowed.includes(kind))) throw new Error('Choose valid log categories.');
+  // Academy rows in AOS History: only these actions, since AOS History also holds other entries.
+  const ACADEMY_AOS_ACTIONS = ['Passed EE', 'Removed — Resigned', 'Switched from full time to volunteer', 'Switched from volunteer to full time'];
   const result = withScriptLock_(() => {
     const items = [...new Set(requested)];
     const logs = items.filter(kind => kind !== 'notifications');
-    const memberLogs = logs.filter(kind => kind !== 'account_audit');
+    const memberLogs = logs.filter(kind => kind !== 'account_audit' && kind !== 'academy');
+    if (logs.includes('academy')) {
+      const spreadsheet = SpreadsheetApp.openById(requiredProperty_('LVFR_ROSTER_SPREADSHEET_ID'));
+      const aos = spreadsheet.getSheetByName('AOS History');
+      if (aos && aos.getLastRow() > 1) {
+        const actions = aos.getRange(2, 4, aos.getLastRow() - 1, 1).getDisplayValues().map(row => String(row[0] || ''));
+        for (let i = actions.length - 1; i >= 0; i--) if (ACADEMY_AOS_ACTIONS.indexOf(actions[i]) !== -1) aos.deleteRow(i + 2);
+      }
+    }
     if (memberLogs.length) {
       const sheet = appLogSheet_();
       const last = sheet.getLastRow();
