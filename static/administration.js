@@ -380,6 +380,11 @@ const permissionGroups = [
         "Delete all notifications for everyone from D1 and Google Sheets. Button appears in Operation Command."
       ],
       [
+        "notif_exit_exam_overdue",
+        "Exit Exam Overdue notifications",
+        "Receive notifications for Probationary and Probationary Volunteer members who have been in rank 21 days without passing the Exit Exam."
+      ],
+      [
         "notif_termination",
         "Termination notifications",
         "Receive termination notifications and view the Termination log."
@@ -1811,9 +1816,7 @@ function showDiscordReport(value) {
   });
 }
 // The Action menu is positioned next to its button, so the table's scroll area cannot cut it off.
-function placeRowActionMenu(event) {
-  const row = event.target.closest?.('.row-action');
-  if (!row) return;
+function placeRowActionMenu(row) {
   const trigger = row.querySelector('.row-action-trigger'), menu = row.querySelector('.row-action-menu');
   if (!trigger || !menu) return;
   const r = trigger.getBoundingClientRect();
@@ -1821,8 +1824,17 @@ function placeRowActionMenu(event) {
   menu.style.top = `${below ? r.bottom : Math.max(8, r.top - menu.offsetHeight)}px`;
   menu.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8))}px`;
 }
-document.addEventListener('mouseover', placeRowActionMenu);
-document.addEventListener('focusin', placeRowActionMenu);
+// A click on Action opens its menu; a click anywhere else, or on a menu item, closes it.
+document.addEventListener('click', event => {
+  const trigger = event.target.closest?.('.row-action-trigger');
+  const current = trigger?.closest('.row-action');
+  document.querySelectorAll('.row-action.open').forEach(open => { if (open !== current) { open.classList.remove('open'); open.querySelector('.row-action-trigger')?.setAttribute('aria-expanded', 'false'); } });
+  if (!trigger || !current) return;
+  current.classList.toggle('open');
+  trigger.setAttribute('aria-expanded', String(current.classList.contains('open')));
+  if (current.classList.contains('open')) placeRowActionMenu(current);
+  else current.querySelector('.row-action-menu')?.removeAttribute('style');
+});
 const roleMapEsc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 async function loadDiscordRoleMap() {
   const card = document.querySelector('#discordRoleMapCard');
