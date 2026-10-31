@@ -213,3 +213,4 @@ export async function handleAcademy({ db, user, route, method, data, mirror, dis
   if (route === "/api/academy/remove" && method === "POST") { requireManage(user); return json(await removeRecruit(db, user, data, mirror)); }
   return json({ detail: "Academy route was not found." }, 404);
 }
+
