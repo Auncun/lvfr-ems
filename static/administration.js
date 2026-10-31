@@ -146,7 +146,7 @@ function accountActions(account) {
     : `<button type="button" class="danger" data-action="delete" data-id="${id}">Delete</button>`;
   const resetButton = `<button type="button" data-action="reset-password" data-id="${id}">Reset password</button>`;
   const items = `${memberButton}${roleButton}${permissionButton}${resetButton}${deactivateButton}${deleteButton}`;
-  return items ? `<details class="row-action"><summary class="role-tab">Action</summary><div class="row-action-menu">${items}</div></details>` : '';
+  return items ? `<div class="row-action"><button type="button" class="role-tab row-action-trigger" aria-haspopup="true">Action</button><div class="row-action-menu" role="menu">${items}</div></div>` : '';
 }
 // Shows how many accounts are in each status tab.
 function updateStatusCounts() {
@@ -372,7 +372,7 @@ function applyOptimisticAccountAction(source, action) {
 
 const permissionGroups = [
   {
-    "name": "EMS Operations",
+    "name": "Notifications",
     "items": [
       [
         "notifications_clear_all",
@@ -453,7 +453,12 @@ const permissionGroups = [
         "notif_do_not_terminate",
         "Do Not Terminate notifications",
         "Receive Do Not Terminate notifications and view the Do Not Terminate log."
-      ],
+      ]
+    ]
+  },
+  {
+    "name": "EMS Operations",
+    "items": [
       [
         "portal_access",
         "EMS Operations",
