@@ -121,8 +121,15 @@ async function listAcademy(db, user) {
     recruits.push(view);
   }
   const done = (await db.prepare("SELECT * FROM academy_recruits WHERE status='graduated' ORDER BY graduated_at DESC, id DESC LIMIT 200").all()).results || [];
+  // The callsign each rank would take next, shown in the confirmation boxes before a recruit is added or switched.
+  const next_callsigns = {};
+  for (const rank of PROBIE_RANKS) {
+    const slot = await db.prepare(NEXT_SLOT_SQL).bind(rank).first();
+    next_callsigns[rank] = String(slot?.callsign || "").trim().toUpperCase();
+  }
   return {
     can_manage: isManager(user),
+    next_callsigns,
     recruits,
     graduates: done.map(g => ({
       id: g.id, name: g.name, callsign: g.callsign, recruit_type: g.recruit_type,
@@ -132,13 +139,14 @@ async function listAcademy(db, user) {
   };
 }
 
-async function recruit(db, user, data, mirror, discordRecruit) {
+async function recruit(db, user, data, mirror, discordRecruit, discordCheck) {
   const name = String(data.name || "").replace(/\s+/g, " ").trim();
   if (name.length < 3) throw fail("Enter the recruit's full name.");
   const rank = String(data.recruit_type || "").trim();
   if (!PROBIE_RANKS.includes(rank)) throw fail("Academy recruits start as Probationary or Probationary Volunteer.");
   const discordId = String(data.discord_user_id || "").trim();
   if (!/^\d{17,20}$/.test(discordId)) throw fail("Enter a valid Discord User ID.");
+  if (discordCheck) { const check = await discordCheck(discordId); if (!check.ok) throw fail(check.message); }
 
   const linked = await db.prepare("SELECT callsign FROM discord_member_links WHERE discord_user_id=?").bind(discordId).first();
   if (linked) throw fail(`This Discord account is already linked to callsign ${linked.callsign}.`);
@@ -292,9 +300,9 @@ async function terminateRecruit(db, user, data, mirror, discordTerminate) {
 }
 
 // Called from handleD1 for every /api/academy route. Returns a Response, or null for a non-academy route.
-export async function handleAcademy({ db, user, route, method, data, mirror, discordRoster, discordRecruit, discordTerminate }) {
+export async function handleAcademy({ db, user, route, method, data, mirror, discordRoster, discordRecruit, discordTerminate, discordCheck }) {
   if (route === "/api/academy" && method === "GET") { requireView(user); return json(await listAcademy(db, user)); }
-  if (route === "/api/academy/recruit" && method === "POST") { requireManage(user); return json(await recruit(db, user, data, mirror, discordRecruit)); }
+  if (route === "/api/academy/recruit" && method === "POST") { requireManage(user); return json(await recruit(db, user, data, mirror, discordRecruit, discordCheck)); }
   if (route === "/api/academy/discord-retry" && method === "POST") {
     requireManage(user);
     const r = await db.prepare("SELECT * FROM academy_recruits WHERE id=?").bind(Number(data.id) || 0).first();
