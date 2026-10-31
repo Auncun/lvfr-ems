@@ -213,6 +213,8 @@ function dispatch_(route, method, params, data, user) {
   if (route === '/api/demote' && method === 'POST') { requireRolePermission_(user, 'rank_manage'); return changeMemberRank_(data, user, 'DEMOTION'); }
   if (route === '/api/change-rank' && method === 'POST') { requireRolePermission_(user, 'rank_manage'); return changeMemberRank_(data, user, 'CHANGE_RANK'); }
   if (route === '/api/change-callsign' && method === 'POST') { requireRolePermission_(user, 'callsign_manage'); return changeMemberCallsign_(data, user); }
+  if (route === '/api/academy/recruit' && method === 'POST') return academyRecruit_(data, user);
+  if (route === '/api/academy/graduate' && method === 'POST') return academyGraduate_(data, user);
   if (route === '/api/terminate' && method === 'POST') { requireRolePermission_(user, 'termination_manage'); return terminateMember_(data, user); }
   const instructorRoute = route.match(/^\/api\/member\/([^/]+)\/instructor$/);
   if (instructorRoute && method === 'POST') {
@@ -1939,6 +1941,41 @@ function changeMemberCallsign_(data, user) {
   const target = emptyRowForCallsign_(next);
   moveMember_(old, target, isAdmin_(user) && rank ? rank : old.rank, user, 'CALLSIGN_CHANGE');
   return { ok: true, new_callsign: target.callsign, new_rank: isAdmin_(user) && rank ? rank : old.rank };
+}
+
+// ---- LVFR Academy ------------------------------------------------------------
+// The website chooses the first empty callsign slot for the recruit's rank. This fills that
+// existing empty roster row: Name (C), the start date (D) and the days-in-rank formula (E).
+function academyRecruit_(data, user) {
+  requireRolePermission_(user, 'academy_manage');
+  const rank = String(data.rank || '').trim();
+  if (!['Probationary', 'Probationary Volunteer'].includes(rank)) throw new Error('Academy recruits start as Probationary or Probationary Volunteer.');
+  const name = String(data.name || '').replace(/\s+/g, ' ').trim();
+  if (!name) throw new Error('Enter the recruit’s full name.');
+  const callsign = String(data.callsign || '').trim().toUpperCase();
+  if (rankFromCallsign_(callsign) !== rank) throw new Error('The selected Callsign does not match the rank.');
+  const target = emptyRowForCallsign_(callsign), sheet = rosterSheet_();
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'MM/dd/yyyy');
+  sheet.getRange(target.row, 3).setValue(name);
+  sheet.getRange(target.row, 4).setValue(today);
+  sheet.getRange(target.row, 5).setValue('=TODAY()-D' + target.row);
+  sheet.getRange(target.row, 3, 1, 3).setHorizontalAlignment('center');
+  appendArchiveLog_({ timestamp: new Date().toISOString(), event: 'Recruited', member: name, callsign: target.callsign, old_callsign: '', new_callsign: target.callsign, old_rank: '', new_rank: rank, details: 'LVFR Academy', actor: actorName_(user), actor_callsign: user.callsign || '' });
+  return { ok: true, callsign: target.callsign, new_rank: rank, row: target.row };
+}
+
+// Moves a finished recruit to EMT or Volunteer, using the same row move as any promotion.
+function academyGraduate_(data, user) {
+  requireRolePermission_(user, 'academy_manage');
+  const old = memberByCallsign_(data.callsign);
+  const rank = String(data.new_rank || '').trim();
+  if (!['EMT', 'Volunteer'].includes(rank)) throw new Error('Academy graduates become EMT or Volunteer.');
+  if (!['Probationary', 'Probationary Volunteer'].includes(old.rank)) throw new Error('This member is not an academy recruit.');
+  if (old.do_not_promote) throw new Error('This member is on the Do not Promote list.');
+  const target = data.d1_target_callsign ? emptyRowForCallsign_(String(data.d1_target_callsign).trim().toUpperCase()) : nextEmptyCallsign_(rank);
+  if (rankFromCallsign_(target.callsign) !== rank) throw new Error('The selected destination Callsign does not match the selected rank.');
+  moveMember_(old, target, rank, user, 'FORCE');
+  return { ok: true, new_callsign: target.callsign, new_rank: rank };
 }
 
 function emptyRowForCallsign_(callsign) {
