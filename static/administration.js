@@ -370,67 +370,431 @@ function applyOptimisticAccountAction(source, action) {
 }
 
 const permissionGroups = [
-  { name: 'Notifications', items: [
-    ['notifications_clear_all', 'Clear notifications (everyone)', 'Delete all notifications for everyone from D1 and Google Sheets. Button appears in Operation Command.'],
-    ['notif_termination', 'Termination notifications', 'Receive termination notifications and view the Termination log.'],
-    ['notif_inactive', 'Due to Activity notifications', 'Receive notifications when members are Can Be Terminated for activity, and view the Due to Activity list.'],
-    ['notif_overdue', 'Training Overdue notifications', 'Receive notifications when EMT members are overdue for Basic or Advanced FORT, and view the Training Overdue list.'],
-    ['notif_promotion', 'Promotion notifications', 'Receive promotion notifications and view the Promotion log.'],
-    ['notif_eligible', 'Eligible notifications', 'Receive eligible-for-promotion notifications and view the Eligible list.'],
-    ['notif_callsign', 'Callsign notifications', 'Receive callsign notifications and view the Callsign log.'],
-    ['notif_training', 'Training notifications', 'Receive training notifications and view the Training log.'],
-    ['notif_training_time', 'Training Hours notifications', 'Receive Training Hours notifications and view the Training Time log.'],
-    ['notif_loi', 'LOI notifications', 'Receive LOI notifications and view the LOI log.'],
-    ['notif_exam', 'Exam notifications', 'Receive exam notifications and view the Exam log.'],
-    ['notif_note', 'Note notifications', 'Receive note notifications and view the Notes log.'],
-    ['notif_activity', 'Activity notifications', 'Receive activity notifications and view the Activity log.'],
-    ['notif_instructor', 'Instructor notifications', 'Receive instructor notifications and view the Instructor log.'],
-    ['notif_do_not_promote', 'Do Not Promote notifications', 'Receive Do Not Promote notifications and view the Do Not Promote log.'],
-    ['notif_do_not_terminate', 'Do Not Terminate notifications', 'Receive Do Not Terminate notifications and view the Do Not Terminate log.'],
-  ] },
-  { name: 'Application access', items: [
-    ['portal_access', 'EMS Operations', 'Open the EMS Operations application.'],
-    ['operation_command_access', 'Edit rank permission', 'Edit rank permissions, add, rename, delete and reorder ranks, and edit personal permissions. Does not grant account management.'],
-    ['watch_command_view', 'Watch Command: view', 'Open Watch Command logs and activity.'],
-    ['watch_command_edit', 'Watch Command: edit', 'Create and update Watch Command records.'],
-    ['watch_command_roster', 'Watch Command: roster lookup', 'Search member names and callsigns.'],
-    ['academy_view', 'Academy: view', 'Open the Academy and view recruits and graduates.'],
-    ['academy_manage', 'Academy: manage', 'Recruit members, record trainings, patrol, Exit Exams and graduations.'],
-  ] },
-  { name: 'Lists and records', items: [
-    ['members_view', 'Members list', 'View the roster and member list.'], ['eligible_view', 'Eligible list', 'View promotion eligibility.'], ['promotion_access', 'Access Promotion', 'Open the Promotion page and view eligible members.'],
-    ['profile_view', 'Member profiles', 'Open member View / Manage details.'], ['inactive_view', 'Termination list', 'View the Termination list: members due to activity and EMTs overdue for training.'],
-    { key:'logs_view', label:'Members Log (all)', description:'Allow every log tab.', children:[
-      ['promotion_log_view','Promotion log','View promotion and rank-change history.'],['callsign_log_view','Callsign log','View callsign-change history.'],['termination_log_view','Termination log','View termination history.'],['training_log_view','Training log','View FORT and HERT training history.'],['training_hours_log_view','Training Hours log','View Training Hours changes.'],['loi_log_view','LOI log','View LOI history.'],['exam_log_view','Exam log','View exam history.'],['note_log_view','Note log','View member-note history.'],['activity_log_view','Activity log','View activity-status history.'],['instructor_log_view','Instructor log','View instructor-assignment history.'],
-      ['do_not_promote_log_view','Do Not Promote log','View when members were added to or removed from the Do Not Promote list, and by whom.'],
-      ['do_not_terminate_log_view','Do Not Terminate log','View when members were added to or removed from the Do Not Terminate list, and by whom.']
-    ]}, ['statistics_view', 'Statistics', 'View roster statistics.'],
-    ['logs_delete_d1', 'Delete logs from D1', 'Delete the selected log from the website database.'], ['logs_clean_full', 'Full Cleaning', 'Delete selected logs and notifications from D1 and Google Sheets.'],
-    { key:'training_view', label:'Training lists (all)', description:'Allow every HERT and FORT training sublist.', children:[
-      ['hert_certified_view','HERT Certified','View HERT certification records.'],['hert_instructor_view','HERT Instructor','View HERT instructor records.'],['hert_loi_view','HERT LOI','View the HERT LOI list.'],['fort_training_view','FORT Training','View Basic and Advanced FORT records.'],['fort_instructor_view','FORT Instructor','View FORT instructor records.'],['fort_loi_view','FORT LOI','View the FORT LOI list.']
-    ]}, ['training_hours_view', 'Training Hours: view', 'View Training Hours records.'],
-    ['do_not_promote_view', 'Do Not Promote/Terminate: view', 'View the Do Not Promote and Do Not Terminate lists.'], ['sync_view', 'Sync status', 'View roster synchronization status.'],
-  ] },
-  { name: 'Discord', items: [
-    ['discord_view', 'Discord: view', 'View Linked members, the Discord status, and the Discord action log.'],
-    ['discord_manage', 'Discord: manage links', 'Change a Discord ID or nickname, delink a member, and use the Discord buttons in the member Manage window.'],
-    ['discord_sync_manage', 'Discord: sync and retry', 'Run Sync Discord Members and retry failed Discord updates.'],
-    ['discord_log_clear', 'Discord: clear log', 'Delete the Discord action log.'],
-  ] },
-  { name: 'Training and member changes', items: [
-    ['training_fort_manage', 'Manage FORT training', 'Change Basic and Advanced FORT status; FORT Instructor status is also required.'],
-    ['training_hert_manage', 'Manage HERT training', 'Change HERT status; HERT Instructor status is also required.'],
-    ['training_hours_manage', 'Manage Training Hours', 'Add, remove, and change Training Hours records.'], ['loi_manage', 'Manage LOI lists', 'Add LOI candidates and record Passed or Failed results.'],
-    ['instructor_manage', 'Instructor assignments', 'Assign or remove FORT and HERT Instructor status.'],
-    ['notes_manage', 'Member notes', 'Add, edit, or remove member notes.'], ['activity_manage', 'Activity status', 'Change member activity status.'],
-    ['exam_manage', 'Supervisor exam', 'Add or remove exam status.'], ['rank_date_manage', 'Rank date', 'Change a member rank date.'],
-    ['promotion_manage', 'Promotion', 'Promote members using available rules.'], ['rank_manage', 'Rank tools', 'Force promote, demote, or change rank.'],
-    ['callsign_manage', 'Callsign changes', 'Change a member callsign.'], ['termination_manage', 'Termination', 'Remove a member from the roster.'],
-    ['do_not_promote_manage', 'Do Not Promote/Terminate: edit', 'Add or remove members from the Do Not Promote and Do Not Terminate lists.'], ['sync_manage', 'Sync now', 'Synchronize with the source sheet.'],
-    ['full_sync_manage', 'Full roster sync', 'Run a full roster synchronization from the source sheet.'],
-  ] },
-];
-let rolePermissionProfiles = {};
+  {
+    "name": "EMS Operations",
+    "items": [
+      [
+        "notifications_clear_all",
+        "Clear notifications (everyone)",
+        "Delete all notifications for everyone from D1 and Google Sheets. Button appears in Operation Command."
+      ],
+      [
+        "notif_termination",
+        "Termination notifications",
+        "Receive termination notifications and view the Termination log."
+      ],
+      [
+        "notif_inactive",
+        "Due to Activity notifications",
+        "Receive notifications when members are Can Be Terminated for activity, and view the Due to Activity list."
+      ],
+      [
+        "notif_overdue",
+        "Training Overdue notifications",
+        "Receive notifications when EMT members are overdue for Basic or Advanced FORT, and view the Training Overdue list."
+      ],
+      [
+        "notif_promotion",
+        "Promotion notifications",
+        "Receive promotion notifications and view the Promotion log."
+      ],
+      [
+        "notif_eligible",
+        "Eligible notifications",
+        "Receive eligible-for-promotion notifications and view the Eligible list."
+      ],
+      [
+        "notif_callsign",
+        "Callsign notifications",
+        "Receive callsign notifications and view the Callsign log."
+      ],
+      [
+        "notif_training",
+        "Training notifications",
+        "Receive training notifications and view the Training log."
+      ],
+      [
+        "notif_training_time",
+        "Training Hours notifications",
+        "Receive Training Hours notifications and view the Training Time log."
+      ],
+      [
+        "notif_loi",
+        "LOI notifications",
+        "Receive LOI notifications and view the LOI log."
+      ],
+      [
+        "notif_exam",
+        "Exam notifications",
+        "Receive exam notifications and view the Exam log."
+      ],
+      [
+        "notif_note",
+        "Note notifications",
+        "Receive note notifications and view the Notes log."
+      ],
+      [
+        "notif_activity",
+        "Activity notifications",
+        "Receive activity notifications and view the Activity log."
+      ],
+      [
+        "notif_instructor",
+        "Instructor notifications",
+        "Receive instructor notifications and view the Instructor log."
+      ],
+      [
+        "notif_do_not_promote",
+        "Do Not Promote notifications",
+        "Receive Do Not Promote notifications and view the Do Not Promote log."
+      ],
+      [
+        "notif_do_not_terminate",
+        "Do Not Terminate notifications",
+        "Receive Do Not Terminate notifications and view the Do Not Terminate log."
+      ],
+      [
+        "portal_access",
+        "EMS Operations",
+        "Open the EMS Operations application."
+      ],
+      [
+        "members_view",
+        "Members list",
+        "View the roster and member list."
+      ],
+      [
+        "eligible_view",
+        "Eligible list",
+        "View promotion eligibility."
+      ],
+      [
+        "promotion_access",
+        "Access Promotion",
+        "Open the Promotion page and view eligible members."
+      ],
+      [
+        "profile_view",
+        "Member profiles",
+        "Open member View / Manage details."
+      ],
+      [
+        "inactive_view",
+        "Termination list",
+        "View the Termination list: members due to activity and EMTs overdue for training."
+      ],
+      {
+        "key": "logs_view",
+        "label": "Members Log (all)",
+        "description": "Allow every log tab.",
+        "children": [
+          [
+            "promotion_log_view",
+            "Promotion log",
+            "View promotion and rank-change history."
+          ],
+          [
+            "callsign_log_view",
+            "Callsign log",
+            "View callsign-change history."
+          ],
+          [
+            "termination_log_view",
+            "Termination log",
+            "View termination history."
+          ],
+          [
+            "training_log_view",
+            "Training log",
+            "View FORT and HERT training history."
+          ],
+          [
+            "training_hours_log_view",
+            "Training Hours log",
+            "View Training Hours changes."
+          ],
+          [
+            "loi_log_view",
+            "LOI log",
+            "View LOI history."
+          ],
+          [
+            "exam_log_view",
+            "Exam log",
+            "View exam history."
+          ],
+          [
+            "note_log_view",
+            "Note log",
+            "View member-note history."
+          ],
+          [
+            "activity_log_view",
+            "Activity log",
+            "View activity-status history."
+          ],
+          [
+            "instructor_log_view",
+            "Instructor log",
+            "View instructor-assignment history."
+          ],
+          [
+            "do_not_promote_log_view",
+            "Do Not Promote log",
+            "View when members were added to or removed from the Do Not Promote list, and by whom."
+          ],
+          [
+            "do_not_terminate_log_view",
+            "Do Not Terminate log",
+            "View when members were added to or removed from the Do Not Terminate list, and by whom."
+          ]
+        ]
+      },
+      [
+        "statistics_view",
+        "Statistics",
+        "View roster statistics."
+      ],
+      [
+        "logs_delete_d1",
+        "Delete logs from D1",
+        "Delete the selected log from the website database."
+      ],
+      [
+        "logs_clean_full",
+        "Full Cleaning",
+        "Delete selected logs and notifications from D1 and Google Sheets."
+      ],
+      {
+        "key": "training_view",
+        "label": "Training lists (all)",
+        "description": "Allow every HERT and FORT training sublist.",
+        "children": [
+          [
+            "hert_certified_view",
+            "HERT Certified",
+            "View HERT certification records."
+          ],
+          [
+            "hert_instructor_view",
+            "HERT Instructor",
+            "View HERT instructor records."
+          ],
+          [
+            "hert_loi_view",
+            "HERT LOI",
+            "View the HERT LOI list."
+          ],
+          [
+            "fort_training_view",
+            "FORT Training",
+            "View Basic and Advanced FORT records."
+          ],
+          [
+            "fort_instructor_view",
+            "FORT Instructor",
+            "View FORT instructor records."
+          ],
+          [
+            "fort_loi_view",
+            "FORT LOI",
+            "View the FORT LOI list."
+          ]
+        ]
+      },
+      [
+        "training_hours_view",
+        "Training Hours: view",
+        "View Training Hours records."
+      ],
+      [
+        "do_not_promote_view",
+        "Do Not Promote/Terminate: view",
+        "View the Do Not Promote and Do Not Terminate lists."
+      ],
+      [
+        "training_fort_manage",
+        "Manage FORT training",
+        "Change Basic and Advanced FORT status; FORT Instructor status is also required."
+      ],
+      [
+        "training_hert_manage",
+        "Manage HERT training",
+        "Change HERT status; HERT Instructor status is also required."
+      ],
+      [
+        "training_hours_manage",
+        "Manage Training Hours",
+        "Add, remove, and change Training Hours records."
+      ],
+      [
+        "loi_manage",
+        "Manage LOI lists",
+        "Add LOI candidates and record Passed or Failed results."
+      ],
+      [
+        "instructor_manage",
+        "Instructor assignments",
+        "Assign or remove FORT and HERT Instructor status."
+      ],
+      [
+        "notes_manage",
+        "Member notes",
+        "Add, edit, or remove member notes."
+      ],
+      [
+        "activity_manage",
+        "Activity status",
+        "Change member activity status."
+      ],
+      [
+        "exam_manage",
+        "Supervisor exam",
+        "Add or remove exam status."
+      ],
+      [
+        "rank_date_manage",
+        "Rank date",
+        "Change a member rank date."
+      ],
+      [
+        "promotion_manage",
+        "Promotion",
+        "Promote members using available rules."
+      ],
+      [
+        "rank_manage",
+        "Rank tools",
+        "Force promote, demote, or change rank."
+      ],
+      [
+        "callsign_manage",
+        "Callsign changes",
+        "Change a member callsign."
+      ],
+      [
+        "termination_manage",
+        "Termination",
+        "Remove a member from the roster."
+      ],
+      [
+        "do_not_promote_manage",
+        "Do Not Promote/Terminate: edit",
+        "Add or remove members from the Do Not Promote and Do Not Terminate lists."
+      ]
+    ]
+  },
+  {
+    "name": "Watch Command",
+    "items": [
+      [
+        "watch_command_view",
+        "Watch Command: view",
+        "Open Watch Command logs and activity."
+      ],
+      [
+        "watch_command_edit",
+        "Watch Command: edit",
+        "Create and update Watch Command records."
+      ],
+      [
+        "watch_command_roster",
+        "Watch Command: roster lookup",
+        "Search member names and callsigns."
+      ]
+    ]
+  },
+  {
+    "name": "Academy",
+    "items": [
+      [
+        "academy_view",
+        "Academy: view",
+        "Open the Academy and view recruits and graduates."
+      ],
+      [
+        "academy_manage",
+        "Academy: manage",
+        "Recruit members, record trainings, patrol, Exit Exams and graduations."
+      ],
+      [
+        "academy_terminate",
+        "Academy: terminate",
+        "Terminate a recruit whose training is overdue (21 days without the Exit Exam), with the Discord choice."
+      ],
+      [
+        "academy_resign",
+        "Academy: resign",
+        "Remove a recruit who resigned, with the Discord choice."
+      ]
+    ]
+  },
+  {
+    "name": "Operation Command",
+    "items": [
+      [
+        "operation_command_access",
+        "Edit rank permission",
+        "Edit rank permissions, add, rename, delete and reorder ranks, and edit personal permissions. Does not grant account management."
+      ]
+    ]
+  },
+  {
+    "name": "Discord",
+    "items": [
+      [
+        "discord_view",
+        "Discord: view",
+        "View Linked members, the Discord status, and the Discord action log."
+      ],
+      [
+        "discord_manage",
+        "Discord: manage links",
+        "Change a Discord ID or nickname, delink a member, and use the Discord buttons in the member Manage window."
+      ],
+      [
+        "discord_sync_manage",
+        "Discord: sync and retry",
+        "Run Sync Discord Members and retry failed Discord updates."
+      ],
+      [
+        "discord_log_clear",
+        "Discord: clear log",
+        "Delete the Discord action log."
+      ],
+      [
+        "discord_settings_manage",
+        "Discord: settings",
+        "Change the Discord server ID and the Discord role IDs of the ranks on the website."
+      ],
+      [
+        "discord_kick",
+        "Discord: kick",
+        "Kick a member from the Discord server. Without this permission the Kick option is disabled in Discord choices."
+      ]
+    ]
+  },
+  {
+    "name": "Sync",
+    "items": [
+      [
+        "sync_view",
+        "Sync status",
+        "View roster synchronization status."
+      ],
+      [
+        "sync_manage",
+        "Sync now",
+        "Synchronize with the source sheet."
+      ],
+      [
+        "full_sync_manage",
+        "Full roster sync",
+        "Run a full roster synchronization from the source sheet."
+      ]
+    ]
+  }
+];let rolePermissionProfiles = {};
 let rolePermissionScopes = {};
 let rolePermissionRanks = [];
 const roleActiveTab = {};
@@ -1438,7 +1802,50 @@ function showDiscordReport(value) {
     discordReportText.append(heading, ul);
   });
 }
+const roleMapEsc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+async function loadDiscordRoleMap() {
+  const card = document.querySelector('#discordRoleMapCard');
+  if (!card) return;
+  card.hidden = !canUseDiscord();
+  if (card.hidden) return;
+  const body = document.querySelector('#discordRoleMapRows');
+  const save = document.querySelector('#saveDiscordRoleMap');
+  save.disabled = !canEditDiscordSettings();
+  document.querySelector('#saveDiscordGuildId').disabled = !canEditDiscordSettings();
+  document.querySelector('#discordGuildIdInput').disabled = !canEditDiscordSettings();
+  try {
+    const data = await api('/api/discord/role-map');
+    document.querySelector('#discordGuildIdInput').value = data.guild_id || '';
+    document.querySelector('#discordOpsRoleInput').value = data.ops_role_id || '';
+    document.querySelector('#discordOpsRoleInput').disabled = !canEditDiscordSettings();
+    body.innerHTML = data.ranks.map(row => `<tr><td>${roleMapEsc(row.rank)}</td><td><input type="text" inputmode="numeric" autocomplete="off" data-rank="${roleMapEsc(row.rank)}" value="${roleMapEsc(row.role_id)}" placeholder="17 to 20 digits" ${canEditDiscordSettings() ? '' : 'disabled'} aria-label="Discord role ID for ${roleMapEsc(row.rank)}"></td></tr>`).join('');
+  } catch (error) {
+    body.innerHTML = `<tr><td colspan="2">${roleMapEsc(error.message)}</td></tr>`;
+  }
+}
+async function saveDiscordRoleMap() {
+  const status = document.querySelector('#discordRoleMapStatus');
+  const ranks = {};
+  document.querySelectorAll('#discordRoleMapRows input[data-rank]').forEach(input => { ranks[input.dataset.rank] = input.value.trim(); });
+  try {
+    await api('/api/discord/role-map', { method: 'POST', body: JSON.stringify({ ranks, ops_role_id: document.querySelector('#discordOpsRoleInput').value.trim() }) });
+    status.textContent = 'Discord role IDs saved.';
+  } catch (error) {
+    status.textContent = error.message;
+  }
+}
+document.querySelector('#saveDiscordRoleMap')?.addEventListener('click', saveDiscordRoleMap);
+function canEditDiscordSettings() { return currentUser?.role === 'admin' || currentUser?.permissions?.discord_settings_manage === true; }
+async function saveDiscordGuildId() {
+  const status = document.querySelector('#discordRoleMapStatus');
+  try {
+    const result = await api('/api/discord/settings', { method: 'POST', body: JSON.stringify({ guild_id: document.querySelector('#discordGuildIdInput').value.trim() }) });
+    status.textContent = result.guild_id ? 'Discord server ID saved.' : 'Discord server ID cleared; the DISCORD_GUILD_ID secret is used.';
+  } catch (error) { status.textContent = error.message; }
+}
+document.querySelector('#saveDiscordGuildId')?.addEventListener('click', saveDiscordGuildId);
 async function refreshDiscordStatus() {
+  loadDiscordRoleMap().catch(() => {});
   if (!discordStatus) return;
   discordStatus.className = 'admin-status';
   discordStatus.textContent = 'Loading Discord synchronization status…';
