@@ -74,6 +74,7 @@
       recruitSection.hidden = !canManage;
       nextCallsigns = data.next_callsigns || {};
       document.querySelector('[data-tab="academyRecruit"]').hidden = !canManage;
+      if (!canManage && document.querySelector('nav.tabs [data-tab="academyRecruit"]').classList.contains('active')) showTab('academyRecruits');
       $('#academyLogClear').hidden = !canManage;
       renderRecruits();
       await loadLog();
@@ -158,7 +159,7 @@
     showTab('academyRecruits');
     showSub(button.dataset.tab);
   });
-  showTab('academyRecruits');
+  showTab('academyRecruit');
   showSub('academyFull');
 
   async function run(action, success) {
