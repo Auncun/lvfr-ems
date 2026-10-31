@@ -169,6 +169,7 @@
     termination: 'Members who were terminated (removed from the roster).',
     inactive: 'Due to Activity: members whose activity is Can Be Terminated.',
     overdue: 'Training Overdue: EMT members with 21+ days in rank who are missing Basic FORT or Advanced FORT.',
+    exit_exam_overdue: 'Exit Exam Overdue: Probationary and Probationary Volunteer members with 21+ days in rank who have not passed the Exit Exam.',
     promotion: 'Members who were promoted or had their rank changed.',
     eligible: 'Members who became eligible for promotion.',
     callsign: 'Callsign changes.',
