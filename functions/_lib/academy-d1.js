@@ -339,7 +339,20 @@ async function terminateRecruit(db, user, data, mirror, discordTerminate) {
 
 // Small fingerprint of everything the Academy page shows. The browser compares it every few seconds and reloads
 // only when it changes, so a Sheet edit (synced to D1 by the Apps Script triggers) appears without a manual refresh.
+// One row holds a counter that goes up whenever something the Academy page shows changes. The page polls it
+// instead of fingerprinting several tables. A failure here never blocks the change that caused it.
+export async function bumpAcademyVersion(db) {
+  try { await db.prepare("UPDATE academy_version SET n=n+1 WHERE id=1").run(); }
+  catch { /* migration 0038 not applied yet: the page uses the slower table fingerprint below */ }
+}
 async function academyVersion(db) {
+  try {
+    const row = await db.prepare("SELECT n FROM academy_version WHERE id=1").first();
+    if (row) return "n" + String(row.n);
+  } catch { /* table missing */ }
+  return academyFingerprint(db);
+}
+async function academyFingerprint(db) {
   const probies = (await db.prepare("SELECT callsign,name,rank,days_in_rank,do_not_terminate,date FROM members WHERE rank IN ('Probationary','Probationary Volunteer')").all()).results || [];
   const recruits = (await db.prepare("SELECT id,callsign,name,discord_user_id,recruit_type,recruited_at,bm_at,ec_at,bv_at,patrol_at,exam_result FROM academy_recruits WHERE status='active' AND upper(callsign) IN (SELECT upper(callsign) FROM members)").all()).results || [];
   const links = (await db.prepare("SELECT l.callsign,l.discord_user_id,l.status,l.last_error FROM discord_member_links l WHERE upper(l.callsign) IN (SELECT upper(callsign) FROM academy_recruits WHERE status='active')").all()).results || [];
@@ -359,7 +372,20 @@ async function academyVersion(db) {
 }
 
 // Called from handleD1 for every /api/academy route. Returns a Response, or null for a non-academy route.
-export async function handleAcademy({ db, user, route, method, data, mirror, discordRoster, discordRecruit, discordTerminate, discordCheck }) {
+// Every Academy change moves the counter. A request refused for a client reason (400 to 499) changed nothing, so it does not.
+export async function handleAcademy(args) {
+  const changes = args.method === "POST" && String(args.route).startsWith("/api/academy/");
+  try {
+    const response = await routeAcademy(args);
+    if (changes) await bumpAcademyVersion(args.db);
+    return response;
+  } catch (error) {
+    const status = Number(error?.status);
+    if (changes && !(status >= 400 && status < 500)) await bumpAcademyVersion(args.db);
+    throw error;
+  }
+}
+async function routeAcademy({ db, user, route, method, data, mirror, discordRoster, discordRecruit, discordTerminate, discordCheck }) {
   if (route === "/api/academy" && method === "GET") { requireView(user); return json(await listAcademy(db, user)); }
   if (route === "/api/academy/version" && method === "GET") { requireView(user); return json({ version: await academyVersion(db) }); }
   if (route === "/api/academy/recruit" && method === "POST") { requireManage(user); return json(await recruit(db, user, data, mirror, discordRecruit, discordCheck)); }
