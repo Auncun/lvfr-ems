@@ -1873,6 +1873,10 @@ async function loadDiscordRoleMap() {
     document.querySelector('#discordGuildIdInput').value = data.guild_id || '';
     document.querySelector('#discordOpsRoleInput').value = data.ops_role_id || '';
     document.querySelector('#discordOpsRoleInput').disabled = !canEditDiscordSettings();
+    const log = data.academy_log || {};
+    document.querySelector('#academyLogChannelInput').value = log.channel_id || '';
+    document.querySelector('#academyLogEnabled').checked = log.enabled === true;
+    for (const id of ['#academyLogChannelInput', '#academyLogEnabled', '#saveAcademyLog', '#testAcademyLog']) document.querySelector(id).disabled = !canEditDiscordSettings();
     body.innerHTML = data.ranks.map(row => `<tr><td>${roleMapEsc(row.rank)}</td><td><input type="text" inputmode="numeric" autocomplete="off" data-rank="${roleMapEsc(row.rank)}" value="${roleMapEsc(row.role_id)}" placeholder="17 to 20 digits" ${canEditDiscordSettings() ? '' : 'disabled'} aria-label="Discord role ID for ${roleMapEsc(row.rank)}">${row.source === 'secret' ? '<small class="muted"> from DISCORD_ROLE_MAP secret</small>' : ''}</td></tr>`).join('');
   } catch (error) {
     body.innerHTML = `<tr><td colspan="2">${roleMapEsc(error.message)}</td></tr>`;
@@ -2056,3 +2060,21 @@ document.querySelector('#saveAccountRoles')?.addEventListener('click', async () 
     status.textContent = error.message;
   }
 });
+// Academy log channel: where the bot posts the Academy events.
+async function saveAcademyLog() {
+  const status = document.querySelector('#academyLogStatus');
+  try {
+    const result = await api('/api/discord/academy-log', { method: 'POST', body: JSON.stringify({ channel_id: document.querySelector('#academyLogChannelInput').value.trim(), enabled: document.querySelector('#academyLogEnabled').checked }) });
+    status.textContent = result.enabled ? 'Saved. The Academy log is on.' : 'Saved. The Academy log is off.';
+  } catch (error) { status.textContent = error.message; }
+}
+async function testAcademyLog() {
+  const status = document.querySelector('#academyLogStatus');
+  status.textContent = 'Sending…';
+  try {
+    await api('/api/discord/academy-log/test', { method: 'POST', body: JSON.stringify({ channel_id: document.querySelector('#academyLogChannelInput').value.trim() }) });
+    status.textContent = 'Test message sent. Check the channel.';
+  } catch (error) { status.textContent = error.message; }
+}
+document.querySelector('#saveAcademyLog')?.addEventListener('click', saveAcademyLog);
+document.querySelector('#testAcademyLog')?.addEventListener('click', testAcademyLog);
