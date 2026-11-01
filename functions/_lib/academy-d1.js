@@ -90,7 +90,7 @@ async function adoptRosterRecruits(db) {
 }
 
 // Switch between Full time (Probationary) and Volunteer (Probationary Volunteer) recruits. The callsign changes to a slot of the new rank.
-async function switchRecruit(db, user, data, mirror, discordRoster) {
+async function switchRecruit(db, user, data, mirror, discordRoster, announce) {
   const r = await loadActive(db, Number(data.id) || 0);
   const newRank = String(data.new_rank || "").trim();
   if (!PROBIE_RANKS.includes(newRank) || newRank === r.recruit_type) throw fail("Choose the other academy rank.");
@@ -109,6 +109,7 @@ async function switchRecruit(db, user, data, mirror, discordRoster) {
   await academyLog(db, user, label, newCs, r.name, `was ${member.callsign}`);
   await queueAcademyConfirmation(db, user, { action: "Academy: Switched", callsign: newCs, name: r.name, oldRank: member.rank, newRank, oldCallsign: member.callsign, newCallsign: newCs, perms: "academy_manage" });
   await mirror("Academy switch", "/api/academy/switch", { callsign: member.callsign, new_rank: newRank, d1_target_callsign: newCs, name: member.name });
+  announce?.({ type: "switched", name: r.name, callsign: newCs, oldCallsign: member.callsign, rank: newRank });
   const sync = discordRoster ? await discordRoster(member, { new_callsign: newCs, new_rank: newRank }).catch(() => "unavailable") : "unavailable";
   const messages = {
     pending: "Discord nickname is being updated in the background.",
@@ -168,7 +169,7 @@ async function listAcademy(db, user) {
   };
 }
 
-async function recruit(db, user, data, mirror, discordRecruit, discordCheck) {
+async function recruit(db, user, data, mirror, discordRecruit, discordCheck, announce) {
   const name = String(data.name || "").replace(/\s+/g, " ").trim();
   if (name.length < 3) throw fail("Enter the recruit's full name.");
   // Same name (ignoring capitals and extra spaces) as someone already on the roster or in the Academy: no second record.
@@ -203,6 +204,7 @@ async function recruit(db, user, data, mirror, discordRecruit, discordCheck) {
   await academyLog(db, user, "Recruited", callsign, name, rank);
   await queueAcademyConfirmation(db, user, { action: "Academy: Recruited", callsign, name, newRank: rank, newCallsign: callsign, perms: "academy_manage" });
   await mirror("Academy recruit", "/api/academy/recruit", { callsign, name, rank });
+  announce?.({ type: "recruited", name, callsign, rank });
   const sync = discordRecruit ? discordRecruit.queue(discordId, academyNickname(name)) : "unavailable";
   return { ok: true, callsign, name, new_rank: rank, discord: { ok: sync === "pending", message: sync === "pending" ? "Discord nickname and role are being updated in the background." : "Discord synchronization could not be started." } };
 }
@@ -241,7 +243,7 @@ function moveStatements(db, member, newRank, newCs, slot, now) {
   ];
 }
 
-async function exam(db, user, data, mirror, discordRoster) {
+async function exam(db, user, data, mirror, discordRoster, announce) {
   const r = await loadActive(db, Number(data.id) || 0);
   const now = nowIso(), who = String(user.name || "");
 
@@ -271,6 +273,7 @@ async function exam(db, user, data, mirror, discordRoster) {
   await academyLog(db, user, "Passed Exit Exam", r.callsign, r.name, `${newCs} ${newRank}`);
   await queueAcademyConfirmation(db, user, { action: "Academy: Graduated", callsign: newCs, name: r.name, oldRank: member.rank, newRank, oldCallsign: member.callsign, newCallsign: newCs, perms: "academy_manage" });
   await mirror("Academy exam", "/api/academy/exam", { callsign: member.callsign, new_rank: newRank, d1_target_callsign: newCs, name: member.name });
+  announce?.({ type: "graduated", name: r.name, callsign: newCs, oldCallsign: member.callsign, rank: newRank });
   // Same Discord update as a promotion: the link moves to the new callsign and the nickname and role follow in the background.
   const sync = discordRoster ? await discordRoster(member, { new_callsign: newCs, new_rank: newRank }).catch(() => "unavailable") : "unavailable";
   const messages = {
@@ -282,7 +285,7 @@ async function exam(db, user, data, mirror, discordRoster) {
   return { ok: true, new_callsign: newCs, new_rank: newRank, discord: { ok: sync === "pending", message: messages[sync] || messages.unavailable } };
 }
 
-async function removeRecruit(db, user, data, mirror, discordTerminate) {
+async function removeRecruit(db, user, data, mirror, discordTerminate, announce) {
   const r = await loadActive(db, Number(data.id) || 0);
   const member = await db.prepare("SELECT * FROM members WHERE upper(callsign)=upper(?)").bind(r.callsign).first();
   if (!member) throw fail("Member not found on the roster.", 404);
@@ -301,6 +304,7 @@ async function removeRecruit(db, user, data, mirror, discordTerminate) {
   await academyLog(db, user, "Removed — Resigned", r.callsign, r.name, "");
   await queueAcademyConfirmation(db, user, { action: "Academy: Resigned", callsign: member.callsign, name: member.name, oldRank: member.rank, oldCallsign: member.callsign, detail: "Resigned", perms: "academy_resign" });
   await mirror("Academy remove", "/api/academy/remove", { callsign: member.callsign, name: member.name });
+  announce?.({ type: "resigned", name: member.name, callsign: member.callsign });
   let discord = { ok: true, message: "No Discord account is linked." };
   if (link && discordTerminate) {
     discord = await discordTerminate(member.callsign, member.name, discordAction).then(() => ({ ok: true, message: discordAction === "kick" ? "Kicked from the Discord server." : "Discord updated." })).catch(error => ({ ok: false, message: String(error?.message || error).slice(0, 200) }));
@@ -309,7 +313,7 @@ async function removeRecruit(db, user, data, mirror, discordTerminate) {
 }
 
 // Training overdue: the Academy terminates a recruit who has been in probie rank OVERDUE_DAYS days without passing the Exit Exam.
-async function terminateRecruit(db, user, data, mirror, discordTerminate) {
+async function terminateRecruit(db, user, data, mirror, discordTerminate, announce) {
   const r = await loadActive(db, Number(data.id) || 0);
   const member = await db.prepare("SELECT * FROM members WHERE upper(callsign)=upper(?)").bind(r.callsign).first();
   if (!member) throw fail("Member not found on the roster.", 404);
@@ -330,6 +334,7 @@ async function terminateRecruit(db, user, data, mirror, discordTerminate) {
   await academyLog(db, user, "Terminated (Exit Exam overdue)", r.callsign, r.name, "");
   await queueAcademyConfirmation(db, user, { action: "Academy: Terminated", callsign: member.callsign, name: member.name, oldRank: member.rank, oldCallsign: member.callsign, detail: `Exit Exam overdue (${OVERDUE_DAYS} days without passing)`, perms: "academy_terminate" });
   await mirror("Academy terminate", "/api/academy/terminate", { callsign: member.callsign, name: member.name, note: `Exit Exam overdue (${OVERDUE_DAYS} days)` });
+  announce?.({ type: "terminated", name: member.name, callsign: member.callsign, reason: "Exit Exam overdue" });
   let discord = { ok: true, message: "No Discord account is linked." };
   if (link && discordTerminate) {
     discord = await discordTerminate(member.callsign, member.name, discordAction).then(() => ({ ok: true, message: discordAction === "kick" ? "Kicked from the Discord server." : "Discord updated." })).catch(error => ({ ok: false, message: String(error?.message || error).slice(0, 200) }));
@@ -385,10 +390,10 @@ export async function handleAcademy(args) {
     throw error;
   }
 }
-async function routeAcademy({ db, user, route, method, data, mirror, discordRoster, discordRecruit, discordTerminate, discordCheck }) {
+async function routeAcademy({ db, user, route, method, data, mirror, discordRoster, discordRecruit, discordTerminate, discordCheck, announce }) {
   if (route === "/api/academy" && method === "GET") { requireView(user); return json(await listAcademy(db, user)); }
   if (route === "/api/academy/version" && method === "GET") { requireView(user); return json({ version: await academyVersion(db) }); }
-  if (route === "/api/academy/recruit" && method === "POST") { requireManage(user); return json(await recruit(db, user, data, mirror, discordRecruit, discordCheck)); }
+  if (route === "/api/academy/recruit" && method === "POST") { requireManage(user); return json(await recruit(db, user, data, mirror, discordRecruit, discordCheck, announce)); }
   if (route === "/api/academy/discord-retry" && method === "POST") {
     requireManage(user);
     const r = await db.prepare("SELECT * FROM academy_recruits WHERE id=?").bind(Number(data.id) || 0).first();
@@ -397,11 +402,11 @@ async function routeAcademy({ db, user, route, method, data, mirror, discordRost
   }
   if (route === "/api/academy/training" && method === "POST") { requireManage(user); return json(await setTraining(db, user, data)); }
   if (route === "/api/academy/patrol" && method === "POST") { requireManage(user); return json(await setPatrol(db, user, data)); }
-  if (route === "/api/academy/exam" && method === "POST") { requireManage(user); return json(await exam(db, user, data, mirror, discordRoster)); }
-  if (route === "/api/academy/remove" && method === "POST") { requireManage(user); requirePerm(user, "academy_resign"); return json(await removeRecruit(db, user, data, mirror, discordTerminate)); }
-  if (route === "/api/academy/switch" && method === "POST") { requireManage(user); return json(await switchRecruit(db, user, data, mirror, discordRoster)); }
+  if (route === "/api/academy/exam" && method === "POST") { requireManage(user); return json(await exam(db, user, data, mirror, discordRoster, announce)); }
+  if (route === "/api/academy/remove" && method === "POST") { requireManage(user); requirePerm(user, "academy_resign"); return json(await removeRecruit(db, user, data, mirror, discordTerminate, announce)); }
+  if (route === "/api/academy/switch" && method === "POST") { requireManage(user); return json(await switchRecruit(db, user, data, mirror, discordRoster, announce)); }
   if (route === "/api/academy/log" && method === "GET") { requireView(user); return json(await academyLogList(db)); }
   if (route === "/api/academy/log/clear" && method === "POST") { requireManage(user); await db.prepare("DELETE FROM academy_log").run(); return json({ ok: true }); }
-  if (route === "/api/academy/terminate" && method === "POST") { requireManage(user); requirePerm(user, "academy_terminate"); return json(await terminateRecruit(db, user, data, mirror, discordTerminate)); }
+  if (route === "/api/academy/terminate" && method === "POST") { requireManage(user); requirePerm(user, "academy_terminate"); return json(await terminateRecruit(db, user, data, mirror, discordTerminate, announce)); }
   return json({ detail: "Academy route was not found." }, 404);
 }
