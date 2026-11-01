@@ -1,4 +1,5 @@
 import { memberColumnValues, planMemberWrites, slotValues, planSlotWrites, discordLinkUnchanged } from "./roster-diff.js";
+import { bumpAcademyVersion } from "./academy-d1.js";
 const enc = new TextEncoder();
 const json = (body, status = 200, headers = {}) => Response.json(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
 const nowSeconds = () => Math.floor(Date.now() / 1000);
@@ -350,6 +351,7 @@ async function saveCallsignSlots(db, slots, fullSync = true) {
   if (!fullSync) return diffSaveCallsignSlots(db, items);
   const rows=items.filter(v=>v&&v.callsign).map(v=>db.prepare("INSERT INTO callsign_slots(rank,callsign,sheet_row,synced_at) VALUES(?,?,?,?) ON CONFLICT(rank,callsign) DO UPDATE SET sheet_row=excluded.sheet_row,synced_at=excluded.synced_at").bind(String(v.rank||""),String(v.callsign).toUpperCase(),Number(v.row)||null,new Date().toISOString()));
   await db.prepare("DELETE FROM callsign_slots").run(); if(rows.length) await db.batch(rows);
+  await bumpAcademyVersion(db);
 }
 async function ensureCallsignSlotsTable(db) {
   await db.prepare(`CREATE TABLE IF NOT EXISTS callsign_slots (
@@ -375,7 +377,7 @@ async function diffSaveCallsignSlots(db, items) {
     ...plan.updates.map(slot => db.prepare(SLOT_UPDATE_SQL).bind(slot.sheet_row, now, slot.rank, slot.callsign)),
     ...plan.inserts.map(slot => db.prepare(SLOT_INSERT_SQL).bind(slot.rank, slot.callsign, slot.sheet_row, now)),
   ];
-  if (statements.length) await db.batch(statements);
+  if (statements.length) { await db.batch(statements); await bumpAcademyVersion(db); }
 }
 // One row that records when the roster was last synchronised, so the status shows the time even when no member changed.
 async function ensureRosterSyncStateTable(db) {
@@ -400,6 +402,8 @@ async function diffReplaceMembers(db, uniqueMembers, syncedAt) {
     ...plan.inserts.map(values => db.prepare(MEMBER_INSERT_SQL).bind(...values, syncedAt)),
     rosterSyncStateStatement(db, syncedAt),
   ]);
+  // The Academy page only needs a refresh when a row really changed (the days count moves them once a day).
+  if (plan.deletes.length || plan.updates.length || plan.inserts.length) await bumpAcademyVersion(db);
 }
 async function replaceMembers(db, members, syncedAt = new Date().toISOString(), fullSync = true) {
   // A callsign can appear twice in the Sheet roster; D1 allows it only once.
@@ -1129,8 +1133,8 @@ async function refreshD1Notifications(db,user) {
     if(eligible.eligible&&eligible.next_rank) additions.push({kind:"eligible",eventKey:"eligible:"+member.callsign+":"+eligible.next_rank,title:"New eligible promotion",message:member.name+" ("+member.callsign+") is eligible for "+eligible.next_rank+".",callsign:member.callsign,targetRank:eligible.next_rank,stateKey:"eligible:"+member.callsign,stateValue:eligible.next_rank});
   }
   const command=isCommandRank(user);
-  if(command) for(const member of rows) if(member.activity==="Can Be Terminated"&&!member.do_not_terminate) additions.push({kind:"inactive",eventKey:"inactive:"+member.callsign,title:"Can Be Terminated",message:member.name+" ("+member.callsign+") can be terminated for activity.",callsign:member.callsign,targetRank:"",stateKey:"inactive:"+member.callsign,stateValue:"1"});
-  if(command) for(const member of rows) { const m=memberFromRow(member); if(m.rank==="EMT"&&Number(m.days_in_rank||0)>=21&&(!m.has_basic_firefighting||!m.has_advanced_firefighting)) additions.push({kind:"overdue",eventKey:"overdue:"+member.callsign,title:"Training Overdue",message:member.name+" ("+member.callsign+") can be terminated for training overdue.",callsign:member.callsign,targetRank:"",stateKey:"overdue:"+member.callsign,stateValue:"1"}); }
+  if(command) for(const member of rows) if(member.activity==="Can Be Terminated"&&!member.do_not_terminate) additions.push({kind:"inactive",eventKey:"inactive:"+member.callsign+":"+member.name,title:"Can Be Terminated",message:member.name+" ("+member.callsign+") can be terminated for activity.",callsign:member.callsign,targetRank:"",stateKey:"inactive:"+member.callsign+":"+member.name,legacyStateKey:"inactive:"+member.callsign,stateValue:"1"});
+  if(command) for(const member of rows) { const m=memberFromRow(member); if(m.rank==="EMT"&&Number(m.days_in_rank||0)>=21&&(!m.has_basic_firefighting||!m.has_advanced_firefighting)) additions.push({kind:"overdue",eventKey:"overdue:"+member.callsign+":"+member.name,title:"Training Overdue",message:member.name+" ("+member.callsign+") can be terminated for training overdue.",callsign:member.callsign,targetRank:"",stateKey:"overdue:"+member.callsign+":"+member.name,legacyStateKey:"overdue:"+member.callsign,stateValue:"1"}); }
   if(["admin","commander"].includes(String(user.role||""))) {
     const pending=(await db.prepare("SELECT account_id,name,callsign,created_at FROM accounts WHERE status='pending'").all()).results||[];
     for(const account of pending) additions.push({kind:"request",eventKey:"request:"+account.account_id,title:"New account request",message:(account.name||"New account")+" requested an account.",callsign:account.callsign||"",targetRank:"",stateKey:"request:"+account.account_id,stateValue:"1",createdAt:account.created_at});
@@ -1138,7 +1142,7 @@ async function refreshD1Notifications(db,user) {
   // Probationary and Probationary Volunteer members in rank 21 days or more: not yet through the Exit Exam.
   for(const member of rows) {
     const m=memberFromRow(member);
-    if(["Probationary","Probationary Volunteer"].includes(m.rank)&&Number(m.days_in_rank||0)>=21) additions.push({kind:"exit_exam_overdue",eventKey:"exitexam:"+member.callsign,title:"Exit Exam Overdue",message:member.name+" ("+member.callsign+") has been in probie rank for 21 days without passing the Exit Exam.",callsign:member.callsign,targetRank:"",stateKey:"exitexam:"+member.callsign,stateValue:"1"});
+    if(["Probationary","Probationary Volunteer"].includes(m.rank)&&Number(m.days_in_rank||0)>=21) additions.push({kind:"exit_exam_overdue",eventKey:"exitexam:"+member.callsign+":"+member.name,title:"Exit Exam Overdue",message:member.name+" ("+member.callsign+") has been in probie rank for 21 days without passing the Exit Exam.",callsign:member.callsign,targetRank:"",stateKey:"exitexam:"+member.callsign+":"+member.name,stateValue:"1"});
   }
   const statements=[];
   for(const item of additions) {
@@ -1147,7 +1151,8 @@ async function refreshD1Notifications(db,user) {
     const shouldNotify=isEligible ? state.get(item.stateKey)!==item.stateValue
       : item.kind==="request" ? !state.has(item.stateKey)
       : item.kind==="exit_exam_overdue" ? !state.has(item.stateKey)
-      : (item.kind==="inactive"||item.kind==="overdue") && state.has("inactive_seeded") && !state.has(item.stateKey);
+      // A member already notified under the old callsign-only key is not notified again; the old key is dropped below.
+      : (item.kind==="inactive"||item.kind==="overdue") && state.has("inactive_seeded") && !state.has(item.stateKey) && !(item.legacyStateKey&&state.has(item.legacyStateKey));
     if(shouldNotify) {
       statements.push(db.prepare("INSERT OR IGNORE INTO notifications(kind,event_key,title,message,callsign,target_rank,created_at) VALUES(?,?,?,?,?,?,?)")
         .bind(item.kind,item.eventKey,item.title,item.message,item.callsign,item.targetRank,item.createdAt||now));
@@ -1761,6 +1766,7 @@ export async function handleD1(context) {
           ...gone.map(r=>db.prepare("DELETE FROM academy_recruits WHERE id=?").bind(r.id))
         ]);
       }
+      if(fullSync) await bumpAcademyVersion(db);
       if(callsignMoves.length) {
         await moveDiscordLinks(db,callsignMoves);
         context.waitUntil(runDiscordCallsignMoves(db,env,callsignMoves));
@@ -2059,17 +2065,18 @@ export async function handleD1(context) {
       const discordRecruit = {
         queue: (discordId, name) => {
           context.waitUntil((async () => {
-            try { await recruitDiscord(discordId, name); await logRecruitDiscord(discordId, name, "done", "Linked when the recruit was added to the Academy."); }
+            try { await recruitDiscord(discordId, name); await logRecruitDiscord(discordId, name, "done", "Linked when the recruit was added to the Academy."); await bumpAcademyVersion(db); }
             catch (error) {
               const message = String(error?.message || error).slice(0, 400);
               await db.prepare("UPDATE discord_member_links SET status='failed',last_error=?,updated_at=? WHERE discord_user_id=?").bind(message, new Date().toISOString(), discordId).run();
               await logRecruitDiscord(discordId, name, "failed", message);
+              await bumpAcademyVersion(db);
             }
           })());
           return "pending";
         },
         run: async (discordId, name) => {
-          try { await recruitDiscord(discordId, name); await logRecruitDiscord(discordId, name, "done", "Linked by the Academy retry."); return { ok: true, message: "Discord updated." }; }
+          try { await recruitDiscord(discordId, name); await logRecruitDiscord(discordId, name, "done", "Linked by the Academy retry."); await bumpAcademyVersion(db); return { ok: true, message: "Discord updated." }; }
           catch (error) {
             const message = String(error?.message || error).slice(0, 400);
             await db.prepare("UPDATE discord_member_links SET status='failed',last_error=?,updated_at=? WHERE discord_user_id=?").bind(message, new Date().toISOString(), discordId).run();
@@ -2189,6 +2196,7 @@ export async function handleD1(context) {
           .bind(cs, newId, String(rosterRow.name || ""), String(rosterRow.rank || ""), String(guildMember?.nick || ""), stamp, stamp, stamp).run();
         await writeDiscordLog(db, actor, "link", cs, rosterRow.name, newId, "done", "Linked manually to Discord User ID " + newId + ".");
       }
+      await bumpAcademyVersion(db);
       return json({ ok: true });
     }
     if (route === "/api/discord/links/delink" && method === "POST") {
@@ -2198,6 +2206,7 @@ export async function handleD1(context) {
       if (!link) throw Object.assign(new Error("This callsign has no Discord link."), { status: 404 });
       await db.prepare("DELETE FROM discord_member_links WHERE callsign=?").bind(cs).run();
       await writeDiscordLog(db, actor, "delink", cs, link.member_name, link.discord_user_id, "done", "Link removed. Discord was not changed.");
+      await bumpAcademyVersion(db);
       return json({ ok: true });
     }
     if (route === "/api/discord/log" && method === "DELETE") {
@@ -2377,6 +2386,7 @@ export async function handleD1(context) {
       if(!session.account) throw Object.assign(new Error("Sign in again."),{status:401});
       await db.prepare("INSERT INTO promotion_confirmations(callsign,name,old_rank,new_rank,old_callsign,new_callsign,created_at,created_by) VALUES(?,?,?,?,?,?,?,?)")
         .bind(String(data.callsign||""),String(data.name||""),String(data.old_rank||""),String(data.new_rank||""),String(data.old_callsign||""),String(data.new_callsign||""),new Date().toISOString(),String(session.account.name||"")).run();
+      await bumpAcademyVersion(db);
       return json({ok:true});
     }
     if(route==="/api/promotion-confirmations/confirm"&&method==="POST") {
@@ -2388,6 +2398,7 @@ export async function handleD1(context) {
       if(data.portal!==true||(Number(confirmRow.needs_discord)===1&&data.discord!==true)) throw Object.assign(new Error("PORTAL (and Discord, when required) must be ticked."),{status:400});
       await db.prepare("UPDATE promotion_confirmations SET portal_done=1,discord_done=1,confirmed_at=?,confirmed_by=? WHERE id=? AND confirmed_at IS NULL")
         .bind(new Date().toISOString(),String(session.account.name||""),Number(data.id)||0).run();
+      await bumpAcademyVersion(db);
       return json({ok:true});
     }
     if(route==="/api/role-preview"&&method==="GET") {
@@ -2934,6 +2945,8 @@ export async function handleD1(context) {
       if(mutationData.dry_run) return json({...result,changed:false});
       if(result.changed!==false && oldMember) await writeOperationalLog(db,oldMember,route,mutationData,result,user);
       if(oldMember) await recordActionConfirmation(db,route,mutationData,oldMember,result,user);
+      // A roster change to a Probationary or Probationary Volunteer member (or into those ranks) changes what the Academy page shows.
+      if(result.changed!==false && ["Probationary","Probationary Volunteer"].some(rank=>rank===String(oldMember?.rank||"")||rank===String(result.new_rank||""))) await bumpAcademyVersion(db);
       if(route==="/api/training" && result.changed!==false && oldMember) {
         const callsignForOps=normalizeDiscordCallsign(oldMember.callsign);
         const qualifies=Boolean(result.training_qualifies);
