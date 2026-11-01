@@ -1,5 +1,6 @@
 import { memberColumnValues, planMemberWrites, slotValues, planSlotWrites, discordLinkUnchanged } from "./roster-diff.js";
 import { bumpAcademyVersion } from "./academy-d1.js";
+import { buildAcademyEmbed } from "./academy-announce.js";
 const enc = new TextEncoder();
 const json = (body, status = 200, headers = {}) => Response.json(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
 const nowSeconds = () => Math.floor(Date.now() / 1000);
@@ -904,6 +905,26 @@ async function confirmDiscordIdChange(context, db, env, request, user, data) {
 // and an account counts as online for 180 s after its last write. D1 charges every row written
 // (an index counts as an extra row), so this keeps the online list inside the free daily limit.
 const PRESENCE_WRITE_GAP_SECONDS = 100, PRESENCE_ONLINE_SECONDS = 180;
+// ---- Academy log channel -------------------------------------------------------
+// Each Academy event (recruit, passed exit exam, switch, callsign change, resignation, termination) is posted as an
+// embed in the channel saved in Operation Command. The post runs after the action succeeded; a failure never undoes
+// it and is written to the Discord action log. Successful posts are not logged, to save D1 writes.
+async function academyLogSettings(db) {
+  const rows = (await db.prepare("SELECT key,value FROM discord_settings WHERE key IN ('academy_log_channel_id','academy_log_enabled')").all().catch(() => ({ results: [] }))).results || [];
+  const saved = new Map(rows.map(row => [row.key, String(row.value || "").trim()]));
+  return { channel_id: saved.get("academy_log_channel_id") || "", enabled: saved.get("academy_log_enabled") === "1" };
+}
+async function announceAcademyEvent(db, env, user, event) {
+  try {
+    const settings = await academyLogSettings(db);
+    if (!settings.enabled || !/^\d{17,20}$/.test(settings.channel_id)) return;
+    const link = user?.callsign ? await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE upper(callsign)=upper(?)").bind(String(user.callsign)).first() : null;
+    const embed = buildAcademyEmbed({ ...event, actor: { name: String(user?.name || ""), discordId: link?.discord_user_id ? String(link.discord_user_id) : "" } });
+    await discordRequest(env, `/channels/${settings.channel_id}/messages`, { method: "POST", body: JSON.stringify({ embeds: [embed], allowed_mentions: { parse: [] } }) });
+  } catch (error) {
+    await writeDiscordLog(db, user, "Academy log", String(event?.callsign || ""), String(event?.name || ""), "", "failed", "The Academy log message was not sent: " + String(error?.message || error).slice(0, 250)).catch(() => {});
+  }
+}
 async function login(db, data) {
   const name = nameKey(data.username || data.name), password = String(data.password || "");
   const loginKey = await sha256(name), now = nowSeconds();
@@ -2091,7 +2112,8 @@ export async function handleD1(context) {
         catch { return { ok: false, message: "This Discord User ID is not a member of the LVFR Discord server. Add the member to the server first." }; }
       };
       // await keeps a thrown Academy error inside this try, so it becomes a JSON answer instead of a 500.
-      return await handleAcademy({ db, user, route, method, data, mirror: academyMirror, discordRoster, discordRecruit, discordTerminate, discordCheck });
+      const announce = event => context.waitUntil(announceAcademyEvent(db, env, user, event));
+      return await handleAcademy({ db, user, route, method, data, mirror: academyMirror, discordRoster, discordRecruit, discordTerminate, discordCheck, announce });
     }
     if (route === "/api/discord/settings" && method === "POST") {
       if (!(user.role === "admin" || user.permissions?.discord_settings_manage === true)) throw Object.assign(new Error("Discord settings access is required."), { status: 403 });
@@ -2107,7 +2129,7 @@ export async function handleD1(context) {
       const saved = new Map(((await db.prepare("SELECT rank, role_id FROM discord_role_map").all()).results || []).map(row => [row.rank, row.role_id]));
       let fromSecret = new Map();
       try { fromSecret = discordRoleMap(env); } catch { fromSecret = new Map(); }
-      return json({ ok: true, guild_id: env.DISCORD_GUILD_ID || "", ops_role_id: env.DISCORD_OPS_ROLE_ID || "", ranks: Object.keys(RANK_LEVEL).map(rank => {
+      return json({ ok: true, academy_log: await academyLogSettings(db), guild_id: env.DISCORD_GUILD_ID || "", ops_role_id: env.DISCORD_OPS_ROLE_ID || "", ranks: Object.keys(RANK_LEVEL).map(rank => {
         const website = saved.get(rank) || "", secret = fromSecret.get(rank.toLowerCase()) || "";
         return { rank, role_id: website || secret, source: website ? "website" : (secret ? "secret" : "") };
       }) });
@@ -2134,6 +2156,24 @@ export async function handleD1(context) {
         }
       }
       if (statements.length) await db.batch(statements);
+      return json({ ok: true });
+    }
+    if (route === "/api/discord/academy-log" && method === "POST") {
+      if (!(user.role === "admin" || user.permissions?.discord_settings_manage === true)) throw Object.assign(new Error("Discord settings access is required."), { status: 403 });
+      const channelId = String(data.channel_id ?? "").trim(), enabled = data.enabled === true, by = String(user.name || ""), now = new Date().toISOString();
+      if (channelId && !/^\d{17,20}$/.test(channelId)) throw Object.assign(new Error("The channel ID must be 17 to 20 digits."), { status: 400 });
+      if (enabled && !channelId) throw Object.assign(new Error("Enter the channel ID before turning the Academy log on."), { status: 400 });
+      const upsert = (key, value) => db.prepare("INSERT INTO discord_settings(key,value,updated_at,updated_by) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at, updated_by=excluded.updated_by").bind(key, value, now, by);
+      await db.batch([channelId ? upsert("academy_log_channel_id", channelId) : db.prepare("DELETE FROM discord_settings WHERE key='academy_log_channel_id'"), upsert("academy_log_enabled", enabled ? "1" : "0")]);
+      return json({ ok: true, channel_id: channelId, enabled });
+    }
+    if (route === "/api/discord/academy-log/test" && method === "POST") {
+      if (!(user.role === "admin" || user.permissions?.discord_settings_manage === true)) throw Object.assign(new Error("Discord settings access is required."), { status: 403 });
+      const channelId = String(data.channel_id ?? (await academyLogSettings(db)).channel_id).trim();
+      if (!/^\d{17,20}$/.test(channelId)) throw Object.assign(new Error("Enter the channel ID first (17 to 20 digits)."), { status: 400 });
+      const link = user.callsign ? await db.prepare("SELECT discord_user_id FROM discord_member_links WHERE upper(callsign)=upper(?)").bind(String(user.callsign)).first() : null;
+      try { await discordRequest(env, `/channels/${channelId}/messages`, { method: "POST", body: JSON.stringify({ embeds: [buildAcademyEmbed({ type: "test", actor: { name: String(user.name || ""), discordId: link?.discord_user_id ? String(link.discord_user_id) : "" } })], allowed_mentions: { parse: [] } }) }); }
+      catch (error) { throw Object.assign(new Error("Discord could not post in that channel: " + String(error?.message || error).slice(0, 200) + " The bot needs View Channel, Send Messages and Embed Links there."), { status: 400 }); }
       return json({ ok: true });
     }
     if (route === "/api/discord/sync" && method === "POST") {
@@ -2947,6 +2987,8 @@ export async function handleD1(context) {
       if(oldMember) await recordActionConfirmation(db,route,mutationData,oldMember,result,user);
       // A roster change to a Probationary or Probationary Volunteer member (or into those ranks) changes what the Academy page shows.
       if(result.changed!==false && ["Probationary","Probationary Volunteer"].some(rank=>rank===String(oldMember?.rank||"")||rank===String(result.new_rank||""))) await bumpAcademyVersion(db);
+      // Only Academy members (Probationary and Probationary Volunteer) are announced; other callsign changes are not posted.
+      if(route==="/api/change-callsign" && result.changed!==false && oldMember && ["Probationary","Probationary Volunteer"].includes(String(oldMember.rank||""))) context.waitUntil(announceAcademyEvent(db,env,user,{type:"callsign",name:oldMember.name,callsign:String(result.new_callsign||mutationData.new_callsign||""),oldCallsign:oldMember.callsign}));
       if(route==="/api/training" && result.changed!==false && oldMember) {
         const callsignForOps=normalizeDiscordCallsign(oldMember.callsign);
         const qualifies=Boolean(result.training_qualifies);
