@@ -140,6 +140,11 @@
         <p class="muted">Ops is a Discord-only role. It is added to a linked member who has HERT, Basic FORT or Advanced FORT, and removed when none of them is held. It is not shown on the website or in the Sheet.</p>
         <div class="admin-actions"><button type="button" class="primary" id="saveDiscordRoleMap" disabled>Save role IDs</button></div>
         <p id="discordRoleMapStatus" class="admin-status" role="status" aria-live="polite"></p>
+        <h3>Academy log channel</h3>
+        <p class="muted">When on, the bot posts a message in this channel for each Academy event: a recruit, a passed Exit Exam, a switch, a callsign change, a resignation, and a termination. In Discord: right-click the channel → Copy Channel ID. The bot needs View Channel, Send Messages and Embed Links in it.</p>
+        <div class="toolbar"><label>Channel ID <input id="academyLogChannelInput" type="text" inputmode="numeric" autocomplete="off" placeholder="17 to 20 digits"></label> <label class="check"><input id="academyLogEnabled" type="checkbox"> Post Academy events</label></div>
+        <div class="admin-actions"><button type="button" class="primary" id="saveAcademyLog" disabled>Save</button><button type="button" id="testAcademyLog" disabled>Send test message</button></div>
+        <p id="academyLogStatus" class="admin-status" role="status" aria-live="polite"></p>
       </div>
     </section>
     <section id="commandLinksSection" class="admin-card command-section" aria-labelledby="linkedMembersHeading" hidden>
@@ -198,7 +203,7 @@
     <p id="accountRolesStatus" class="admin-status" role="status" aria-live="polite"></p>
   </dialog>
 <script src="/static/account-settings.js?v=discord-code-20261030-1"></script>
-  <script src="/static/administration.js?v=password-reset-20261030-1"></script>
+  <script src="/static/administration.js?v=academy-log-20261101-1"></script>
   <script src="/static/sidebar.js?v=ops-20261029-3"></script>
   <script src="/static/mobile-popovers.js?v=ops-20261022-15"></script>
 <script src="/static/search-clear.js?v=ops-20261022-15" defer></script>
